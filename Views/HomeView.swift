@@ -236,10 +236,14 @@ struct HomeView: View {
             journeyHeading(destination)
         }
         ToolbarItem(placement: .topBarLeading) {
-            if let trip = scope(destination).trip {
-                Button("上一层", systemImage: "chevron.left") {
-                    store.select(trip: scope(destination).day == nil ? nil : trip, focus: false)
-                }.labelStyle(.iconOnly).accessibilityIdentifier("journey-back")
+            if scope(destination).trip != nil {
+                Button {
+                    guard !journeyPath.isEmpty else { return }
+                    withAnimation(reduceMotion ? nil : .default) { journeyPath.removeLast() }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
             } else {
                 Button("创建旅行", systemImage: "plus") { creatingTrip = true }
                     .labelStyle(.iconOnly).accessibilityIdentifier("create-journey")
