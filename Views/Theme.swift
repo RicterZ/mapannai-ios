@@ -2,15 +2,16 @@ import SwiftUI
 import UIKit
 
 enum Theme {
-    static let ink = Color(red: 0.12, green: 0.17, blue: 0.25)
-    static let accent = Color(red: 0.10, green: 0.48, blue: 0.72)
-    static let paper = Color(red: 0.92, green: 0.96, blue: 0.99)
-    static let console = Color.white
-    static let consoleRaised = Color(red: 0.94, green: 0.97, blue: 1.0)
-    static let cyan = Color(red: 0.20, green: 0.57, blue: 0.82)
-    static let pink = Color(red: 0.93, green: 0.55, blue: 0.72)
-    static let muted = Color(red: 0.48, green: 0.55, blue: 0.63)
-    static let text = Color(red: 0.19, green: 0.28, blue: 0.39)
+    static let ink = Color(uiColor: .label)
+    static let accent = Color(uiColor: .systemBlue)
+    static let paper = Color(uiColor: .secondarySystemBackground)
+    static let console = Color(uiColor: .systemBackground)
+    static let consoleRaised = Color(uiColor: .tertiarySystemFill)
+    static let cyan = Color(uiColor: .systemBlue)
+    static let pink = Color(uiColor: .systemPink)
+    static let muted = Color(uiColor: .secondaryLabel)
+    static let text = Color(uiColor: .label)
+    static let separator = Color(uiColor: .separator)
     static let palette: [Color] = [.init(red: 0.08, green: 0.63, blue: 0.83), .init(red: 0.88, green: 0.35, blue: 0.66),
                                    .init(red: 0.46, green: 0.43, blue: 0.88), .init(red: 0.96, green: 0.57, blue: 0.27),
                                    .init(red: 0.16, green: 0.66, blue: 0.58), .init(red: 0.58, green: 0.44, blue: 0.72)]
@@ -18,7 +19,7 @@ enum Theme {
 }
 
 extension View {
-    func softSurface(fill: Color = Theme.consoleRaised, border: Color = Theme.cyan.opacity(0.18)) -> some View {
+    func softSurface(fill: Color = Theme.consoleRaised, border: Color = Theme.separator.opacity(0.35)) -> some View {
         background(fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(border, lineWidth: 1).allowsHitTesting(false))
     }
