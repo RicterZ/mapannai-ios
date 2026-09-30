@@ -85,7 +85,7 @@ struct HomeView: View {
                     if expanded {
                         workspacePanel(topInset: topInset, bottomInset: bottomInset, leftInset: leftInset)
                             .frame(width: layout.sidebarWidth + leftInset, height: layout.height + topInset + bottomInset)
-                            .background(.white)
+                            .background(.regularMaterial)
                             .overlay(alignment: .trailing) { Rectangle().fill(Theme.ink.opacity(0.08)).frame(width: 1) }
                             .accessibilityElement(children: .contain).accessibilityIdentifier("landscape-itinerary-sidebar")
                             .offset(x: -leftInset, y: -topInset)
@@ -248,17 +248,24 @@ struct HomeView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
+    // Normalize the drawn symbol bounds, not just the font size or tap target.
+    private func panelActionIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .resizable().scaledToFit()
+            .font(.system(size: 20, weight: .regular))
+            .frame(width: 20, height: 20)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
     private var addTripButton: some View {
         Button { creatingTrip = true } label: {
-            Image(systemName: "plus").font(.system(size: 19, weight: .medium))
-                .frame(width: 44, height: 44).contentShape(Rectangle())
+            panelActionIcon("plus")
         }.buttonStyle(.plain).foregroundStyle(Theme.accent)
             .accessibilityLabel("创建旅行").accessibilityIdentifier("create-journey")
     }
     private var settingsButton: some View {
         Button { showSettings = true } label: {
-            Image(systemName: "gearshape").font(.system(size: 19))
-                .frame(width: 44, height: 44).contentShape(Rectangle())
+            panelActionIcon("gearshape")
         }.buttonStyle(.plain).foregroundStyle(Theme.accent)
             .accessibilityLabel("连接设置").accessibilityIdentifier("itinerary-header-settings")
     }
@@ -269,8 +276,10 @@ struct HomeView: View {
                 panelBackButton
                 panelHeading()
                 Spacer(minLength: 0)
-                addTripButton
-                settingsButton
+                if store.trip == nil {
+                    addTripButton
+                    settingsButton
+                }
                 Button { togglePanel() } label: {
                     Image(systemName: "sidebar.left").foregroundStyle(Theme.muted).frame(width: 40, height: 40)
                 }.accessibilityLabel("收起行程").accessibilityIdentifier("itinerary-panel-toggle")
@@ -315,6 +324,8 @@ struct HomeView: View {
                 itineraryContents
             }
         }.listStyle(.insetGrouped).buttonStyle(.borderless).scrollContentBackground(.hidden)
+            .contentMargins(.top, 0, for: .scrollContent)
+            .listSectionSpacing(8)
             .id(itineraryScrollIdentity).scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("itinerary-marker-list")
     }
@@ -337,7 +348,7 @@ struct HomeView: View {
     }
     private var locationButton: some View {
         Button { location.request { store.locating = UUID() } } label: {
-            Image(systemName: "location.fill").font(.system(size: 20, weight: .medium)).foregroundStyle(Theme.cyan)
+            Image(systemName: "location").font(.system(size: 20, weight: .regular)).foregroundStyle(Theme.cyan)
                 .frame(width: 48, height: 48).background(.white, in: Circle())
                 .shadow(color: .black.opacity(0.15), radius: 5, y: 3)
         }.accessibilityLabel("定位到当前位置")
@@ -376,27 +387,21 @@ struct HomeView: View {
                             else { sheetDetent = ItineraryDetent(rawValue: max(0, sheetDetent.rawValue-1)) ?? .compact }
                         }
                     HStack(spacing: 0) {
-                        addTripButton
+                        if store.trip == nil && !compactHeader { addTripButton }
                         if UIDevice.current.userInterfaceIdiom == .phone {
                             Button { location.request { store.locating = UUID() } } label: {
-                                Image(systemName: "location.fill")
-                                    .font(.system(size: 20, weight: .medium)).foregroundStyle(Theme.accent)
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
+                                panelActionIcon("location").foregroundStyle(Theme.accent)
                             }.buttonStyle(.plain).accessibilityLabel("定位到当前位置")
                                 .accessibilityIdentifier("itinerary-header-location")
                         }
-                            settingsButton
+                        if store.trip == nil && !compactHeader { settingsButton }
                         Button {
                             withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                                 sheetDetent = sheetDetent == .compact ? .half : .compact
                             }
                         } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
+                            panelActionIcon("chevron.down").foregroundStyle(Theme.accent)
                                 .rotationEffect(.degrees(sheetDetent == .compact ? 180 : 0))
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
                         }.buttonStyle(.plain)
                             .accessibilityLabel(sheetDetent == .compact ? "展开旅途" : "收起旅途")
                             .accessibilityIdentifier("itinerary-collapse")
@@ -428,7 +433,7 @@ struct HomeView: View {
         .frame(height: height)
         .padding(.bottom, bottomInset)
         .frame(maxWidth: .infinity)
-        .background(Theme.console, in: UnevenRoundedRectangle(topLeadingRadius: sheetDetent == .full ? 0 : 20, topTrailingRadius: sheetDetent == .full ? 0 : 20))
+        .background(.regularMaterial, in: UnevenRoundedRectangle(topLeadingRadius: sheetDetent == .full ? 0 : 20, topTrailingRadius: sheetDetent == .full ? 0 : 20))
 
         .shadow(color: Theme.ink.opacity(0.09), radius: 12, y: -3)
         .environment(\.colorScheme, .light).tint(Theme.cyan)
