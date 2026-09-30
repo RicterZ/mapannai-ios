@@ -177,7 +177,7 @@ import SwiftUI
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
         let changedDay = tripID != trip?.id || dayID != day?.id
         tripID = trip?.id; dayID = day?.id; selectedMarker = nil
-        rebuildRoutes()
+        rebuildRoutes(preservingPlannedGeometry: true)
         guard focus else { return }
         if let day {
             guard changedDay,
@@ -255,7 +255,7 @@ import SwiftUI
         draft = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
     }
     func report(_ error: Error) { if error is CancellationError { return }; errorMessage = error.localizedDescription }
-    func rebuildRoutes() {
+    func rebuildRoutes(preservingPlannedGeometry: Bool = false) {
         routeTask?.cancel(); let generation = UUID(); routeGeneration = generation
         let segments = visibleDays.flatMap { day in
             day.chains.enumerated().flatMap { chainIndex, chain -> [(DisplayRoute, Coordinate, Coordinate)] in
@@ -269,7 +269,19 @@ import SwiftUI
                 }
             }
         }
-        displayRoutes = segments.map(\.0); routeError = nil; routeProgress = ""
+        let previous = Dictionary(uniqueKeysWithValues: displayRoutes.map { ($0.id, $0) })
+        let next = segments.map { segment -> DisplayRoute in
+            let route = segment.0
+            // Keep already planned geometry while selecting a subset of the same trip.
+            if preservingPlannedGeometry, let old = previous[route.id], old.isPlanned,
+               old.points.first == route.points.first, old.points.last == route.points.last {
+                return old
+            }
+            return route
+        }
+        var transaction = Transaction(); transaction.disablesAnimations = true
+        withTransaction(transaction) { displayRoutes = next }
+        routeError = nil; routeProgress = ""
         guard settings.planning, !demo, !segments.isEmpty else { return }
         let mode = settings.mode, services = mapServices, provider = mapConfiguration.directionsProvider, server = settings.baseURL
         routeTask = Task {

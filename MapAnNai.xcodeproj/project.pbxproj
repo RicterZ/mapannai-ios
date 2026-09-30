@@ -28,6 +28,8 @@
 		74A88091D9ABF6D8AA712AB9 /* JourneySheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8C9BD1EBF34357D9BDA56D /* JourneySheetBackground.swift */; };
 		77664758EF9744C20B041766 /* RichText.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD30B40DC569CCDF2AE7528C /* RichText.swift */; };
 		77E5FBF26CBA7D5C9FA81B1C /* MarkerRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */; };
+		88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDDA121FFD3C16E1FD7287B /* JourneyCircleButtonStyle.swift */; };
+		8ACAB632ABC3011A72B69678 /* JourneySwitchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */; };
 		8FC298524B1D52C0FBF7C80B /* SearchSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C335E3944995E33E94762A45 /* SearchSelectionTests.swift */; };
 		94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72771F1E2B151FC279B7446 /* Geometry.swift */; };
 		9B10601417C914FADA9A378B /* IPadBackButtonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */; };
@@ -82,6 +84,7 @@
 		44F803700132C621981E8417 /* MapAnNai-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MapAnNai-Bridging-Header.h"; sourceTree = "<group>"; };
 		4869E83E16B78BCCC652AAF2 /* PanelControlsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelControlsTests.swift; sourceTree = "<group>"; };
 		4960F0B624456BC80191B2F2 /* RouteCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteCache.swift; sourceTree = "<group>"; };
+		4FDDA121FFD3C16E1FD7287B /* JourneyCircleButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyCircleButtonStyle.swift; sourceTree = "<group>"; };
 		50DE00593E8084F5D51D56A4 /* NativeMapControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapControls.swift; sourceTree = "<group>"; };
 		5114754DBBCAFABDDCB8097D /* NoteContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteContent.swift; sourceTree = "<group>"; };
 		538108F21D71668426EA9A48 /* MapRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapRenderer.swift; sourceTree = "<group>"; };
@@ -101,6 +104,7 @@
 		8ED85B293D18534AAB521985 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCameraTests.swift; sourceTree = "<group>"; };
 		9CA0DB7FCE4B26BA1A253D3F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneySwitchingTests.swift; sourceTree = "<group>"; };
 		A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayout.swift; sourceTree = "<group>"; };
 		AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerEditorTests.swift; sourceTree = "<group>"; };
 		B6BCC61DF450ED6A22EB583F /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -132,6 +136,7 @@
 			isa = PBXGroup;
 			children = (
 				3F55A919B31EC92357E58F47 /* HomeView.swift */,
+				4FDDA121FFD3C16E1FD7287B /* JourneyCircleButtonStyle.swift */,
 				5C8C9BD1EBF34357D9BDA56D /* JourneySheetBackground.swift */,
 				1EE4DC6DD0A68391E9F7832E /* JourneyViews.swift */,
 				425DF5BCBE1273228F07E613 /* MarkerViews.swift */,
@@ -200,6 +205,7 @@
 				F96C9DF6A9CD060EB8FC5BF9 /* InteractionTests.swift */,
 				E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */,
 				6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */,
+				A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */,
 				AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */,
 				4869E83E16B78BCCC652AAF2 /* PanelControlsTests.swift */,
 				0B62253EAC3829164040323C /* SearchMapTests.swift */,
@@ -357,6 +363,7 @@
 				CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */,
 				94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */,
 				23CC06614DFD047642FEFB5F /* HomeView.swift in Sources */,
+				88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */,
 				74A88091D9ABF6D8AA712AB9 /* JourneySheetBackground.swift in Sources */,
 				E5E82A9A2F2526B35B873E8B /* JourneyViews.swift in Sources */,
 				B353F2DDCDACD295F7761889 /* MapAnNaiApp.swift in Sources */,
@@ -398,6 +405,7 @@
 				9B10601417C914FADA9A378B /* IPadBackButtonTests.swift in Sources */,
 				27733094231AD19C78C10729 /* InteractionTests.swift in Sources */,
 				D35081C38CB650DFA49D2085 /* JourneyBackgroundTests.swift in Sources */,
+				8ACAB632ABC3011A72B69678 /* JourneySwitchingTests.swift in Sources */,
 				4ACB817D344D263D4236929F /* MarkerEditorTests.swift in Sources */,
 				4692A1E0AFE15F940C05AF1A /* PanelControlsTests.swift in Sources */,
 				5DF08649B912E7DCD153DAF9 /* SearchMapTests.swift in Sources */,
@@ -473,7 +481,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 39;
+				CURRENT_PROJECT_VERSION = 41;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -613,7 +621,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 39;
+				CURRENT_PROJECT_VERSION = 41;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

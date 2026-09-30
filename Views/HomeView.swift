@@ -223,7 +223,9 @@ struct HomeView: View {
         }.listStyle(.insetGrouped).buttonStyle(.borderless)
             .scrollContentBackground(sidebar ? .visible : .hidden)
             .contentMargins(.top, 0, for: .scrollContent).listSectionSpacing(8)
-            .id(itineraryScrollIdentity).scrollDismissesKeyboard(.interactively)
+            .id(ItineraryScrollIdentity(tripID: page.trip?.id, dayID: page.day?.id,
+                                        showingSearch: store.searching || !store.searchResults.isEmpty))
+            .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("itinerary-marker-list")
             .modifier(JourneyNavigationBackground())
             .navigationTitle(journeyTitle(destination)).navigationBarTitleDisplayMode(.inline)
@@ -235,20 +237,7 @@ struct HomeView: View {
         ToolbarItem(placement: .principal) {
             journeyHeading(destination)
         }
-        ToolbarItem(placement: .topBarLeading) {
-            if scope(destination).trip != nil {
-                Button {
-                    guard !journeyPath.isEmpty else { return }
-                    withAnimation(reduceMotion ? nil : .default) { journeyPath.removeLast() }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
-                }.accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
-            } else {
-                Button("创建旅行", systemImage: "plus") { creatingTrip = true }
-                    .labelStyle(.iconOnly).accessibilityIdentifier("create-journey")
-            }
-        }
+        journeyLeadingControl(destination: destination, sidebar: sidebar)
         if !sidebar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("定位到当前位置", systemImage: "location") { location.request { store.locating = UUID() } }
@@ -264,9 +253,39 @@ struct HomeView: View {
         }
     }
 
+    @ToolbarContentBuilder private func journeyLeadingControl(destination: JourneyDestination?, sidebar: Bool) -> some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            journeyLeadingItem(destination: destination, sidebar: sidebar).sharedBackgroundVisibility(.hidden)
+        } else {
+            journeyLeadingItem(destination: destination, sidebar: sidebar)
+        }
+    }
+    private func journeyLeadingItem(destination: JourneyDestination?, sidebar: Bool) -> some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            if scope(destination).trip != nil {
+                Button {
+                    guard !journeyPath.isEmpty else { return }
+                    withAnimation(reduceMotion ? nil : .default) { journeyPath.removeLast() }
+                } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 20))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                    .modifier(JourneyCircleButtonStyle())
+                    .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
+            } else if sidebar || sheetDetent != .compact {
+                Button { creatingTrip = true } label: {
+                    Image(systemName: "plus").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle())
+                }.modifier(JourneyCircleButtonStyle())
+                    .accessibilityLabel("创建旅行").accessibilityIdentifier("create-journey")
+            }
+        }
+    }
     private func mapContent(layout: MapLayout, topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            MapSurface(store: store, settings: settings, onOpenSettings: { showSettings = true }).ignoresSafeArea()
+            MapSurface(store: store, settings: settings, onOpenSettings: { showSettings = true })
+                .transaction { $0.animation = nil; $0.disablesAnimations = true }
+                .ignoresSafeArea()
             if layout.usesSidebar {
                 HStack(spacing: 0) {
                     if expanded {
