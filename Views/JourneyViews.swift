@@ -1,8 +1,9 @@
 import SwiftUI
 
-struct JourneyOverviewContents<SearchContent: View>: View {
+struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View {
     @ObservedObject var store: AppStore
     @ViewBuilder var searchContent: () -> SearchContent
+    @ViewBuilder var settingsContent: () -> SettingsContent
     @State private var editing: Trip?
     @State private var deletion: Trip?
     private var years: [String] { Array(Set(store.trips.map { String($0.startDate.prefix(4)) })).sorted(by: >) }
@@ -52,6 +53,7 @@ struct JourneyOverviewContents<SearchContent: View>: View {
                     }
                 }
             }
+            Section { settingsContent() }
         }
             .sheet(item: $editing) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
             .alert("删除旅行？", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
