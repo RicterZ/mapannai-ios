@@ -1,6 +1,17 @@
 import SwiftUI
 import UIKit
 
+/// Native grouped glass on current systems; material keeps the same capsule on iOS 17–25.
+struct NativeNavigationSurface: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: .capsule)
+        } else {
+            content.background(.regularMaterial, in: Capsule())
+        }
+    }
+}
+
 struct NativePlaceSearchBar: UIViewRepresentable {
     @Binding var text: String
     var searching: Bool

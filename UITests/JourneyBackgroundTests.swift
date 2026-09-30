@@ -23,7 +23,7 @@ final class JourneyBackgroundTests: XCTestCase {
         if !settings.isHittable { list.swipeUp() }
         XCTAssertTrue(settings.isHittable)
         capture("Overview grouped background and bottom settings")
-        settings.tap()
+        settings.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
         app.buttons["close-settings"].tap()
         let trip = app.buttons["journey-demo-trip"]
@@ -37,6 +37,31 @@ final class JourneyBackgroundTests: XCTestCase {
         app.buttons["journey-day-day-1"].tap()
         XCTAssertTrue(app.navigationBars["第1天"].waitForExistence(timeout: 5))
         capture("Medium pushed day shared translucent background")
+    }
+    @MainActor func testNativeSidebarNavigationAndRouteExpansion() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let marker = app.buttons["route-0-marker-demo-0"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 10))
+        let toggle = app.buttons.matching(NSPredicate(format: "label == %@", "路线 1, 3个地点")).firstMatch
+        XCTAssertTrue(toggle.exists); toggle.tap()
+        XCTAssertFalse(marker.exists)
+        toggle.tap(); XCTAssertTrue(marker.waitForExistence(timeout: 5))
+        app.buttons["journey-back"].tap()
+        XCTAssertTrue(app.buttons["journey-day-day-1"].waitForExistence(timeout: 5))
+        app.buttons["journey-back"].tap()
+        let settings = app.buttons["itinerary-settings-bottom"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        capture("Native sidebar overview with settings spacing")
+        settings.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
+        app.buttons["close-settings"].tap()
+        app.buttons["journey-demo-trip"].tap()
+        app.buttons["journey-day-day-1"].tap()
+        XCTAssertTrue(marker.waitForExistence(timeout: 5))
+        capture("Native sidebar day route disclosure")
     }
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())

@@ -2,6 +2,44 @@ import XCTest
 @testable import MapAnNai
 
 final class CoreTests: XCTestCase {
+    @MainActor func testMarkerItinerariesIncludeAllMembershipsWithChronologicalDayNumbers() {
+        let sample = AppStore(settings: Settings(), demo: true)
+        var trip = sample.trips[0]
+        trip.days.reverse()
+        var other = trip
+        other.id = "other-trip"; other.name = "另一个旅行"
+        other.days = [TripDay(id: "other-day", tripId: other.id, date: "2026-10-10", markerIds: ["demo-2"], chains: [])]
+        let rows = MarkerPresentation.itineraries(for: "demo-2", trips: [trip, other])
+        XCTAssertEqual(rows.map { $0.day.id }, ["day-1", "day-2", "other-day"])
+        XCTAssertEqual(rows.map(\.dayNumber), [1, 2, 1])
+        XCTAssertTrue(MarkerPresentation.itineraries(for: "missing", trips: [trip, other]).isEmpty)
+        sample.focus(sample.markers[2]); let camera = sample.camera?.id
+        sample.select(trip: rows[1].trip, day: rows[1].day, focus: false)
+        XCTAssertEqual(sample.dayID, "day-2"); XCTAssertNil(sample.selectedMarker)
+        XCTAssertEqual(sample.camera?.id, camera)
+    }
+    @MainActor func testAppleMapsDestinationUsesPlaceTitleAndSameCoordinatesAsWeb() throws {
+        let sample = AppStore(settings: Settings(), demo: true)
+        var marker = sample.markers[0]; marker.content.title = "咖啡 & 地图 / 東京"
+        let item = try XCTUnwrap(MarkerPresentation.appleMapsItem(for: marker))
+        XCTAssertEqual(item.name, marker.title)
+        let gcj = Coordinates.gcj(marker.coordinates)
+        XCTAssertEqual(item.placemark.coordinate.latitude, gcj.latitude, accuracy: 0.000001)
+        XCTAssertEqual(item.placemark.coordinate.longitude, gcj.longitude, accuracy: 0.000001)
+        marker.coordinates = Coordinate(latitude: 35.6762, longitude: 139.6503)
+        let overseas = try XCTUnwrap(MarkerPresentation.appleMapsItem(for: marker))
+        XCTAssertEqual(overseas.placemark.coordinate.latitude, 35.6762, accuracy: 0.000001)
+        XCTAssertEqual(overseas.placemark.coordinate.longitude, 139.6503, accuracy: 0.000001)
+        marker.coordinates.latitude = .nan
+        XCTAssertNil(MarkerPresentation.appleMapsItem(for: marker))
+    }
+    func testAddPlaceBoundsExpandEachSideByTwoViewportWidths() {
+        let bounds = SearchBounds(west: 121, south: 31, east: 122, north: 32).expanded(factor: 2)
+        XCTAssertEqual(bounds.west, 119); XCTAssertEqual(bounds.east, 124)
+        XCTAssertEqual(bounds.south, 29); XCTAssertEqual(bounds.north, 34)
+        XCTAssertTrue(MapZoomPresentation.isCompact(9.99))
+        XCTAssertFalse(MapZoomPresentation.isCompact(10))
+    }
     func testEmptyTiptapNotesAndMediaContent() {
         for html in ["", "  ", "<p></p>", "<p><br></p>", "<p>&nbsp; &#160; &#xA0;\u{200B}</p>", "<!-- draft -->", "<style>p {color:red}</style>"] {
             XCTAssertFalse(NoteContent.hasContent(html), html)
@@ -128,7 +166,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(RouteGeometry.nearestDistance((5,4), to: [(0,5),(10,5)]), 1, accuracy: 0.0001)
         XCTAssertEqual(RouteGeometry.nearestDistance((0,0), to: []), .infinity)
     }
-    @MainActor func testPersistentCacheSeparatesModesDirectionsAndCoordinates() throws {
+    @MainActor func testPersistentCacheSeparatesModesDirectionsAndCoordinates() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let a = Coordinate(latitude: 31.2, longitude: 121.4), b = Coordinate(latitude: 31.21, longitude: 121.41)
@@ -136,8 +174,8 @@ final class CoreTests: XCTestCase {
         XCTAssertNotEqual(key, RouteCache.key(a,b,mode: .driving))
         XCTAssertNotEqual(key, RouteCache.key(b,a,mode: .walking))
         let route = PlannedRoute(path: [.init(lat: a.latitude,lng: a.longitude), .init(lat: b.latitude,lng: b.longitude)], distance: 1234, duration: 456)
-        RouteCache(directory: directory).put(route,key: key)
-        let reloaded = RouteCache(directory: directory).get(key)
+        await RouteCache(directory: directory).put(route,key: key)
+        let reloaded = await RouteCache(directory: directory).get(key)
         XCTAssertEqual(reloaded?.path, route.path)
         XCTAssertEqual(reloaded?.distance, 1234); XCTAssertEqual(reloaded?.duration, 456)
     }
@@ -203,7 +241,7 @@ final class MapServiceTests: XCTestCase {
             XCTAssertEqual(decoded.east, 122.2, accuracy: 0.001)
             return (200, Data(#"{"success":true,"data":[{"id":"名称","placeId":"poi-id","name":"咖啡","address":"上海","coordinates":{"latitude":31.2,"longitude":121.4}}]}"#.utf8))
         }
-        let places = try await services.search("上海 美食 & 咖啡", bounds: .init(west:121,south:31,east:122,north:32))
+        let places = try await services.search("上海 美食 & 咖啡", bounds: SearchBounds(west:121,south:31,east:122,north:32).expanded())
         XCTAssertEqual(places.first?.id, "poi-id")
         XCTAssertEqual(places.first?.coordinates.latitude, 31.2)
     }
@@ -321,15 +359,15 @@ final class RoutePolicyTests: XCTestCase {
         XCTAssertEqual(RouteCache.key(start, point(1000), mode: .auto), RouteCache.key(start, point(1000), mode: .walking))
         XCTAssertEqual(RouteCache.key(start, point(3000), mode: .auto), RouteCache.key(start, point(3000), mode: .driving))
     }
-    @MainActor func testTerminalFallbackDecodesNullMetricsAndSurvivesDiskCache() throws {
+    @MainActor func testTerminalFallbackDecodesNullMetricsAndSurvivesDiskCache() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         for fallback in ["OVER_DIRECTION_RANGE", "UNSUPPORTED_REGION"] {
             let payload = "{\"path\":[{\"lat\":31,\"lng\":121},{\"lat\":35,\"lng\":139}],\"distance\":null,\"duration\":null,\"fallback\":\"\(fallback)\"}"
             let route = try JSONDecoder().decode(PlannedRoute.self, from: Data(payload.utf8))
             XCTAssertTrue(route.isFallback); XCTAssertNil(route.distance); XCTAssertNil(route.duration)
-            RouteCache(directory: directory).put(route, key: fallback)
-            let reloaded = RouteCache(directory: directory).get(fallback)
+            await RouteCache(directory: directory).put(route, key: fallback)
+            let reloaded = await RouteCache(directory: directory).get(fallback)
             XCTAssertEqual(reloaded?.fallback, fallback)
             XCTAssertEqual(reloaded?.path.count, 2)
         }
@@ -350,6 +388,7 @@ final class LongPressLookupTests: XCTestCase {
     @MainActor func testLookupPopulatesNameAndAddressWithoutMovingPinOrUpdatingStaleDraft() async throws {
         let store = AppStore(settings: Settings(), demo: false, services: PlaceLookupMock())
         store.create(at: Coordinate(latitude: 31, longitude: 121))
+        XCTAssertFalse(store.draftExpanded, "Map long press opens at the medium detent")
         let oldID = store.draft?.id
         let chosen = Coordinate(latitude: 32, longitude: 122)
         store.create(at: chosen)

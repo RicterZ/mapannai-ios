@@ -56,13 +56,12 @@ struct SettingsView: View {
                     if let localError { Text(localError).foregroundStyle(.red).font(.footnote) }
                 }
                 Section {
-                    Text("标记地点 · 整理旅行 · 关联路线").font(.subheadline)
-                    Text("连线用于表达访问顺序。不会展示逐路口导航、路线公里数或预计耗时。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    #if targetEnvironment(simulator)
-                    Text("当前为模拟器，地图使用交互预览画布。高德地图需使用真机验证，服务端地点与路线 API 可正常调用。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    #endif
+                    Link("RicterZ/mapannai-plus", destination: URL(string: "https://github.com/RicterZ/mapannai-plus")!)
+                        .accessibilityIdentifier("about-web-repository")
+                    Link("RicterZ/mapannai-ios", destination: URL(string: "https://github.com/RicterZ/mapannai-ios")!)
+                        .accessibilityIdentifier("about-ios-repository")
+                    LabeledContent("LICENSE", value: "MIT")
+                        .accessibilityIdentifier("about-license")
                 } header: { Text("MapAnNai") }
             }.navigationTitle("连接设置").navigationBarTitleDisplayMode(.inline)
                 .toolbar {

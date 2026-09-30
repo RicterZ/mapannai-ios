@@ -110,13 +110,15 @@ extension MarkerIcon {
 struct MapMarkerCircle: View {
     let icon: MarkerIcon
     var selected = false
+    var compact = false
     var body: some View {
-        Text(icon.emoji).font(.system(size: 12))
+        Text(compact ? "" : icon.emoji).font(.system(size: 12))
             .frame(width: 28, height: 28)
             .background(selected ? Color(red: 0.145, green: 0.388, blue: 0.922) : icon.mapColor.opacity(0.75), in: Circle())
             .overlay(Circle().stroke(.white, lineWidth: 2))
-            .overlay(Circle().stroke(selected ? Theme.cyan : .clear, lineWidth: 2).padding(-3))
-            .shadow(color: .black.opacity(0.16), radius: 3, y: 2)
+            .overlay(Circle().stroke(selected && !compact ? Theme.cyan : .clear, lineWidth: 2).padding(-3))
+            .shadow(color: .black.opacity(compact ? 0 : 0.16), radius: 3, y: 2)
+            .scaleEffect(compact ? 10.0 / 28.0 : 1)
     }
 }
 

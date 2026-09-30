@@ -6,6 +6,7 @@ import SwiftUI
     private let servicesOverride: (any MapServices)?
     @Published private(set) var mapConfiguration: MapConfiguration = .current
     let routeCache = RouteCache()
+    private let routeProcessing = RouteProcessing()
     let markerRepository: MarkerRepository
     @Published var markers: [Marker] = []
     @Published var trips: [Trip] = []
@@ -207,7 +208,7 @@ import SwiftUI
     func fly(_ points: [Coordinate]) { if !points.isEmpty { camera = CameraCommand(points: points) } }
     func create(at coordinate: Coordinate) {
         guard coordinate.isValid else { return }
-        selectedSearchPlaceID = nil; draftExpanded = true
+        selectedSearchPlaceID = nil; draftExpanded = false
         var pending = MarkerDraft(coordinates: coordinate)
         pending.resolvingPlace = true
         draft = pending
@@ -237,7 +238,7 @@ import SwiftUI
                 results = markers.filter { $0.title.localizedCaseInsensitiveContains(query) }.map {
                     Place(id: $0.id, name: $0.title, address: $0.content.address ?? "", coordinates: $0.coordinates)
                 }
-            } else { results = try await mapServices.search(query, bounds: bounds) }
+            } else { results = try await mapServices.search(query, bounds: bounds?.expanded()) }
             guard searchGeneration == generation else { return }; searchResults = results
             fly(results.map(\.coordinates))
             if results.isEmpty { errorMessage = "当前地图范围内没有结果。可移动地图或使用更精确的城市与地点名称。" }
@@ -257,57 +258,43 @@ import SwiftUI
     func report(_ error: Error) { if error is CancellationError { return }; errorMessage = error.localizedDescription }
     func rebuildRoutes(preservingPlannedGeometry: Bool = false) {
         routeTask?.cancel(); let generation = UUID(); routeGeneration = generation
-        let segments = visibleDays.flatMap { day in
-            day.chains.enumerated().flatMap { chainIndex, chain -> [(DisplayRoute, Coordinate, Coordinate)] in
-                guard chain.count > 1 else { return [] }
-                return (1..<chain.count).compactMap { i in
-                    guard let a = markers.first(where: { $0.id == chain[i-1] }), let b = markers.first(where: { $0.id == chain[i] }) else { return nil }
-                    let display = DisplayRoute(id: "\(day.id)|\(chainIndex)|\(i)|\(a.id)|\(b.id)", dayID: day.id, tripID: day.tripId,
-                                               colorIndex: day.colorIndex ?? (trip?.days.firstIndex(where: { $0.id == day.id }) ?? 0),
-                                               points: RouteGeometry.curve(a.coordinates, b.coordinates), isPlanned: false)
-                    return (display, a.coordinates, b.coordinates)
-                }
-            }
-        }
-        let previous = Dictionary(uniqueKeysWithValues: displayRoutes.map { ($0.id, $0) })
-        let next = segments.map { segment -> DisplayRoute in
-            let route = segment.0
-            // Keep already planned geometry while selecting a subset of the same trip.
-            if preservingPlannedGeometry, let old = previous[route.id], old.isPlanned,
-               old.points.first == route.points.first, old.points.last == route.points.last {
-                return old
-            }
-            return route
-        }
-        var transaction = Transaction(); transaction.disablesAnimations = true
-        withTransaction(transaction) { displayRoutes = next }
-        routeError = nil; routeProgress = ""
-        guard settings.planning, !demo, !segments.isEmpty else { return }
+        // Capture immutable inputs before leaving the UI actor. Do not await API work
+        // before committing navigation, and do not publish partially built route arrays.
+        let days = visibleDays, snapshotMarkers = markers, selectedTrip = trip, previous = displayRoutes
+        let planning = settings.planning && !demo
         let mode = settings.mode, services = mapServices, provider = mapConfiguration.directionsProvider, server = settings.baseURL
+        routeError = nil; routeProgress = ""
         routeTask = Task {
             defer { if self.routeGeneration == generation { routeProgress = "" } }
+            guard let segments = try? await routeProcessing.build(days: days, markers: snapshotMarkers,
+                                                                  selectedTrip: selectedTrip, previous: previous,
+                                                                  preserve: preservingPlannedGeometry),
+                  !Task.isCancelled, self.routeGeneration == generation else { return }
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) { displayRoutes = segments.map(\.display) }
+            guard planning, !segments.isEmpty else { return }
             var failed = 0, completed = 0
-            for (display, a, b) in segments {
+            for segment in segments {
+                let display = segment.display, a = segment.origin, b = segment.destination
                 guard !Task.isCancelled, self.routeGeneration == generation else { return }
                 let key = RouteCache.key(a, b, mode: mode, provider: provider, server: server)
                 do {
-                    var route = routeCache.get(key)
+                    var route = await routeCache.get(key)
                     if route == nil {
                         route = try await services.route(a, b, mode: mode)
-                        if let route { routeCache.put(route, key: key) }
+                        try Task.checkCancellation()
+                        guard self.routeGeneration == generation else { return }
+                        if let route { await routeCache.put(route, key: key) }
                         try await Task.sleep(for: .milliseconds(1200))
                     }
+                    guard let route else { continue }
+                    let points = try await routeProcessing.displayPoints(route, origin: a, destination: b)
                     guard !Task.isCancelled, self.routeGeneration == generation else { return }
-                    if let route, let index = displayRoutes.firstIndex(where: { $0.id == display.id }) {
-                        if route.isFallback {
-                            displayRoutes[index].points = RouteGeometry.curve(a, b)
-                            displayRoutes[index].isPlanned = false
-                        } else {
-                            var points = route.path.map(\.coordinate)
-                            // Preserve itinerary endpoints even when the SDK snaps them onto a road.
-                            points.insert(a, at: 0); points.append(b)
-                            displayRoutes[index].points = RouteGeometry.smooth(points); displayRoutes[index].isPlanned = true
-                        }
+                    if let index = displayRoutes.firstIndex(where: { $0.id == display.id }) {
+                        var updated = displayRoutes[index]
+                        updated.points = points; updated.isPlanned = !route.isFallback
+                        var transaction = Transaction(); transaction.disablesAnimations = true
+                        withTransaction(transaction) { displayRoutes[index] = updated }
                     }
                 } catch {
                     if Task.isCancelled || self.routeGeneration != generation { return }
@@ -317,6 +304,9 @@ import SwiftUI
             }
         }
     }
+
+    func awaitRouteUpdates() async { await routeTask?.value }
+
     private func loadDemo() {
         let names = ["武康大楼", "武康庭", "安福路", "静安寺", "愚园路"]
         let coordinates = [(31.2050,121.4353),(31.2090,121.4365),(31.2140,121.4400),(31.2232,121.4450),(31.2250,121.4380)]
@@ -331,7 +321,25 @@ import SwiftUI
         if ProcessInfo.processInfo.arguments.contains("--long-title-demo") {
             trips[0].name = "呼和浩特·大同美食行"
         }
-        tripID = trips.first?.id; dayID = days.first?.id; rebuildRoutes(); fly(markers.map(\.coordinates))
+        if ProcessInfo.processInfo.arguments.contains("--scroll-demo") {
+            // Read-only long lists for navigation/scroll regression checks.
+            let memberIDs = markers.map(\.id)
+            trips = (1...12).map { number in
+                let id = "scroll-trip-\(number)"
+                let date = String(format: "2026-%02d-01", number)
+                let longDays = (1...12).map { day in
+                    TripDay(id: "\(id)-day-\(day)", tripId: id, date: String(format: "2026-%02d-%02d", number, day),
+                            title: "第\(day)天", colorIndex: day, markerIds: memberIDs,
+                            chains: Array(repeating: memberIDs, count: 4))
+                }
+                return Trip(id: id, name: "示例旅行 \(number)", startDate: date,
+                            endDate: String(format: "2026-%02d-12", number), days: longDays)
+            }
+            tripID = nil; dayID = nil
+        } else {
+            tripID = trips.first?.id; dayID = days.first?.id
+        }
+        rebuildRoutes(); fly(markers.map(\.coordinates))
     }
 }
 struct CameraCommand: Identifiable {

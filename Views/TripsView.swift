@@ -25,7 +25,7 @@ struct TripLibraryView: View {
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }.buttonStyle(.plain)
 
-                        }.padding(.vertical, 6)
+                        }.padding(.vertical, 6).contentShape(Rectangle())
                     }
                     if store.trips.isEmpty { Text("创建旅行，然后为每一天安排地点与路线。").foregroundStyle(.secondary) }
                     Button { creating = true } label: { Label("创建旅行", systemImage: "plus") }
@@ -80,6 +80,7 @@ struct TripEditorView: View {
                 }
                 Section("日期") {
                     DatePicker("开始日期", selection: $start, displayedComponents: .date)
+                        .accessibilityIdentifier("trip-start-date")
                     if trip == nil { DatePicker("结束日期", selection: $end, in: start..., displayedComponents: .date) }
                     else { Text("修改开始日期会保留天数并顺移每日安排。增减天数在每日行程中操作。").font(.caption).foregroundStyle(.secondary) }
                 }
@@ -288,12 +289,12 @@ struct PlaceSelectionRow: View {
         HStack(spacing: 12) {
             MapMarkerCircle(icon: marker.icon).frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 5) {
-                Text(marker.title).font(.subheadline.weight(.medium)).foregroundStyle(Theme.text)
+                Text(marker.title).font(.body).foregroundStyle(.primary)
                 if let address = marker.content.address, !address.isEmpty {
-                    Text(address).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+                    Text(address).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
-        }.padding(.vertical, 6)
+        }.padding(.vertical, 6).contentShape(Rectangle())
     }
 }
 struct DayMarkerPicker: View {
@@ -301,61 +302,64 @@ struct DayMarkerPicker: View {
     let day: TripDay
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    @State private var results: [Place] = []
     @State private var failure: String?
-    private var candidates: [Marker] {
-        let current = store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) ?? day
-        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !term.isEmpty else { return [] }
-        return Array(store.markers.filter {
-            !current.markerIds.contains($0.id) &&
-            ($0.title.localizedCaseInsensitiveContains(term) || ($0.content.address ?? "").localizedCaseInsensitiveContains(term))
-        }.prefix(30))
-    }
+    @State private var searching = false
+    @State private var generation = UUID()
+    @State private var searched = false
+    @State private var editingPlace: MarkerDraft?
+    @State private var completed = false
+    @State private var searchBounds: SearchBounds?
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
-                    TextField("搜索已保存地点", text: $query).autocorrectionDisabled()
-                        .submitLabel(.search).accessibilityIdentifier("saved-place-query")
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }
-                            .accessibilityLabel("清除搜索")
+            List {
+                if searching { ProgressView().frame(maxWidth: .infinity) }
+                ForEach(results) { place in
+                    Button {
+                        store.fly([place.coordinates])
+                        editingPlace = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(place.name).foregroundStyle(.primary)
+                            if !place.address.isEmpty { Text(place.address).font(.caption).foregroundStyle(.secondary) }
+                        }.padding(.vertical, 4)
+                    }.accessibilityIdentifier("add-place-result-\(place.id)")
+                }
+                if searched && !searching && results.isEmpty && failure == nil {
+                    Text("没有找到地点").foregroundStyle(.secondary)
+                }
+                if let failure { Text(failure).foregroundStyle(.red) }
+            }.navigationTitle("添加地点").navigationBarTitleDisplayMode(.inline)
+                .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索地图地点")
+                .onSubmit(of: .search) { Task { await search() } }
+                .onChange(of: query) { _, text in
+                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        generation = UUID(); results = []; searched = false; searching = false; failure = nil
                     }
-                }.padding(14).background(Theme.consoleRaised, in: RoundedRectangle(cornerRadius: 12)).padding(18)
-                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button { dismiss() } label: {
-                        Label("地图选点", systemImage: "map").font(.subheadline.weight(.medium))
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                    }.buttonStyle(.bordered).padding(.horizontal, 18).accessibilityIdentifier("choose-place-on-map")
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(candidates) { marker in
-                                Button {
-                                    Task {
-                                        if await store.addMarker(marker, to: day) { dismiss() }
-                                        else { failure = store.errorMessage }
-                                    }
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        PlaceSelectionRow(marker: marker)
-                                        Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(Theme.cyan)
-                                    }.contentShape(Rectangle()).padding(.horizontal, 18).padding(.vertical, 4)
-                                }.buttonStyle(.plain).disabled(store.saving).accessibilityIdentifier("day-add-place-\(marker.id)")
-                                Divider().padding(.leading, 66)
-                            }
-                            if candidates.isEmpty { Text("没有可加入的地点").font(.subheadline).foregroundStyle(Theme.muted).padding(24) }
-                        }
-                    }.scrollDismissesKeyboard(.interactively)
                 }
-                if let failure { Text(failure).font(.footnote).foregroundStyle(.red).padding(18) }
-                if store.saving { ProgressView().padding(12) }
-            }.navigationTitle("加入地点").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    PanelCloseToolbarItem(identifier: "close-place-picker") { dismiss() }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.accessibilityIdentifier("close-place-picker") } }
+                .sheet(item: $editingPlace, onDismiss: { if completed { dismiss() } }) { draft in
+                    MarkerEditorView(store: store, initial: draft, onSaved: { completed = true })
                 }
-        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible).interactiveDismissDisabled(store.saving)
+        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            .onAppear { searchBounds = store.bounds }
+    }
+    private func search() async {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return }
+        let request = UUID(); generation = request; searching = true; searched = true; failure = nil
+        defer { if generation == request { searching = false } }
+        do {
+            let places: [Place]
+            if store.demo {
+                places = store.markers.filter { $0.title.localizedCaseInsensitiveContains(term) }.map {
+                    Place(id: $0.id, name: $0.title, address: $0.content.address ?? "", coordinates: $0.coordinates)
+                }
+            } else {
+                places = try await store.mapServices.search(term, bounds: searchBounds?.expanded(factor: 2))
+            }
+            guard generation == request else { return }
+            results = places
+        } catch { if generation == request { failure = error.localizedDescription } }
     }
 }

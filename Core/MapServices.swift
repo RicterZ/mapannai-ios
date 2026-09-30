@@ -21,8 +21,8 @@ struct FixedMapConfigurationSource: MapConfigurationSource {
 
 struct SearchBounds: Codable {
     var west: Double; var south: Double; var east: Double; var north: Double
-    func expanded() -> SearchBounds {
-        let dx = (east-west)*0.2, dy = (north-south)*0.2
+    func expanded(factor: Double = 0.2) -> SearchBounds {
+        let dx = (east-west)*factor, dy = (north-south)*factor
         return SearchBounds(west: max(-180, west-dx), south: max(-90, south-dy), east: min(180, east+dx), north: min(90, north+dy))
     }
 }
@@ -49,22 +49,22 @@ struct ServerMapServices: MapServices {
         }
     }
     private struct DetailsResponse: Decodable { var success: Bool; var data: SearchResult }
-    func search(_ query: String, bounds: SearchBounds?) async throws -> [Place] {
+    nonisolated func search(_ query: String, bounds: SearchBounds?) async throws -> [Place] {
         var parts = URLComponents(); parts.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "limit", value: "20")]
         if let bounds {
-            let data = try JSONEncoder().encode(bounds.expanded())
+            let data = try JSONEncoder().encode(bounds)
             parts.queryItems?.append(URLQueryItem(name: "bounds", value: String(decoding: data, as: UTF8.self)))
         }
         let response: SearchResponse = try await client.request("search?\(parts.percentEncodedQuery ?? "")")
         guard response.success else { throw AppError.message("搜索失败，请重试") }
         return response.data.filter { $0.coordinates.isValid }.map(\.place)
     }
-    func details(at coordinate: Coordinate) async throws -> Place {
+    nonisolated func details(at coordinate: Coordinate) async throws -> Place {
         let response: DetailsResponse = try await client.request("places", method: "POST", body: ["latitude": coordinate.latitude, "longitude": coordinate.longitude])
         guard response.success, response.data.coordinates.isValid else { throw AppError.message("未获取到有效地点详情") }
         return response.data.place
     }
-    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TravelMode) async throws -> PlannedRoute {
+    nonisolated func route(_ origin: Coordinate, _ destination: Coordinate, mode: TravelMode) async throws -> PlannedRoute {
         let route: PlannedRoute = try await client.request("directions", method: "POST", body: ["origin": ["lat": origin.latitude, "lng": origin.longitude], "destination": ["lat": destination.latitude, "lng": destination.longitude], "mode": mode.resolved(from: origin, to: destination).rawValue])
         guard route.path.count > 1, route.path.allSatisfy({ $0.coordinate.isValid }) else { throw AppError.message("服务未返回有效路线，请尝试另一种出行方式") }
         return route

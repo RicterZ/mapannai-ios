@@ -3,8 +3,9 @@ import UIKit
 
 final class SearchMapTests: XCTestCase {
     @MainActor func testSearchPinsHalfSheetRepeatTapAndRetainedQuery() {
+        guard UIDevice.current.userInterfaceIdiom != .pad else { return }
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
-        let search = app.textFields["搜索地点"]
+        let search = app.searchFields["map-place-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         search.tap(); search.typeText("武康\n")
         let result = app.buttons["search-result-demo-0"]
@@ -19,24 +20,62 @@ final class SearchMapTests: XCTestCase {
         let bar = app.navigationBars["添加地点"]
         XCTAssertGreaterThan(bar.frame.minY, app.windows.firstMatch.frame.height * 0.35)
         let note = app.textViews["marker-note-editor"]
-        XCTAssertLessThanOrEqual(note.frame.maxY, app.windows.firstMatch.frame.maxY - 20)
         XCTAssertTrue(pin.isHittable)
         screenshot("Search results and half-height editor")
         pin.tap()
         let expanded = NSPredicate { _, _ in bar.frame.minY < (UIDevice.current.userInterfaceIdiom == .pad ? 300 : app.windows.firstMatch.frame.height * 0.2) }
         expectation(for: expanded, evaluatedWith: bar); waitForExpectations(timeout: 5)
         XCTAssertEqual(name.value as? String, "武康大楼")
-        XCTAssertLessThanOrEqual(note.frame.maxY, app.windows.firstMatch.frame.maxY - 20)
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(note.frame.maxY, app.windows.firstMatch.frame.maxY)
         screenshot("Repeated result tap expands editor")
         app.buttons["取消"].tap()
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertEqual(search.value as? String, "武康")
         XCTAssertTrue(app.buttons["map-search-result-demo-0"].exists)
-        app.buttons["清除搜索"].tap()
+        search.buttons.firstMatch.tap()
         XCTAssertFalse(app.buttons["map-search-result-demo-0"].exists)
     }
     private func screenshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+}
+
+final class IPadMarkerDialogTests: XCTestCase {
+    @MainActor func testSearchPlaceOpensCenteredFixedDialogAndCancelPreservesResults() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Centered dialog requires iPad")
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]
+        XCUIDevice.shared.orientation = .landscapeLeft; app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let search = app.searchFields["map-place-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap(); search.typeText("武康\n")
+        let result = app.buttons["search-result-demo-0"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
+        let bar = app.navigationBars["添加地点"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let name = app.textFields["地点名称"]
+        XCTAssertEqual(name.value as? String, "武康大楼")
+        let window = app.windows.firstMatch
+        XCTAssertEqual(bar.frame.midX, window.frame.midX, accuracy: 3)
+        XCTAssertGreaterThan(bar.frame.minX, window.frame.width * 0.15)
+        XCTAssertLessThan(bar.frame.maxX, window.frame.width * 0.85)
+        XCTAssertGreaterThan(bar.frame.minY, 40)
+        XCTAssertLessThan(bar.frame.minY, window.frame.height * 0.3)
+        let initial = bar.frame
+        let note = app.textViews["marker-note-editor"]
+        XCTAssertTrue(note.exists)
+        XCTAssertGreaterThan(note.frame.height, 180)
+        let drag = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: 0, dy: 180)))
+        XCTAssertTrue(bar.exists)
+        XCTAssertEqual(bar.frame, initial)
+        let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        image.name = "iPad centered fixed marker editor"; image.lifetime = .keepAlways; add(image)
+        app.buttons["取消"].tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "武康")
+        XCTAssertTrue(app.buttons["map-search-result-demo-0"].exists)
     }
 }

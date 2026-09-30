@@ -22,9 +22,10 @@ final class DayCameraTests: XCTestCase {
         store.select(trip: trip)
         XCTAssertEqual(store.camera?.id, camera)
     }
-    @MainActor func testSelectionKeepsPlannedGeometryButReplanningResetsIt() throws {
+    @MainActor func testSelectionKeepsPlannedGeometryButReplanningResetsIt() async throws {
         let store = AppStore(settings: Settings(), demo: true)
         let trip = try XCTUnwrap(store.trip)
+        await store.awaitRouteUpdates()
         var route = try XCTUnwrap(store.displayRoutes.first)
         let midpoint = Coordinate(latitude: 31.22, longitude: 121.45)
         route.points = [try XCTUnwrap(route.points.first), midpoint, try XCTUnwrap(route.points.last)]
@@ -35,6 +36,7 @@ final class DayCameraTests: XCTestCase {
         store.select(trip: trip, day: trip.days[0], focus: false)
         XCTAssertEqual(store.displayRoutes.first { $0.id == route.id }?.points, route.points)
         store.rebuildRoutes()
+        await store.awaitRouteUpdates()
         XCTAssertFalse(try XCTUnwrap(store.displayRoutes.first).isPlanned)
     }
     @MainActor func testDayUsesFirstNonemptyChainAndAbsoluteZoom() throws {

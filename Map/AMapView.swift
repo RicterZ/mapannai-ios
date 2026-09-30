@@ -49,15 +49,26 @@ struct AMapNativeRenderer: UIViewRepresentable {
         var lines: [String: (MAPolyline, MAPolyline)] = [:]
         var overlayStyle: [ObjectIdentifier: (UIColor, Bool)] = [:]
         var lastRoutes: [String: [Coordinate]] = [:]
+        private let routeProcessing = RouteProcessing()
+        private var coordinateTasks: [String: Task<Void, Never>] = [:]
+        private var pendingCoordinates: [String: [Coordinate]] = [:]
         var lastCamera: UUID?
         var lastLocate: UUID?
+        var routesVisible = true
+        var lastStyledCompact: Bool?
+        var lastStyledSelection: String?
         var pinImages: [String: UIImage] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
             let wanted = Set(store.mapMarkers.map(\.id))
             for id in Array(pins.keys) where !wanted.contains(id) { if let pin = pins.removeValue(forKey: id) { map.removeAnnotation(pin) } }
             for marker in store.mapMarkers {
-                if let pin = pins[marker.id] { if pin.marker != marker { pin.update(marker) } }
+                if let pin = pins[marker.id] {
+                    if pin.marker != marker {
+                        pin.update(marker)
+                        if let view = map.view(for: pin) { style(view, pin: pin, map: map) }
+                    }
+                }
                 else { let pin = Pin(marker); pins[marker.id] = pin; map.addAnnotation(pin) }
             }
             let wantedSearch = Set(store.searchResults.map(\.id))
@@ -72,29 +83,35 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 if let pin = searchPins[place.id], let view = map.view(for: pin) { styleSearch(view, pin: pin) }
             }
+            updateZoomPresentation(map)
             let routeIDs = Set(store.displayRoutes.map(\.id))
             for id in Array(lines.keys) where !routeIDs.contains(id) {
                 if let (white, color) = lines.removeValue(forKey: id) {
                     map.removeOverlays([white, color]); overlayStyle.removeValue(forKey: ObjectIdentifier(white)); overlayStyle.removeValue(forKey: ObjectIdentifier(color))
                 }; lastRoutes.removeValue(forKey: id)
             }
+            for id in Array(coordinateTasks.keys) where !routeIDs.contains(id) {
+                coordinateTasks.removeValue(forKey: id)?.cancel()
+                pendingCoordinates.removeValue(forKey: id)
+            }
             for route in store.displayRoutes {
-                let tint = UIColor(Theme.color(route.colorIndex))
-                var coordinates = route.points.map { point -> CLLocationCoordinate2D in
-                    let p = Coordinates.gcj(point); return CLLocationCoordinate2D(latitude: p.latitude, longitude: p.longitude)
+                if lines[route.id] != nil && lastRoutes[route.id] == route.points {
+                    coordinateTasks.removeValue(forKey: route.id)?.cancel()
+                    pendingCoordinates.removeValue(forKey: route.id)
+                    continue
                 }
-                if let (white, colored) = lines[route.id] {
-                    if lastRoutes[route.id] != route.points {
-                        white.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
-                        colored.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
-                    }
-                } else {
-                    guard coordinates.count > 1, let white = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)),
-                          let colored = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)) else { continue }
-                    overlayStyle[ObjectIdentifier(white)] = (.white, true); overlayStyle[ObjectIdentifier(colored)] = (tint, false)
-                    lines[route.id] = (white, colored); map.addOverlays([white, colored])
+                if pendingCoordinates[route.id] == route.points { continue }
+                coordinateTasks[route.id]?.cancel()
+                pendingCoordinates[route.id] = route.points
+                let processor = routeProcessing
+                coordinateTasks[route.id] = Task { [weak self, weak map] in
+                    guard let points = try? await processor.amapCoordinates(route.points), !Task.isCancelled,
+                          let self, let map, self.pendingCoordinates[route.id] == route.points,
+                          self.store.displayRoutes.contains(where: { $0.id == route.id && $0.points == route.points }) else { return }
+                    self.applyRoute(route, coordinates: points, map: map)
+                    self.pendingCoordinates.removeValue(forKey: route.id)
+                    self.coordinateTasks.removeValue(forKey: route.id)
                 }
-                lastRoutes[route.id] = route.points
             }
             if let command = store.camera, lastCamera != command.id {
                 lastCamera = command.id
@@ -141,6 +158,23 @@ struct AMapNativeRenderer: UIViewRepresentable {
             style(view, pin: pin, map: mapView)
             return view
         }
+        private func applyRoute(_ route: DisplayRoute, coordinates points: [Coordinate], map: MAMapView) {
+            // UIKit/SDK mutation remains on MainActor; conversion already ran off it.
+            var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            let tint = UIColor(Theme.color(route.colorIndex))
+            if let (white, colored) = lines[route.id] {
+                white.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
+                colored.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
+            } else {
+                guard coordinates.count > 1, let white = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)),
+                      let colored = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)) else { return }
+                overlayStyle[ObjectIdentifier(white)] = (.white, true)
+                overlayStyle[ObjectIdentifier(colored)] = (tint, false)
+                lines[route.id] = (white, colored)
+                if routesVisible { map.addOverlays([white, colored]) }
+            }
+            lastRoutes[route.id] = route.points
+        }
         private func styleSearch(_ view: MAAnnotationView, pin: SearchPin) {
             let selected = store.selectedSearchPlaceID == pin.place.id
             let key = "search-\(pin.number)-\(selected)"
@@ -149,11 +183,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.isAccessibilityElement = true; view.accessibilityLabel = "搜索结果\(pin.number)：\(pin.place.name)"
             view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
         }
-        private func style(_ view: MAAnnotationView, pin: Pin, map: MAMapView) {
-            let dot = map.zoomLevel < 9
-            let selected = store.selectedMarker?.id == pin.markerID
+        private func markerImage(_ pin: Pin, dot: Bool, selected: Bool) -> UIImage {
             let key = "\(pin.marker.icon.rawValue)-\(dot)-\(selected)"
-            if let image = pinImages[key] { view.image = image; view.centerOffset = .zero; return }
+            if let image = pinImages[key] { return image }
             let renderer = UIGraphicsImageRenderer(size: CGSize(width: 44, height: 44))
             let image = renderer.image { context in
                 let cg = context.cgContext
@@ -180,11 +212,62 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     text.draw(at: CGPoint(x: (44-size.width)/2, y: (44-size.height)/2), withAttributes: attrs)
                 }
             }
-            pinImages[key] = image; view.image = image; view.centerOffset = .zero
+            pinImages[key] = image
+            return image
+        }
+        private func style(_ view: MAAnnotationView, pin: Pin, map: MAMapView) {
+            let compact = MapZoomPresentation.isCompact(Double(map.zoomLevel))
+            let selected = store.selectedMarker?.id == pin.markerID
+            let image = markerImage(pin, dot: false, selected: selected)
+            if view.image !== image { view.image = image }
+            view.centerOffset = .zero
+            let dotView: UIImageView
+            if let existing = view.viewWithTag(48276) as? UIImageView { dotView = existing }
+            else {
+                dotView = UIImageView(frame: view.bounds)
+                dotView.tag = 48276; dotView.isUserInteractionEnabled = false
+                dotView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                view.addSubview(dotView)
+            }
+            let dotImage = markerImage(pin, dot: true, selected: selected)
+            if dotView.image !== dotImage { dotView.image = dotImage }
+            let mode = compact ? 1 : 2
+            let animate = view.tag != 0 && view.tag != mode && !UIAccessibility.isReduceMotionEnabled
+            if view.tag != mode {
+                let changes = {
+                    view.imageView.transform = compact ? CGAffineTransform(scaleX: 10.0/28.0, y: 10.0/28.0) : .identity
+                    view.imageView.alpha = compact ? 0 : 1
+                    dotView.transform = compact ? .identity : CGAffineTransform(scaleX: 2.8, y: 2.8)
+                    dotView.alpha = compact ? 1 : 0
+                }
+                if animate {
+                    UIView.animate(withDuration: MapZoomPresentation.transitionDuration, delay: 0,
+                                   options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut], animations: changes)
+                } else { UIView.performWithoutAnimation(changes) }
+                view.tag = mode
+            }
             view.isAccessibilityElement = true; view.accessibilityLabel = pin.marker.title
+            view.accessibilityIdentifier = "map-marker-\(pin.markerID)"
+        }
+        private func updateZoomPresentation(_ map: MAMapView) {
+            updatePinStyles(map)
+            let visible = !MapZoomPresentation.isCompact(Double(map.zoomLevel))
+            guard visible != routesVisible else { return }
+            routesVisible = visible
+            let overlays = lines.values.flatMap { [$0.0, $0.1] }
+            if visible { map.addOverlays(overlays) } else { map.removeOverlays(overlays) }
+        }
+        func mapViewRegionChanged(_ mapView: MAMapView!) {
+            updateZoomPresentation(mapView)
         }
         private func updatePinStyles(_ map: MAMapView) {
-            for pin in pins.values {
+            let compact = MapZoomPresentation.isCompact(Double(map.zoomLevel))
+            let selected = store.selectedMarker?.id
+            guard lastStyledCompact != compact || lastStyledSelection != selected else { return }
+            let changedZoom = lastStyledCompact != compact
+            let previous = lastStyledSelection
+            lastStyledCompact = compact; lastStyledSelection = selected
+            for pin in pins.values where changedZoom || pin.markerID == previous || pin.markerID == selected {
                 if let view = map.view(for: pin) { style(view, pin: pin, map: map) }
             }
         }
@@ -205,6 +288,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             store.create(at: Coordinates.wgs(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)))
         }
         func mapView(_ mapView: MAMapView!, didSingleTappedAt coordinate: CLLocationCoordinate2D) {
+            guard !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
             let tap = mapView.convert(coordinate, toPointTo: mapView)
             let candidates = store.displayRoutes.map { route -> (DisplayRoute, Double) in
                 let path = route.points.map { point -> (Double, Double) in
@@ -221,7 +305,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             else if let first = unique.first { store.selectRoute(first) }
         }
         func mapView(_ mapView: MAMapView!, regionDidChangeAnimated animated: Bool) {
-            updatePinStyles(mapView)
+            updateZoomPresentation(mapView)
             let rect = mapView.bounds
             let nw = mapView.convert(CGPoint(x: rect.minX, y: rect.minY), toCoordinateFrom: mapView)
             let se = mapView.convert(CGPoint(x: rect.maxX, y: rect.maxY), toCoordinateFrom: mapView)
@@ -235,6 +319,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
 // Deliberately labeled preview, not a replacement map provider or production SDK verification.
 struct PreviewMap: View {
     @ObservedObject var store: AppStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var previewZoom = ProcessInfo.processInfo.arguments.contains("--compact-map-demo") ? 9.0 : 13.0
+    @GestureState private var magnification = 1.0
+    private var zoom: Double { previewZoom + log2(max(0.01, magnification)) }
     func point(_ p: Coordinate, size: CGSize) -> CGPoint {
         let insets = store.mapViewportInsets
         let usableWidth = max(80, size.width - insets.left - insets.right)
@@ -257,7 +345,7 @@ struct PreviewMap: View {
                         path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y-80))
                         context.stroke(path, with: .color(.white.opacity(0.7)), lineWidth: 10)
                     }
-                    for route in store.displayRoutes {
+                    for route in MapZoomPresentation.isCompact(zoom) ? [] : store.displayRoutes {
                         var path = Path(); for (index, p) in route.points.enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                         }
@@ -267,9 +355,12 @@ struct PreviewMap: View {
                 }
                 ForEach(store.mapMarkers) { marker in
                     Button { store.focus(marker) } label: {
-                        MapMarkerCircle(icon: marker.icon, selected: store.selectedMarker?.id == marker.id)
+                        MapMarkerCircle(icon: marker.icon, selected: store.selectedMarker?.id == marker.id,
+                                        compact: MapZoomPresentation.isCompact(zoom))
+                            .animation(reduceMotion ? nil : .easeOut(duration: MapZoomPresentation.transitionDuration), value: MapZoomPresentation.isCompact(zoom))
                             .frame(width: 44, height: 44).contentShape(Circle())
                     }.buttonStyle(.plain).accessibilityLabel(marker.title).accessibilityIdentifier("map-marker-\(marker.id)")
+                        .accessibilityValue(MapZoomPresentation.isCompact(zoom) ? "圆点" : "图标")
                         .position(point(marker.coordinates, size: proxy.size))
                 }
                 ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
@@ -285,6 +376,12 @@ struct PreviewMap: View {
                 Text("模拟器 · 交互预览画布").font(.caption2).foregroundStyle(.secondary)
                     .padding(6).background(.regularMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.bottom, store.mapViewportInsets.bottom+12).padding(.leading, store.mapViewportInsets.left+8)
             }
+            .accessibilityElement(children: .contain).accessibilityIdentifier("preview-map-surface")
+            .simultaneousGesture(MagnifyGesture().updating($magnification) { value, state, _ in
+                state = value.magnification
+            }.onEnded { value in
+                previewZoom = min(20, max(3, previewZoom + log2(max(0.01, value.magnification))))
+            })
             .onLongPressGesture {
                 store.create(at: Coordinate(latitude: 31.219, longitude: 121.443))
             }
