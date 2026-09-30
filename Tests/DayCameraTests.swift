@@ -2,6 +2,26 @@ import XCTest
 @testable import MapAnNai
 
 final class DayCameraTests: XCTestCase {
+    @MainActor func testTripSelectionUsesFirstValidStopAtZoom12() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        var trip = try XCTUnwrap(store.trip)
+        var first = trip.days[0]
+        first.chains = [["missing", store.markers[2].id]]
+        first.markerIds = [store.markers[0].id]
+        trip.days = [trip.days[1], first]
+        store.select(trip: nil, focus: false)
+        store.select(trip: trip)
+        XCTAssertEqual(store.camera?.points, [store.markers[2].coordinates])
+        XCTAssertEqual(store.camera?.zoomLevel, 12)
+        let camera = store.camera?.id
+        store.select(trip: nil, focus: false)
+        store.select(trip: trip, focus: false)
+        XCTAssertEqual(store.camera?.id, camera)
+        first.chains = []; first.markerIds = []
+        trip.days = [first, trip.days[0]]
+        store.select(trip: trip)
+        XCTAssertEqual(store.camera?.id, camera)
+    }
     @MainActor func testDayUsesFirstNonemptyChainAndAbsoluteZoom() throws {
         let store = AppStore(settings: Settings(), demo: true)
         let trip = try XCTUnwrap(store.trip)

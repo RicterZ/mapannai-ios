@@ -184,6 +184,13 @@ import SwiftUI
                   let firstID = day.chains.first(where: { !$0.isEmpty })?.first,
                   let marker = markers.first(where: { $0.id == firstID && $0.coordinates.isValid }) else { return }
             camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 15)
+        } else if let trip {
+            guard let firstDay = trip.days.sorted(by: { $0.date < $1.date }).first else { return }
+            let orderedIDs = firstDay.chains.flatMap { $0 } + firstDay.markerIds
+            guard let marker = orderedIDs.lazy.compactMap({ id in
+                self.markers.first { $0.id == id && $0.coordinates.isValid }
+            }).first else { return }
+            camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 12)
         } else {
             fly(visibleMarkers.filter { $0.coordinates.isValid }.map(\.coordinates))
         }
