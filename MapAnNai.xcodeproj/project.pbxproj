@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0679CC248D57929A408668B1 /* JourneyTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */; };
 		0A3C38A375DBE8FF853161E1 /* RouteCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4960F0B624456BC80191B2F2 /* RouteCache.swift */; };
 		0D8DA2E591B528E9625BE0C1 /* TripEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5405CAA1777E9322D0EC643D /* TripEditorTests.swift */; };
 		0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */; };
@@ -93,6 +94,7 @@
 		5C8C9BD1EBF34357D9BDA56D /* JourneySheetBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneySheetBackground.swift; sourceTree = "<group>"; };
 		5F1DE90E8066F7692BEC6055 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompressionTests.swift; sourceTree = "<group>"; };
+		676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyTitleTests.swift; sourceTree = "<group>"; };
 		6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyBackgroundTests.swift; sourceTree = "<group>"; };
 		7242A04536ED3C50E6452593 /* MarkerImageCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompression.swift; sourceTree = "<group>"; };
 		77B1BBFF8F1D29583F6C7FF1 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
@@ -206,6 +208,7 @@
 				E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */,
 				6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */,
 				A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */,
+				676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */,
 				AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */,
 				4869E83E16B78BCCC652AAF2 /* PanelControlsTests.swift */,
 				0B62253EAC3829164040323C /* SearchMapTests.swift */,
@@ -406,6 +409,7 @@
 				27733094231AD19C78C10729 /* InteractionTests.swift in Sources */,
 				D35081C38CB650DFA49D2085 /* JourneyBackgroundTests.swift in Sources */,
 				8ACAB632ABC3011A72B69678 /* JourneySwitchingTests.swift in Sources */,
+				0679CC248D57929A408668B1 /* JourneyTitleTests.swift in Sources */,
 				4ACB817D344D263D4236929F /* MarkerEditorTests.swift in Sources */,
 				4692A1E0AFE15F940C05AF1A /* PanelControlsTests.swift in Sources */,
 				5DF08649B912E7DCD153DAF9 /* SearchMapTests.swift in Sources */,
@@ -481,7 +485,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -621,7 +625,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

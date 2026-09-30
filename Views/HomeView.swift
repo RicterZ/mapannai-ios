@@ -15,6 +15,7 @@ struct HomeView: View {
     @State private var journeyAvailableHeight: CGFloat = 0
     @State private var nativeJourneyPresented = false
     @State private var journeyPath: [JourneyDestination] = []
+    @State private var journeyNavigationWidth: CGFloat = 0
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var sheetDrag: CGFloat = 0
     @StateObject private var location = LocationPermission()
@@ -140,6 +141,13 @@ struct HomeView: View {
                     journeyPage(destination, sidebar: sidebar)
                 }
         }.tint(Theme.accent)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { journeyNavigationWidth = geometry.size.width }
+                        .onChange(of: geometry.size.width) { _, width in journeyNavigationWidth = width }
+                }
+            }
             .onAppear {
                 var transaction = Transaction(); transaction.disablesAnimations = true
                 withTransaction(transaction) { journeyPath = journeyDestinations }
@@ -177,11 +185,11 @@ struct HomeView: View {
         }
         return page.trip?.name ?? "旅途"
     }
-    private func journeyHeading(_ destination: JourneyDestination?) -> some View {
+    private func journeyHeading(_ destination: JourneyDestination?, sidebar: Bool) -> some View {
         let page = scope(destination)
-        return VStack(alignment: .leading, spacing: 3) {
+        return VStack(alignment: .center, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(journeyTitle(destination)).font(.headline).lineLimit(1)
+                Text(journeyTitle(destination)).font(.headline).lineLimit(1).minimumScaleFactor(0.75)
                     .accessibilityIdentifier("itinerary-panel-title")
                 if let day = page.day { Text(shortDate(day.date)).font(.caption).foregroundStyle(.secondary) }
             }
@@ -194,7 +202,10 @@ struct HomeView: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else { Text("\(store.trips.count)个旅行").font(.caption).foregroundStyle(.secondary) }
             }
-        }.contextMenu {
+        }
+        .frame(width: max(80, journeyNavigationWidth - 2 * (sidebar ? 84 : 116)))
+        .multilineTextAlignment(.center)
+        .contextMenu {
             if let day = page.day {
                 Button("日期标题", systemImage: "pencil") { dayTitle = day.title ?? ""; editingDayTitle = true }
                 Button("删除日期", systemImage: "trash", role: .destructive) { deletingPanelDay = true }
@@ -231,25 +242,29 @@ struct HomeView: View {
             .navigationTitle(journeyTitle(destination)).navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden()
             .toolbar { journeyToolbar(sidebar: sidebar, destination: destination) }
+            .background(JourneyToolbarContainerOffset())
     }
 
     @ToolbarContentBuilder private func journeyToolbar(sidebar: Bool, destination: JourneyDestination?) -> some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            journeyHeading(destination)
+            journeyHeading(destination, sidebar: sidebar).offset(y: 4)
         }
         journeyLeadingControl(destination: destination, sidebar: sidebar)
         if !sidebar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("定位到当前位置", systemImage: "location") { location.request { store.locating = UUID() } }
-                    .labelStyle(.iconOnly).accessibilityIdentifier("itinerary-header-location")
+                Button { location.request { store.locating = UUID() } } label: {
+                    toolbarActionIcon("location")
+                }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button(sidebar ? "收起行程" : sheetDetent == .compact ? "展开旅途" : "收起旅途",
-                   systemImage: sidebar ? "sidebar.left" : sheetDetent == .compact ? "chevron.up" : "chevron.down") {
+            Button {
                 if sidebar { togglePanel() }
                 else { sheetDetent = sheetDetent == .compact ? .half : .compact }
-            }.labelStyle(.iconOnly).accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-collapse")
+            } label: {
+                toolbarActionIcon(sidebar ? "sidebar.left" : sheetDetent == .compact ? "chevron.up" : "chevron.down")
+            }.accessibilityLabel(sidebar ? "收起行程" : sheetDetent == .compact ? "展开旅途" : "收起旅途")
+                .accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-collapse")
         }
     }
 
@@ -262,23 +277,27 @@ struct HomeView: View {
     }
     private func journeyLeadingItem(destination: JourneyDestination?, sidebar: Bool) -> some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            if scope(destination).trip != nil {
-                Button {
-                    guard !journeyPath.isEmpty else { return }
-                    withAnimation(reduceMotion ? nil : .default) { journeyPath.removeLast() }
-                } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 20))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+            HStack(spacing: 0) {
+                if scope(destination).trip != nil {
+                    Button {
+                        guard !journeyPath.isEmpty else { return }
+                        withAnimation(reduceMotion ? nil : .default) { journeyPath.removeLast() }
+                    } label: {
+                        toolbarActionIcon("chevron.left").frame(width: 30, height: 30)
+                    }
+                        .modifier(JourneyCircleButtonStyle())
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                        .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
+                } else if sidebar || sheetDetent != .compact {
+                    Button { creatingTrip = true } label: {
+                        toolbarActionIcon("plus").frame(width: 30, height: 30)
+                    }.modifier(JourneyCircleButtonStyle())
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                        .accessibilityLabel("创建旅行").accessibilityIdentifier("create-journey")
                 }
-                    .modifier(JourneyCircleButtonStyle())
-                    .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
-            } else if sidebar || sheetDetent != .compact {
-                Button { creatingTrip = true } label: {
-                    Image(systemName: "plus").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle())
-                }.modifier(JourneyCircleButtonStyle())
-                    .accessibilityLabel("创建旅行").accessibilityIdentifier("create-journey")
             }
+            // Match the native trailing toolbar reservation so principal stays at the bar center.
+            .frame(width: sidebar ? 44 : 88, alignment: .leading)
         }
     }
     private func mapContent(layout: MapLayout, topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat) -> some View {
@@ -344,7 +363,7 @@ struct HomeView: View {
                 }.buttonStyle(.plain).foregroundStyle(Theme.cyan).accessibilityIdentifier("date-selector").accessibilityLabel("选择日期")
                 Button { showDates = false; store.select(trip: nil, focus: false) } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted)
-                        .frame(width: 28, height: 28).background(Theme.consoleRaised, in: Circle())
+                        .frame(width: 30, height: 30).background(Theme.consoleRaised, in: Circle())
                         .frame(width: 36, height: 44)
                 }.accessibilityLabel("退出旅行").accessibilityIdentifier("exit-journey")
             }.padding(.trailing, 6).background(.white, in: Capsule())
@@ -456,6 +475,14 @@ struct HomeView: View {
     private var panelActionTransition: AnyTransition {
         reduceMotion ? .identity : .opacity.combined(with: .scale(scale: 0.85))
     }
+    // Native toolbars provide their own padding and touch targets.
+    private func toolbarActionIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .resizable().scaledToFit()
+            .font(.system(size: 20, weight: .regular))
+            .frame(width: 20, height: 20, alignment: .center)
+    }
+
     // Normalize the drawn symbol bounds, not just the font size or tap target.
     private func panelActionIcon(_ symbol: String) -> some View {
         Image(systemName: symbol)

@@ -36,3 +36,38 @@ struct NativePlaceSearchBar: UIViewRepresentable {
         }
     }
 }
+
+/// Move the native bar (including its system glass groups), not its button labels.
+/// The principal title compensates for this translation to retain its position.
+struct JourneyToolbarContainerOffset: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.applyOffset()
+        DispatchQueue.main.async { [weak controller] in controller?.applyOffset() }
+    }
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.restoreOffset()
+    }
+
+    final class Controller: UIViewController {
+        private weak var adjustedBar: UINavigationBar?
+        override func loadView() {
+            view = UIView(); view.isUserInteractionEnabled = false
+        }
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated); applyOffset()
+        }
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews(); applyOffset()
+        }
+        func applyOffset() {
+            guard let bar = navigationController?.navigationBar else { return }
+            if adjustedBar !== bar { restoreOffset(); adjustedBar = bar }
+            bar.transform = CGAffineTransform(translationX: 0, y: -4)
+        }
+        func restoreOffset() {
+            adjustedBar?.transform = .identity
+            adjustedBar = nil
+        }
+    }
+}

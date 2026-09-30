@@ -328,6 +328,9 @@ import SwiftUI
         let days = [TripDay(id: "day-1", tripId: "demo-trip", date: "2026-10-01", title: "梧桐街区漫步", colorIndex: 0, markerIds: ["demo-0","demo-1","demo-2"], chains: [["demo-0","demo-1","demo-2"]]),
                     TripDay(id: "day-2", tripId: "demo-trip", date: "2026-10-02", title: "城市与旧时光", colorIndex: 1, markerIds: ["demo-2","demo-3","demo-4"], chains: [["demo-2","demo-3","demo-4"]])]
         trips = [Trip(id: "demo-trip", name: "上海 · 秋日散步", description: "示例行程", startDate: "2026-10-01", endDate: "2026-10-02", emoji: "🍂", days: days)]
+        if ProcessInfo.processInfo.arguments.contains("--long-title-demo") {
+            trips[0].name = "呼和浩特·大同美食行"
+        }
         tripID = trips.first?.id; dayID = days.first?.id; rebuildRoutes(); fly(markers.map(\.coordinates))
     }
 }
