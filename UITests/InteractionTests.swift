@@ -33,7 +33,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertLessThan(back.frame.midY, app.textFields["搜索地点"].frame.minY)
         back.tap()
         XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["date-selector"].exists)
+        XCTAssertTrue(app.buttons["date-selector"].staticTexts["总览 · 共2天"].exists)
         app.buttons["journey-back"].tap()
         XCTAssertTrue(app.staticTexts["旅途"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["journey-back"].exists)

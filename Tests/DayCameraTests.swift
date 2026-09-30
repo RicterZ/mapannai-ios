@@ -1,0 +1,49 @@
+import XCTest
+@testable import MapAnNai
+
+final class DayCameraTests: XCTestCase {
+    @MainActor func testDayUsesFirstNonemptyChainAndAbsoluteZoom() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = try XCTUnwrap(store.trip)
+        var day = trip.days[0]
+        day.chains = [[], [store.markers[2].id, store.markers[0].id]]
+        day.markerIds = [store.markers[0].id, store.markers[2].id]
+        store.select(trip: trip, focus: false)
+        store.select(trip: trip, day: day)
+        XCTAssertEqual(store.camera?.points, [store.markers[2].coordinates])
+        XCTAssertEqual(store.camera?.zoomLevel, 15)
+        XCTAssertNil(store.selectedMarker)
+        let camera = store.camera?.id
+        store.select(trip: trip, day: day)
+        XCTAssertEqual(store.camera?.id, camera)
+        store.select(trip: trip, day: trip.days[1], focus: false)
+        XCTAssertEqual(store.camera?.id, camera)
+    }
+    @MainActor func testMissingRoutePointNeverFitsWholeDayOrUsesMemberOrder() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = try XCTUnwrap(store.trip)
+        store.focus(store.markers[0]); let camera = store.camera?.id
+        var day = trip.days[0]; day.chains = [[], ["missing"]]
+        store.select(trip: trip, focus: false)
+        store.select(trip: trip, day: day)
+        XCTAssertEqual(store.camera?.id, camera)
+        day.id = "no-route"; day.chains = []
+        store.select(trip: trip, day: day)
+        XCTAssertEqual(store.camera?.id, camera)
+    }
+    @MainActor func testStartupUsesEarliestDayAndChainOrderRatherThanAllTripBounds() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        var trip = try XCTUnwrap(store.trip)
+        trip.startDate = "2026-10-01"
+        var first = trip.days[0]; first.date = "2026-10-01"
+        first.chains = [[], ["missing", store.markers[2].id]]
+        first.markerIds = [store.markers[0].id]
+        var later = trip.days[1]; later.date = "2026-10-02"
+        trip.days = [later, first]
+        let marker = StartupCamera.upcomingFirstMarker(trips: [trip], markers: store.markers, today: "2026-09-30")
+        XCTAssertEqual(marker?.id, store.markers[2].id)
+        first.markerIds = []; first.chains = []
+        trip.days = [later, first]
+        XCTAssertNil(StartupCamera.upcomingFirstMarker(trips: [trip], markers: store.markers, today: "2026-09-30"))
+    }
+}

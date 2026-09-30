@@ -24,7 +24,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(store.camera?.points, [marker.coordinates])
         XCTAssertNotEqual(store.camera?.id, firstID)
     }
-    func testUpcomingTripBoundsIncludeTodayAndSkipTripsWithoutValidPlaces() {
+    func testUpcomingTripFirstStopIncludesTodayAndSkipsTripsWithoutValidPlaces() {
         func marker(_ id: String, _ latitude: Double = 31) -> Marker {
             Marker(id: id, coordinates: Coordinate(latitude: latitude, longitude: 121),
                    content: MarkerContent(id: id, markdownContent: ""))
@@ -36,9 +36,9 @@ final class CoreTests: XCTestCase {
         let markers = [marker("past"), marker("invalid", 100), marker("first"), marker("second"), marker("future")]
         let trips = [trip("later", "2026-10-02", ["future"]), trip("past", "2026-09-29", ["past"]),
                      trip("a-empty", "2026-09-30", ["missing", "invalid"]), trip("b-today", "2026-09-30", ["first", "second"])]
-        XCTAssertEqual(StartupCamera.upcomingMarkers(trips: trips, markers: markers, today: "2026-09-30").map(\.id), ["first", "second"])
-        XCTAssertEqual(StartupCamera.upcomingMarkers(trips: trips, markers: markers, today: "2026-10-01").map(\.id), ["future"])
-        XCTAssertTrue(StartupCamera.upcomingMarkers(trips: trips, markers: markers, today: "2026-10-03").isEmpty)
+        XCTAssertEqual(StartupCamera.upcomingFirstMarker(trips: trips, markers: markers, today: "2026-09-30")?.id, "first")
+        XCTAssertEqual(StartupCamera.upcomingFirstMarker(trips: trips, markers: markers, today: "2026-10-01")?.id, "future")
+        XCTAssertNil(StartupCamera.upcomingFirstMarker(trips: trips, markers: markers, today: "2026-10-03"))
     }
     func testStartupDateUsesDeviceTimezoneAtMidnight() {
         let now = ISO8601DateFormatter().date(from: "2026-09-30T18:00:00Z")!
@@ -47,14 +47,15 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StartupCamera.localDate(now: now, calendar: east), "2026-10-01")
         XCTAssertEqual(StartupCamera.localDate(now: now, calendar: west), "2026-09-30")
     }
-    @MainActor func testStartupFitsUpcomingTripOnceWithoutSelectingAnything() {
+    @MainActor func testStartupFocusesFirstStopOnceWithoutSelectingAnything() {
         let store = AppStore(settings: Settings(), demo: false)
         let sample = AppStore(settings: Settings(), demo: true)
         store.markers = sample.markers; store.trips = sample.trips
         let now = ISO8601DateFormatter().date(from: "2026-09-30T12:00:00Z")!
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         store.applyStartupCamera(now: now, calendar: calendar)
-        XCTAssertEqual(store.camera?.points.count, 5)
+        XCTAssertEqual(store.camera?.points, [sample.markers[0].coordinates])
+        XCTAssertEqual(store.camera?.zoomLevel, 11)
         XCTAssertNil(store.tripID); XCTAssertNil(store.dayID); XCTAssertNil(store.selectedMarker)
         XCTAssertEqual(store.visibleMarkers.count, 5)
         store.focus(store.markers[0])

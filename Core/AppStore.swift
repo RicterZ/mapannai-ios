@@ -88,10 +88,9 @@ import SwiftUI
         startupCameraPending = false
         // Do not interrupt a selection or camera action made while data was loading.
         guard tripID == nil, dayID == nil, selectedMarker == nil, draft == nil, camera == nil else { return }
-        let places = StartupCamera.upcomingMarkers(trips: trips, markers: markers,
-                                                   today: StartupCamera.localDate(now: now, calendar: calendar))
-        if !places.isEmpty {
-            camera = CameraCommand(points: places.map(\.coordinates), singlePointZoom: 11)
+        if let marker = StartupCamera.upcomingFirstMarker(trips: trips, markers: markers,
+                                                          today: StartupCamera.localDate(now: now, calendar: calendar)) {
+            camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 11)
         }
     }
     func perform(_ operation: @escaping (APIClient) async throws -> Void) async -> Bool {
@@ -134,12 +133,17 @@ import SwiftUI
         _ = await perform { try await $0.mutate(Self.dayPath(day) + "/markers", method: "DELETE", body: ["markerId": markerID]) }
     }
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
+        let changedDay = tripID != trip?.id || dayID != day?.id
         tripID = trip?.id; dayID = day?.id; selectedMarker = nil
         rebuildRoutes()
-        if focus {
-            let first = day?.chains.first?.first ?? day?.markerIds.first
-            if let first, let marker = markers.first(where: { $0.id == first }) { fly([marker.coordinates]) }
-            else { fly(visibleMarkers.map(\.coordinates)) }
+        guard focus else { return }
+        if let day {
+            guard changedDay,
+                  let firstID = day.chains.first(where: { !$0.isEmpty })?.first,
+                  let marker = markers.first(where: { $0.id == firstID && $0.coordinates.isValid }) else { return }
+            camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 15)
+        } else {
+            fly(visibleMarkers.filter { $0.coordinates.isValid }.map(\.coordinates))
         }
     }
     func selectRoute(_ route: DisplayRoute) {
