@@ -5,6 +5,7 @@ struct HomeView: View {
     @ObservedObject var store: AppStore
     @ObservedObject var settings: Settings
     @State private var showSettings = false
+    @State private var creatingTrip = false
     @State private var showDates = false
     @State private var editingTrip: Trip?
     @State private var editingDayTitle = false
@@ -13,7 +14,6 @@ struct HomeView: View {
     @State private var expanded = true
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var sheetDrag: CGFloat = 0
-    @ScaledMetric(relativeTo: .headline) private var panelTitleLineHeight: CGFloat = 22
     @StateObject private var location = LocationPermission()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -36,6 +36,7 @@ struct HomeView: View {
                     }
                 }
         }
+        .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
         .sheet(item: $editingTrip) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
         .alert("删除当天？", isPresented: $deletingPanelDay) {
             Button("取消", role: .cancel) {}
@@ -205,10 +206,12 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(panelTitle).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
+                    .accessibilityIdentifier("itinerary-panel-title")
                 if let day = store.day {
                     Text(shortDate(day.date)).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
                 }
-            }.accessibilityElement(children: .contain).accessibilityIdentifier("itinerary-panel-heading")
+            }.alignmentGuide(.panelTitleCenter) { $0[VerticalAlignment.center] }
+                .accessibilityElement(children: .contain).accessibilityIdentifier("itinerary-panel-heading")
             if !compact {
                 Text(panelInfo).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
             }
@@ -240,13 +243,24 @@ struct HomeView: View {
     }
 
     private var panelSearch: some View {
-        HStack(spacing: 8) {
-            searchField
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape").font(.system(size: 19)).foregroundStyle(Theme.muted)
-                    .frame(width: 44, height: 44)
-            }.accessibilityLabel("连接设置")
-        }.padding(.horizontal, 18).padding(.vertical, 10)
+        searchField
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+    private var addTripButton: some View {
+        Button { creatingTrip = true } label: {
+            Image(systemName: "plus").font(.system(size: 19, weight: .medium))
+                .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+            .accessibilityLabel("创建旅行").accessibilityIdentifier("create-journey")
+    }
+    private var settingsButton: some View {
+        Button { showSettings = true } label: {
+            Image(systemName: "gearshape").font(.system(size: 19))
+                .frame(width: 44, height: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+            .accessibilityLabel("连接设置").accessibilityIdentifier("itinerary-header-settings")
     }
     // One editing surface on iPad: navigation, search, dates, content and route settings.
     private func workspacePanel(topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat) -> some View {
@@ -254,7 +268,9 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 panelBackButton
                 panelHeading()
-                Spacer()
+                Spacer(minLength: 0)
+                addTripButton
+                settingsButton
                 Button { togglePanel() } label: {
                     Image(systemName: "sidebar.left").foregroundStyle(Theme.muted).frame(width: 40, height: 40)
                 }.accessibilityLabel("收起行程").accessibilityIdentifier("itinerary-panel-toggle")
@@ -265,29 +281,9 @@ struct HomeView: View {
                         togglePanel()
                     }
                 })
-            panelSearch
             Divider().opacity(0.55)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if store.searching || !store.searchResults.isEmpty {
-                        Text("搜索结果").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
-                        if store.searching { ProgressView().frame(maxWidth: .infinity).padding(20) }
-                        searchRows
-                    } else {
-                        itineraryContents
-                    }
-                }.padding(18)
-            }.scrollDismissesKeyboard(.interactively)
-            Divider().opacity(0.55)
-            HStack(spacing: 8) {
-                Text("MapAnNai").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Theme.muted)
-                Spacer()
-                if store.loading { ProgressView().controlSize(.small) }
-                else {
-                    Button { Task { await store.refresh() } } label: { Image(systemName: "arrow.clockwise").frame(width: 36, height: 36) }
-                        .accessibilityLabel("同步数据")
-                }
-            }.padding(.horizontal, 18).padding(.bottom, 8)
+            itineraryList
+
         }
         .padding(.top, topInset)
         .padding(.bottom, bottomInset)
@@ -295,22 +291,35 @@ struct HomeView: View {
         .environment(\.colorScheme, .light).tint(Theme.cyan)
     }
 
+    // Give each navigation scope its own scroll container. Data refreshes within the
+    // same scope retain position, while a new trip/day starts at its first row.
+    private var itineraryScrollIdentity: ItineraryScrollIdentity {
+        ItineraryScrollIdentity(tripID: store.tripID, dayID: store.dayID,
+                                showingSearch: store.searching || !store.searchResults.isEmpty)
+    }
+
     private var searchField: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").font(.system(size: 15)).foregroundStyle(Theme.muted)
-            TextField("搜索地点", text: $store.searchText).font(.subheadline).submitLabel(.search)
-                .onSubmit { Task { await store.search() } }.autocorrectionDisabled()
-            if store.searching { ProgressView().controlSize(.small) }
-            else if !store.searchText.isEmpty {
-                Button { store.clearSearch() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }.accessibilityLabel("清除搜索")
-                Button("搜索") { Task { await store.search() } }.font(.caption.weight(.semibold))
+        NativePlaceSearchBar(text: $store.searchText, searching: store.searching,
+                             onSearch: { Task { await store.search() } }, onClear: { store.clearSearch() })
+            .frame(height: 44)
+    }
+    private var itineraryList: some View {
+        Group {
+            if store.searching || !store.searchResults.isEmpty {
+                List {
+                    Section { panelSearch }
+                    if store.searching { ProgressView().frame(maxWidth: .infinity) }
+                    searchRows
+                }
+            } else {
+                itineraryContents
             }
-        }.padding(.horizontal, 12).frame(height: 44)
-            .background(Theme.consoleRaised, in: RoundedRectangle(cornerRadius: 10))
-            .foregroundStyle(Theme.text).tint(Theme.cyan).environment(\.colorScheme, .light)
+        }.listStyle(.insetGrouped).buttonStyle(.borderless).scrollContentBackground(.hidden)
+            .id(itineraryScrollIdentity).scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("itinerary-marker-list")
     }
     private var searchRows: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        Group {
             ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
                 Button { store.choose(place) } label: {
                     HStack(alignment: .top, spacing: 10) {
@@ -347,7 +356,7 @@ struct HomeView: View {
             VStack(spacing: compactHeader ? 2 : 10) {
                 Capsule().fill(Theme.muted.opacity(0.3)).frame(width: 36, height: 5)
                     .frame(height: compactHeader ? 10 : 14)
-                HStack(spacing: 8) {
+                HStack(alignment: .panelTitleCenter, spacing: 4) {
                     panelBackButton
                     Button {
                         withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
@@ -366,27 +375,31 @@ struct HomeView: View {
                             if direction == .increment { sheetDetent = ItineraryDetent(rawValue: min(2, sheetDetent.rawValue+1)) ?? .full }
                             else { sheetDetent = ItineraryDetent(rawValue: max(0, sheetDetent.rawValue-1)) ?? .compact }
                         }
-                    Button {
-                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
-                            sheetDetent = sheetDetent == .compact ? .half : .compact
+                    HStack(spacing: 0) {
+                        addTripButton
+                        if UIDevice.current.userInterfaceIdiom == .phone {
+                            Button { location.request { store.locating = UUID() } } label: {
+                                Image(systemName: "location.fill")
+                                    .font(.system(size: 20, weight: .medium)).foregroundStyle(Theme.accent)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityLabel("定位到当前位置")
+                                .accessibilityIdentifier("itinerary-header-location")
                         }
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
-                            .rotationEffect(.degrees(sheetDetent == .compact ? 180 : 0))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel(sheetDetent == .compact ? "展开旅途" : "收起旅途")
-                        .accessibilityIdentifier("itinerary-collapse")
-                    if UIDevice.current.userInterfaceIdiom == .phone {
-                        Button { location.request { store.locating = UUID() } } label: {
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 20, weight: .medium)).foregroundStyle(Theme.accent)
+                            settingsButton
+                        Button {
+                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                                sheetDetent = sheetDetent == .compact ? .half : .compact
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
+                                .rotationEffect(.degrees(sheetDetent == .compact ? 180 : 0))
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
-                        }.buttonStyle(.plain).accessibilityLabel("定位到当前位置")
-                            .accessibilityIdentifier("itinerary-header-location")
+                        }.buttonStyle(.plain)
+                            .accessibilityLabel(sheetDetent == .compact ? "展开旅途" : "收起旅途")
+                            .accessibilityIdentifier("itinerary-collapse")
                     }
                 }.padding(.horizontal, 18)
             }
@@ -407,16 +420,8 @@ struct HomeView: View {
                     }
                 })
             if height > 120 {
-                Divider().overlay(Theme.cyan.opacity(0.2))
-                panelSearch
-                ScrollView {
-                    if store.searching || !store.searchResults.isEmpty {
-                        searchRows.padding(.horizontal, 18)
-                    } else {
-                        itineraryContents.padding(.horizontal, 18).padding(.vertical, 14)
-                    }
-                }.scrollDismissesKeyboard(.interactively).frame(maxHeight: .infinity)
-                .accessibilityIdentifier("itinerary-marker-list")
+                Divider()
+                itineraryList.frame(maxHeight: .infinity)
                 }
             Spacer(minLength: 0)
         }
@@ -434,11 +439,11 @@ struct HomeView: View {
         else if !settings.configured && !store.demo {
             EmptyView()
         } else if let day = store.day {
-            DayContentsView(store: store, day: day)
+            DayContentsView(store: store, day: day, searchContent: { panelSearch })
         } else if let trip = store.trip {
-            JourneyDaysContents(store: store, trip: trip)
+            JourneyDaysContents(store: store, searchContent: { panelSearch }, trip: trip)
         } else {
-            JourneyOverviewContents(store: store)
+            JourneyOverviewContents(store: store, searchContent: { panelSearch })
         }
     }
 
@@ -457,4 +462,17 @@ struct HomeView: View {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         if [.authorizedWhenInUse, .authorizedAlways].contains(manager.authorizationStatus) { onAllowed?(); onAllowed = nil }
     }
+}
+
+private struct ItineraryScrollIdentity: Hashable {
+    let tripID: String?
+    let dayID: String?
+    let showingSearch: Bool
+}
+
+private extension VerticalAlignment {
+    private enum PanelTitleCenter: AlignmentID {
+        static func defaultValue(in dimensions: ViewDimensions) -> CGFloat { dimensions[VerticalAlignment.center] }
+    }
+    static let panelTitleCenter = VerticalAlignment(PanelTitleCenter.self)
 }

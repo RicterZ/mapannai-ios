@@ -97,9 +97,10 @@ struct TripEditorView: View {
         }.interactiveDismissDisabled(store.saving)
     }
 }
-struct DayContentsView: View {
+struct DayContentsView<SearchContent: View>: View {
     @ObservedObject var store: AppStore
     let day: TripDay
+    @ViewBuilder var searchContent: () -> SearchContent
     @Environment(\.colorScheme) private var colorScheme
     @State private var chainEditor: ChainEditRequest?
     @State private var addingMarkers = false
@@ -109,9 +110,10 @@ struct DayContentsView: View {
     @State private var deletingChain: Int?
     @State private var collapsedRoutes: Set<Int> = []
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        List {
+            Section { searchContent() }
             ForEach(Array(day.chains.enumerated()), id: \.offset) { index, chain in
-                VStack(alignment: .leading, spacing: 12) {
+                Section {
                     HStack {
                         Rectangle().fill(colorScheme == .dark ? Theme.cyan : Theme.color(day.colorIndex ?? 0)).frame(width: 7, height: 7)
                         Button {
@@ -145,7 +147,7 @@ struct DayContentsView: View {
                 }.contextMenu {
                     Button("编辑顺序", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
                     Button("删除路线", systemImage: "trash", role: .destructive) { deletingChain = index }
-                }.padding(14).background(colorScheme == .dark ? Theme.consoleRaised : Theme.paper, in: RoundedRectangle(cornerRadius: 12))
+                }
             }
             HStack {
                 Button { chainEditor = ChainEditRequest(day: day, index: nil, ids: []) } label: { Label("新建路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }

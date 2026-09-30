@@ -1,8 +1,8 @@
 import SwiftUI
 
-struct JourneyOverviewContents: View {
+struct JourneyOverviewContents<SearchContent: View>: View {
     @ObservedObject var store: AppStore
-    @State private var creating = false
+    @ViewBuilder var searchContent: () -> SearchContent
     @State private var editing: Trip?
     @State private var deletion: Trip?
     private var years: [String] { Array(Set(store.trips.map { String($0.startDate.prefix(4)) })).sorted(by: >) }
@@ -11,21 +11,16 @@ struct JourneyOverviewContents: View {
         return store.markers.filter { !assigned.contains($0.id) }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Button { creating = true } label: { Label("创建旅行", systemImage: "plus") }
-                    .accessibilityIdentifier("create-journey")
-                Spacer()
-
-            }
+        List {
+            Section { searchContent() }
             ForEach(years, id: \.self) { year in
-                Text(year).font(.caption.weight(.medium)).foregroundStyle(Theme.muted)
+                Section(year) {
                 ForEach(store.trips.filter { $0.startDate.hasPrefix(year) }.sorted { $0.startDate > $1.startDate }) { trip in
                     HStack(spacing: 8) {
                         Button { store.select(trip: trip) } label: {
                             HStack(spacing: 12) {
                                 Text(trip.emoji ?? "✈️").font(.title3).frame(width: 40, height: 40)
-                                    .background(Theme.paper, in: Circle())
+
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(trip.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(2)
                                     Text("\(trip.startDate) – \(trip.endDate)").font(.caption).foregroundStyle(Theme.muted)
@@ -33,15 +28,15 @@ struct JourneyOverviewContents: View {
                                         .font(.caption).foregroundStyle(Theme.muted)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.muted)
-                            }.padding(14).contentShape(Rectangle())
+                            }.padding(.vertical, 4).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("journey-\(trip.id)")
                         .contextMenu {
                             Button("编辑旅行", systemImage: "pencil") { editing = trip }
                             Button("删除旅行", systemImage: "trash", role: .destructive) { deletion = trip }
                         }
 
-                    }.background(.white, in: RoundedRectangle(cornerRadius: 14))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.muted.opacity(0.16)).allowsHitTesting(false))
+                    }
+                }
                 }
             }
             if store.trips.isEmpty { Text("暂无旅行").font(.subheadline).foregroundStyle(Theme.muted).padding(.vertical, 16) }
@@ -58,7 +53,6 @@ struct JourneyOverviewContents: View {
                 }
             }
         }
-            .sheet(isPresented: $creating) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
             .sheet(item: $editing) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
             .alert("删除旅行？", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
                 Button("取消", role: .cancel) {}
@@ -70,13 +64,15 @@ struct JourneyOverviewContents: View {
     }
 }
 
-struct JourneyDaysContents: View {
+struct JourneyDaysContents<SearchContent: View>: View {
     @ObservedObject var store: AppStore
+    @ViewBuilder var searchContent: () -> SearchContent
     let trip: Trip
     @State private var editing = false
     @State private var deletion: TripDay?
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        List {
+            Section { searchContent() }
             ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, day in
                 HStack(spacing: 0) {
                     Button { store.select(trip: trip, day: day) } label: {
@@ -90,15 +86,14 @@ struct JourneyDaysContents: View {
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Text("\(day.markerIds.count)").font(.caption).foregroundStyle(Theme.muted)
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.muted)
-                        }.padding(14).contentShape(Rectangle())
+                        }.padding(.vertical, 4).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityIdentifier("journey-day-\(day.id)")
                     .contextMenu {
                         Button("删除日期", systemImage: "trash", role: .destructive) { deletion = day }
                             .disabled(trip.days.count <= 1 || store.saving)
                     }
 
-                }.background(.white, in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.muted.opacity(0.16)).allowsHitTesting(false))
+                }
             }
             HStack {
                 Button { Task {
