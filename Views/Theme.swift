@@ -29,6 +29,25 @@ extension View {
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(border, lineWidth: 1).allowsHitTesting(false))
     }
 }
+/// Keep both parts of destructive menu labels red even under a blue navigation tint.
+struct DestructiveMenuButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: .destructive, action: action) {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
+                    .renderingMode(.original)
+                    .foregroundStyle(.red)
+            }.foregroundStyle(.red)
+        }.tint(.red)
+    }
+}
+
 struct MarkerRow: View {
     let marker: Marker
     var subtitle: String? = nil

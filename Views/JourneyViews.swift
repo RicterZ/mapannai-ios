@@ -33,7 +33,7 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
                         }.buttonStyle(.plain).accessibilityIdentifier("journey-\(trip.id)")
                         .contextMenu {
                             Button("编辑旅行", systemImage: "pencil") { editing = trip }
-                            Button("删除旅行", systemImage: "trash", role: .destructive) { deletion = trip }
+                            DestructiveMenuButton(title: "删除旅行", systemImage: "trash") { deletion = trip }
                         }
 
                     }
@@ -91,7 +91,7 @@ struct JourneyDaysContents<SearchContent: View>: View {
                         }.padding(.vertical, 4).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityIdentifier("journey-day-\(day.id)")
                     .contextMenu {
-                        Button("删除日期", systemImage: "trash", role: .destructive) { deletion = day }
+                        DestructiveMenuButton(title: "删除日期", systemImage: "trash") { deletion = day }
                             .disabled(trip.days.count <= 1 || store.saving)
                     }
 

@@ -169,7 +169,7 @@ struct DayContentsView<SearchContent: View>: View {
                                         }.buttonStyle(.automatic).tint(.red).disabled(store.saving)
                                     }
                                     .contextMenu {
-                                        Button("从当天移除", systemImage: "minus.circle", role: .destructive) { Task { await store.removeMarker(id, from: day) } }
+                                        DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day) } }
                                     }
                             }
                         }
@@ -177,7 +177,7 @@ struct DayContentsView<SearchContent: View>: View {
 
                 }.contextMenu {
                     Button("编辑顺序", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
-                    Button("删除路线", systemImage: "trash", role: .destructive) { deletingChain = index }
+                    DestructiveMenuButton(title: "删除路线", systemImage: "trash") { deletingChain = index }
                 }
             }
             let linked = Set(day.chains.flatMap { $0 })
@@ -189,7 +189,7 @@ struct DayContentsView<SearchContent: View>: View {
                             Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }
                                 .buttonStyle(.plain).accessibilityIdentifier("day-marker-\(id)")
                                 .contextMenu {
-                                    Button("从当天移除", systemImage: "minus.circle", role: .destructive) { Task { await store.removeMarker(id, from: day) } }
+                                    DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day) } }
                                 }
                         }
                     }

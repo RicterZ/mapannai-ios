@@ -208,7 +208,7 @@ struct HomeView: View {
         .contextMenu {
             if let day = page.day {
                 Button("日期标题", systemImage: "pencil") { dayTitle = day.title ?? ""; editingDayTitle = true }
-                Button("删除日期", systemImage: "trash", role: .destructive) { deletingPanelDay = true }
+                DestructiveMenuButton(title: "删除日期", systemImage: "trash") { deletingPanelDay = true }
                     .disabled((page.trip?.days.count ?? 0) <= 1 || store.saving)
             } else if let trip = page.trip {
                 Button("编辑旅行", systemImage: "pencil") { editingTrip = trip }
@@ -247,7 +247,7 @@ struct HomeView: View {
 
     @ToolbarContentBuilder private func journeyToolbar(sidebar: Bool, destination: JourneyDestination?) -> some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            journeyHeading(destination, sidebar: sidebar).offset(y: 4)
+            journeyHeading(destination, sidebar: sidebar).offset(y: !sidebar && sheetDetent == .compact ? 2 : 4)
         }
         journeyLeadingControl(destination: destination, sidebar: sidebar)
         if !sidebar {
@@ -438,7 +438,7 @@ struct HomeView: View {
         }.contextMenu {
             if let day = store.day {
                 Button("日期标题", systemImage: "pencil") { dayTitle = day.title ?? ""; editingDayTitle = true }
-                Button("删除日期", systemImage: "trash", role: .destructive) { deletingPanelDay = true }
+                DestructiveMenuButton(title: "删除日期", systemImage: "trash") { deletingPanelDay = true }
                     .disabled((store.trip?.days.count ?? 0) <= 1 || store.saving)
             } else if let trip = store.trip {
                 Button("编辑旅行", systemImage: "pencil") { editingTrip = trip }
@@ -463,7 +463,10 @@ struct HomeView: View {
     }
 
     private var journeySettingsRow: some View {
-        Button("设置", systemImage: "gearshape") { showSettings = true }
+        Button { showSettings = true } label: {
+            Label("设置", systemImage: "gearshape")
+                .fullRowActionLabel()
+        }.buttonStyle(.plain).foregroundStyle(Theme.accent)
             .accessibilityIdentifier("itinerary-settings-bottom")
     }
     private var panelSearch: some View {
