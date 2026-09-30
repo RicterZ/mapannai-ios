@@ -77,13 +77,13 @@ struct JourneyDaysContents: View {
     @State private var deletion: TripDay?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(trip.days.sorted { $0.date < $1.date }) { day in
+            ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, day in
                 HStack(spacing: 0) {
                     Button { store.select(trip: trip, day: day) } label: {
                         HStack(spacing: 12) {
                             Circle().fill(Theme.color(day.colorIndex ?? 0)).frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(day.title?.isEmpty == false ? day.title! : day.date).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
+                                Text("第\(index + 1)天").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
                                 Text(day.date).font(.caption).foregroundStyle(Theme.muted)
                                 Text(day.markerIds.compactMap { id in store.markers.first { $0.id == id }?.title }.joined(separator: " · "))
                                     .font(.caption).foregroundStyle(Theme.muted).lineLimit(1)

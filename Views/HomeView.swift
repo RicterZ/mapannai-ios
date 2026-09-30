@@ -328,9 +328,8 @@ struct HomeView: View {
     }
     private var locationButton: some View {
         Button { location.request { store.locating = UUID() } } label: {
-            Image(systemName: "location.viewfinder").font(.system(size: 20, weight: .medium)).foregroundStyle(Theme.cyan)
+            Image(systemName: "location.fill").font(.system(size: 20, weight: .medium)).foregroundStyle(Theme.cyan)
                 .frame(width: 48, height: 48).background(.white, in: Circle())
-                .overlay(Circle().stroke(Theme.cyan.opacity(0.15), lineWidth: 1).allowsHitTesting(false))
                 .shadow(color: .black.opacity(0.15), radius: 5, y: 3)
         }.accessibilityLabel("定位到当前位置")
     }
@@ -359,10 +358,6 @@ struct HomeView: View {
                             panelHeading(compact: compactHeader)
                                 .frame(minHeight: 44, alignment: compactHeader ? .center : .topLeading)
                             Spacer(minLength: 4)
-                            PanelChevron().stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                                .frame(width: 12, height: 6)
-                                .rotationEffect(.degrees(sheetDetent == .compact ? 180 : 0))
-                                .frame(width: 44, height: compactHeader ? 44 : panelTitleLineHeight)
                         }.contentShape(Rectangle())
                     }.buttonStyle(.plain)
                         .accessibilityLabel("旅途面板")
@@ -371,6 +366,28 @@ struct HomeView: View {
                             if direction == .increment { sheetDetent = ItineraryDetent(rawValue: min(2, sheetDetent.rawValue+1)) ?? .full }
                             else { sheetDetent = ItineraryDetent(rawValue: max(0, sheetDetent.rawValue-1)) ?? .compact }
                         }
+                    Button {
+                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                            sheetDetent = sheetDetent == .compact ? .half : .compact
+                        }
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
+                            .rotationEffect(.degrees(sheetDetent == .compact ? 180 : 0))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel(sheetDetent == .compact ? "展开旅途" : "收起旅途")
+                        .accessibilityIdentifier("itinerary-collapse")
+                    if UIDevice.current.userInterfaceIdiom == .phone {
+                        Button { location.request { store.locating = UUID() } } label: {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 20, weight: .medium)).foregroundStyle(Theme.accent)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel("定位到当前位置")
+                            .accessibilityIdentifier("itinerary-header-location")
+                    }
                 }.padding(.horizontal, 18)
             }
             .padding(.top, headerInset).frame(height: min(76, height) + headerInset).contentShape(Rectangle())
