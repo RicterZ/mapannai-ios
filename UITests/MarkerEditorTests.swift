@@ -29,6 +29,7 @@ final class MarkerEditorTests: XCTestCase {
         XCTAssertEqual(name.frame, initialName)
         XCTAssertEqual(cover.frame, initialCover)
         XCTAssertGreaterThan(note.frame.height, 220)
+        XCTAssertLessThanOrEqual(note.frame.maxY, app.windows.firstMatch.frame.maxY - 20)
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "Inline icon and cover above full height notes"; screenshot.lifetime = .keepAlways; add(screenshot)
         app.buttons["取消"].tap()

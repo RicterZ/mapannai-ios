@@ -102,7 +102,6 @@ struct MarkerEditorView: View {
     @State private var photo: PhotosPickerItem?
     @State private var uploading = false
     @State private var uploadedPreview: UIImage?
-    @State private var editorHeaderHeight: CGFloat = 0
     @State private var localError: String?
     @State private var latitude = ""
     @State private var longitude = ""
@@ -123,7 +122,9 @@ struct MarkerEditorView: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        MapMarkerCircle(icon: draft.icon).frame(width: 28, height: 28)
+                        Image(systemName: draft.icon.symbol)
+                            .font(.system(size: 21, weight: .medium)).foregroundStyle(Theme.accent)
+                            .frame(width: 28, height: 28)
                         Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted)
                     }.frame(width: 56, height: 48)
                         .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
@@ -180,28 +181,29 @@ struct MarkerEditorView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                let headerHeight = min((draft.address.isEmpty ? 172.0 : 210.0) + (initial.marker == nil ? 50 : 0) + (localError == nil ? 0 : 48) + (draft.resolvingPlace || draft.placeLookupFailed ? 40 : 0), max(0, geometry.size.height - 160))
+                VStack(alignment: .leading, spacing: 16) {
+                    ScrollView {
                         editorHeader
-                            .background(GeometryReader { header in
-                                Color.clear.preference(key: MarkerEditorHeaderHeight.self, value: header.size.height)
-                            })
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 14) {
-                                Text("地点笔记").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
-                                Spacer()
-                                Button { rich.toggleBold() } label: { Image(systemName: "bold").frame(width: 32, height: 32) }.accessibilityLabel("粗体")
-                                Button { rich.toggleItalic() } label: { Image(systemName: "italic").frame(width: 32, height: 32) }.accessibilityLabel("斜体")
-                                Button { rich.insertBullet() } label: { Image(systemName: "list.bullet").frame(width: 32, height: 32) }.accessibilityLabel("列表")
-                            }
-                            RichEditor(controller: rich, initialHTML: draft.html)
-                                .frame(height: max(220, geometry.size.height - editorHeaderHeight - 96))
-                                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
-                                .accessibilityIdentifier("marker-note-editor")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.frame(height: headerHeight)
+                        .scrollDismissesKeyboard(.interactively)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 14) {
+                            Text("地点笔记").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
+                            Spacer()
+                            Button { rich.toggleBold() } label: { Image(systemName: "bold").frame(width: 32, height: 32) }.accessibilityLabel("粗体")
+                            Button { rich.toggleItalic() } label: { Image(systemName: "italic").frame(width: 32, height: 32) }.accessibilityLabel("斜体")
+                            Button { rich.insertBullet() } label: { Image(systemName: "list.bullet").frame(width: 32, height: 32) }.accessibilityLabel("列表")
                         }
-                    }.padding(20)
-                }.scrollDismissesKeyboard(.interactively)
-                    .onPreferenceChange(MarkerEditorHeaderHeight.self) { editorHeaderHeight = $0 }
+                        RichEditor(controller: rich, initialHTML: draft.html)
+                            .frame(height: max(0, geometry.size.height - headerHeight - 96))
+                            .frame(maxWidth: .infinity)
+                            .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .accessibilityIdentifier("marker-note-editor")
+                    }.frame(maxHeight: .infinity)
+                }.padding(20).frame(width: geometry.size.width, height: geometry.size.height).clipped()
             }
                 .navigationTitle(initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -253,9 +255,4 @@ struct MarkerEditorView: View {
             }
         }.interactiveDismissDisabled(store.saving || uploading)
     }
-}
-
-private struct MarkerEditorHeaderHeight: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

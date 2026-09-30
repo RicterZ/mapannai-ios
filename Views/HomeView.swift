@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var expanded = true
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var sheetDrag: CGFloat = 0
+    @ScaledMetric(relativeTo: .headline) private var panelTitleLineHeight: CGFloat = 22
     @StateObject private var location = LocationPermission()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -21,10 +22,19 @@ struct HomeView: View {
         GeometryReader { proxy in
             let layout = MapLayout(width: proxy.size.width, height: proxy.size.height,
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
-                                   sheetHeight: sheetDetent.height(in: proxy.size.height))
+                                   sheetHeight: store.draft != nil && !store.draftExpanded ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear { store.mapViewportInsets = layout.insets }
                 .onChange(of: layout.insets) { _, insets in store.mapViewportInsets = insets }
+                .onChange(of: store.selectedMarker?.id) { _, markerID in
+                    guard markerID != nil else { return }
+                    showDates = false
+                    // Reveal the map before the marker sheet covers the lower planning surface.
+                    if !layout.usesSidebar {
+                        sheetDrag = 0
+                        sheetDetent = .half
+                    }
+                }
         }
         .sheet(item: $editingTrip) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
         .alert("删除当天？", isPresented: $deletingPanelDay) {
@@ -40,7 +50,18 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store).presentationDragIndicator(.visible) }
         .sheet(item: $store.selectedMarker) { marker in MarkerDetailView(store: store, marker: marker).presentationDragIndicator(.visible) }
-        .sheet(item: $store.draft) { draft in MarkerEditorView(store: store, initial: draft).presentationDragIndicator(.visible) }
+        .sheet(item: $store.draft) { draft in
+            MarkerEditorView(store: store, initial: draft).id(draft.id)
+                .presentationDetents([.medium, .large], selection: Binding(
+                    get: { store.draftExpanded ? .large : .medium },
+                    set: { store.draftExpanded = $0 == .large }))
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                .presentationDragIndicator(.visible)
+        }
+        .onChange(of: store.draft?.id) { old, new in
+            if new != nil, store.selectedSearchPlaceID != nil { sheetDetent = .compact }
+            else if old != nil, new == nil, !store.searchResults.isEmpty { sheetDetent = .half }
+        }
         .alert("无法完成操作", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
@@ -290,16 +311,17 @@ struct HomeView: View {
     }
     private var searchRows: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(store.searchResults) { place in
+            ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
                 Button { store.choose(place) } label: {
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "mappin.circle").foregroundStyle(Theme.cyan).font(.title3)
+                        Text("\(index + 1)").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                            .frame(width: 24, height: 24).background(Color.red, in: Circle())
                         VStack(alignment: .leading, spacing: 4) {
                             Text(place.name).font(.subheadline.weight(.medium)).foregroundStyle(Theme.text)
                             Text(place.address).font(.caption).foregroundStyle(Theme.muted)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.padding(.vertical, 12).contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).accessibilityIdentifier("search-result-\(place.id)")
                 Divider()
             }
         }
@@ -333,15 +355,14 @@ struct HomeView: View {
                             sheetDetent = sheetDetent == .compact ? .half : .compact
                         }
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(alignment: .top, spacing: 8) {
                             panelHeading(compact: compactHeader)
+                                .frame(minHeight: 44, alignment: compactHeader ? .center : .topLeading)
                             Spacer(minLength: 4)
-                            Image(systemName: sheetDetent == .compact ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.accent)
-                                .frame(width: 32, height: 32)
-                                .background(Theme.consoleRaised, in: Circle())
-                                .frame(width: 44, height: 44)
+                            PanelChevron().stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                .frame(width: 12, height: 6)
+                                .rotationEffect(.degrees(sheetDetent == .compact ? 180 : 0))
+                                .frame(width: 44, height: compactHeader ? 44 : panelTitleLineHeight)
                         }.contentShape(Rectangle())
                     }.buttonStyle(.plain)
                         .accessibilityLabel("旅途面板")

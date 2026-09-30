@@ -12,6 +12,8 @@ import SwiftUI
     @Published var dayID: String?
     @Published var selectedMarker: Marker?
     @Published var draft: MarkerDraft?
+    @Published var draftExpanded = true
+    @Published var selectedSearchPlaceID: String?
     @Published var searchResults: [Place] = []
     @Published var searchText = ""
     @Published var searching = false
@@ -54,7 +56,7 @@ import SwiftUI
     }
     func connect() async {
         connectionRevision = UUID(); refreshGeneration = UUID(); loading = false; refreshing = false
-        tripID = nil; dayID = nil; selectedMarker = nil; searchResults = []; markers = []; trips = []
+        tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; searchResults = []; markers = []; trips = []
         camera = nil; startupCameraPending = true
         searchGeneration = UUID(); searching = false; rebuildRoutes()
         if demo { loadDemo(); rebuildRoutes(); return }
@@ -152,6 +154,7 @@ import SwiftUI
     func fly(_ points: [Coordinate]) { if !points.isEmpty { camera = CameraCommand(points: points) } }
     func create(at coordinate: Coordinate) {
         guard coordinate.isValid else { return }
+        selectedSearchPlaceID = nil; draftExpanded = true
         var pending = MarkerDraft(coordinates: coordinate)
         pending.resolvingPlace = true
         draft = pending
@@ -173,17 +176,29 @@ import SwiftUI
     func search() async {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { clearSearch(); return }
-        let generation = UUID(); searchGeneration = generation; searching = true; searchResults = []
+        let generation = UUID(); searchGeneration = generation; searching = true; searchResults = []; selectedSearchPlaceID = nil
         defer { if searchGeneration == generation { searching = false } }
         do {
-            let results = try await mapServices.search(query, bounds: bounds)
+            let results: [Place]
+            if demo && servicesOverride == nil {
+                results = markers.filter { $0.title.localizedCaseInsensitiveContains(query) }.map {
+                    Place(id: $0.id, name: $0.title, address: $0.content.address ?? "", coordinates: $0.coordinates)
+                }
+            } else { results = try await mapServices.search(query, bounds: bounds) }
             guard searchGeneration == generation else { return }; searchResults = results
+            fly(results.map(\.coordinates))
             if results.isEmpty { errorMessage = "当前地图范围内没有结果。可移动地图或使用更精确的城市与地点名称。" }
         } catch { if searchGeneration == generation { report(error) } }
     }
-    func clearSearch() { searchGeneration = UUID(); searchText = ""; searchResults = []; searching = false }
-    func choose(_ place: Place) {
-        clearSearch(); fly([place.coordinates])
+    func clearSearch() { searchGeneration = UUID(); searchText = ""; searchResults = []; selectedSearchPlaceID = nil; searching = false }
+    func choose(_ place: Place, fromMap: Bool = false) {
+        guard place.coordinates.isValid else { return }
+        if fromMap, selectedSearchPlaceID == place.id, draft != nil {
+            draftExpanded = true
+            return
+        }
+        selectedSearchPlaceID = place.id; draftExpanded = false
+        fly([place.coordinates])
         draft = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
     }
     func report(_ error: Error) { if error is CancellationError { return }; errorMessage = error.localizedDescription }

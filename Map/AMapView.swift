@@ -28,10 +28,24 @@ struct AMapNativeRenderer: UIViewRepresentable {
             coordinate = CLLocationCoordinate2D(latitude: p.latitude, longitude: p.longitude); title = marker.title
         }
     }
+    final class SearchPin: MAPointAnnotation {
+        var place: Place
+        var number: Int
+        init(place: Place, number: Int) {
+            self.place = place; self.number = number; super.init(); update(place: place, number: number)
+        }
+        func update(place: Place, number: Int) {
+            self.place = place; self.number = number
+            let p = Coordinates.gcj(place.coordinates)
+            coordinate = CLLocationCoordinate2D(latitude: p.latitude, longitude: p.longitude)
+            title = place.name
+        }
+    }
     @MainActor final class Coordinator: NSObject, @preconcurrency MAMapViewDelegate {
         let store: AppStore
         weak var map: MAMapView?
         var pins: [String: Pin] = [:]
+        var searchPins: [String: SearchPin] = [:]
         var lines: [String: (MAPolyline, MAPolyline)] = [:]
         var overlayStyle: [ObjectIdentifier: (UIColor, Bool)] = [:]
         var lastRoutes: [String: [Coordinate]] = [:]
@@ -45,6 +59,18 @@ struct AMapNativeRenderer: UIViewRepresentable {
             for marker in store.mapMarkers {
                 if let pin = pins[marker.id] { if pin.marker != marker { pin.update(marker) } }
                 else { let pin = Pin(marker); pins[marker.id] = pin; map.addAnnotation(pin) }
+            }
+            let wantedSearch = Set(store.searchResults.map(\.id))
+            for id in Array(searchPins.keys) where !wantedSearch.contains(id) {
+                if let pin = searchPins.removeValue(forKey: id) { map.removeAnnotation(pin) }
+            }
+            for (index, place) in store.searchResults.enumerated() {
+                if let pin = searchPins[place.id] { pin.update(place: place, number: index + 1) }
+                else {
+                    let pin = SearchPin(place: place, number: index + 1)
+                    searchPins[place.id] = pin; map.addAnnotation(pin)
+                }
+                if let pin = searchPins[place.id], let view = map.view(for: pin) { styleSearch(view, pin: pin) }
             }
             let routeIDs = Set(store.displayRoutes.map(\.id))
             for id in Array(lines.keys) where !routeIDs.contains(id) {
@@ -103,11 +129,25 @@ struct AMapNativeRenderer: UIViewRepresentable {
             return UIEdgeInsets(top: insets.top, left: insets.left, bottom: min(insets.bottom, map.bounds.height * 0.48), right: insets.right)
         }
         func mapView(_ mapView: MAMapView!, viewFor annotation: MAAnnotation!) -> MAAnnotationView! {
+            if let pin = annotation as? SearchPin {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "search-result") ?? MAAnnotationView(annotation: pin, reuseIdentifier: "search-result")!
+                view.annotation = pin; view.canShowCallout = false
+                styleSearch(view, pin: pin)
+                return view
+            }
             guard let pin = annotation as? Pin else { return nil }
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: "marker") ?? MAAnnotationView(annotation: pin, reuseIdentifier: "marker")!
             view.annotation = pin; view.canShowCallout = false
             style(view, pin: pin, map: mapView)
             return view
+        }
+        private func styleSearch(_ view: MAAnnotationView, pin: SearchPin) {
+            let selected = store.selectedSearchPlaceID == pin.place.id
+            let key = "search-\(pin.number)-\(selected)"
+            if pinImages[key] == nil { pinImages[key] = SearchPinAppearance.image(number: pin.number, selected: selected) }
+            view.image = pinImages[key]; view.centerOffset = CGPoint(x: 0, y: -22)
+            view.isAccessibilityElement = true; view.accessibilityLabel = "搜索结果\(pin.number)：\(pin.place.name)"
+            view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
         }
         private func style(_ view: MAAnnotationView, pin: Pin, map: MAMapView) {
             let dot = map.zoomLevel < 9
@@ -155,7 +195,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
             return renderer
         }
         func mapView(_ mapView: MAMapView!, didSelect view: MAAnnotationView!) {
-            if let pin = view.annotation as? Pin { store.focus(pin.marker); mapView.deselectAnnotation(pin, animated: false) }
+            if let pin = view.annotation as? SearchPin {
+                store.choose(pin.place, fromMap: true); mapView.deselectAnnotation(pin, animated: false)
+            } else if let pin = view.annotation as? Pin {
+                store.focus(pin.marker); mapView.deselectAnnotation(pin, animated: false)
+            }
         }
         func mapView(_ mapView: MAMapView!, didLongPressedAt coordinate: CLLocationCoordinate2D) {
             store.create(at: Coordinates.wgs(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)))
@@ -227,6 +271,16 @@ struct PreviewMap: View {
                             .frame(width: 44, height: 44).contentShape(Circle())
                     }.buttonStyle(.plain).accessibilityLabel(marker.title).accessibilityIdentifier("map-marker-\(marker.id)")
                         .position(point(marker.coordinates, size: proxy.size))
+                }
+                ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
+                    Button { store.choose(place, fromMap: true) } label: {
+                        Image(uiImage: SearchPinAppearance.image(number: index + 1, selected: store.selectedSearchPlaceID == place.id))
+                            .frame(width: 44, height: 48)
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel("搜索结果\(index + 1)：\(place.name)")
+                        .accessibilityIdentifier("map-search-result-\(place.id)")
+                        .position(point(place.coordinates, size: proxy.size))
+                        .offset(y: -22)
                 }
                 Text("模拟器 · 交互预览画布").font(.caption2).foregroundStyle(.secondary)
                     .padding(6).background(.regularMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.bottom, store.mapViewportInsets.bottom+12).padding(.leading, store.mapViewportInsets.left+8)

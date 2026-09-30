@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum Theme {
     static let ink = Color(red: 0.12, green: 0.17, blue: 0.25)
@@ -91,5 +92,35 @@ struct MapMarkerCircle: View {
             .overlay(Circle().stroke(.white, lineWidth: 2))
             .overlay(Circle().stroke(selected ? Theme.cyan : .clear, lineWidth: 2).padding(-3))
             .shadow(color: .black.opacity(0.16), radius: 3, y: 2)
+    }
+}
+
+struct PanelChevron: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
+    }
+}
+
+// Numbered teardrop pins distinguish temporary search results from saved emoji circles.
+enum SearchPinAppearance {
+    static func image(number: Int, selected: Bool) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 40, height: 48)).image { context in
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 20, y: 46))
+            path.addCurve(to: CGPoint(x: 4, y: 20), controlPoint1: CGPoint(x: 17, y: 39), controlPoint2: CGPoint(x: 4, y: 31))
+            path.addArc(withCenter: CGPoint(x: 20, y: 20), radius: 16, startAngle: .pi, endAngle: 0, clockwise: true)
+            path.addCurve(to: CGPoint(x: 20, y: 46), controlPoint1: CGPoint(x: 36, y: 31), controlPoint2: CGPoint(x: 23, y: 39))
+            path.close()
+            (selected ? UIColor(Theme.accent) : UIColor.systemRed).setFill(); path.fill()
+            UIColor.white.setStroke(); path.lineWidth = 2; path.stroke()
+            let text = "\(number)" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 14, weight: .bold), .foregroundColor: UIColor.white]
+            let size = text.size(withAttributes: attributes)
+            text.draw(at: CGPoint(x: 20 - size.width / 2, y: 20 - size.height / 2), withAttributes: attributes)
+        }
     }
 }
