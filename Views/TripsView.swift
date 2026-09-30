@@ -118,6 +118,7 @@ struct DayContentsView<SearchContent: View>: View {
     @ObservedObject var store: AppStore
     let day: TripDay
     @ViewBuilder var searchContent: () -> SearchContent
+    var onViewRoute: () -> Void = {}
     @Environment(\.colorScheme) private var colorScheme
     @State private var chainEditor: ChainEditRequest?
     @State private var addingMarkers = false
@@ -128,35 +129,48 @@ struct DayContentsView<SearchContent: View>: View {
     @State private var collapsedRoutes: Set<Int> = []
     var body: some View {
         List {
-            Section { searchContent() }
+
             ForEach(Array(day.chains.enumerated()), id: \.offset) { index, chain in
                 Section {
-                    HStack {
-                        Rectangle().fill(colorScheme == .dark ? Theme.cyan : Theme.color(day.colorIndex ?? 0)).frame(width: 7, height: 7)
-                        Button {
-                            if collapsedRoutes.contains(index) { collapsedRoutes.remove(index) } else { collapsedRoutes.insert(index) }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("路线 \(index+1)").font(.subheadline.weight(.semibold))
-                                Image(systemName: collapsedRoutes.contains(index) ? "chevron.right" : "chevron.down").font(.caption2)
+                    DisclosureGroup(isExpanded: Binding(
+                        get: { !collapsedRoutes.contains(index) },
+                        set: { if $0 { collapsedRoutes.remove(index) } else { collapsedRoutes.insert(index) } }
+                    )) {} label: {
+                        HStack {
+                            Label {
+                                Text("路线 \(index + 1)").foregroundStyle(.primary)
+                            } icon: {
+                                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                                    .foregroundStyle(Theme.color(day.colorIndex ?? 0))
                             }
-                        }.buttonStyle(.plain).accessibilityIdentifier("route-toggle-\(index)")
-                        Text("\(chain.count) 个地点").font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("查看") { store.fly(chain.compactMap { id in store.markers.first(where: { $0.id == id })?.coordinates }) }.font(.caption.weight(.semibold)).frame(minHeight: 32)
+                            Spacer(minLength: 8)
+                            Text("\(chain.count)个地点").font(.subheadline).foregroundStyle(.secondary)
+                        }.font(.body).accessibilityIdentifier("route-toggle-\(index)")
                     }
                     if !collapsedRoutes.contains(index) {
+                        Button {
+                            onViewRoute()
+                            store.fly(chain.compactMap { id in store.markers.first(where: { $0.id == id })?.coordinates })
+                        } label: { Label("查看路线", systemImage: "map").fullRowActionLabel() }
+                            .buttonStyle(.plain).foregroundStyle(Theme.accent)
+                            .accessibilityIdentifier("route-view-\(index)")
                         ForEach(Array(chain.enumerated()), id: \.element) { position, id in
                             if let marker = store.markers.first(where: { $0.id == id }) {
                                 Button { store.focus(marker) } label: {
-                                    HStack(spacing: 10) {
-                                        Text("\(position + 1)").font(.caption).foregroundStyle(Theme.muted).frame(width: 18)
+                                    HStack(spacing: 12) {
+                                        Text("\(position + 1)").font(.subheadline).monospacedDigit()
+                                            .foregroundStyle(.secondary).frame(minWidth: 18)
                                         PlaceSelectionRow(marker: marker)
                                     }.contentShape(Rectangle())
-                                }.buttonStyle(.plain).accessibilityIdentifier("route-\(index)-marker-\(id)")
-                                .contextMenu {
-                                    Button("从当天移除", systemImage: "minus.circle", role: .destructive) { Task { await store.removeMarker(id, from: day) } }
-                                }
+                                }.buttonStyle(.automatic).foregroundStyle(.primary).accessibilityIdentifier("route-\(index)-marker-\(id)")
+                                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                        Button("删除", systemImage: "trash", role: .destructive) {
+                                            Task { await store.removeMarker(id, from: day) }
+                                        }.buttonStyle(.automatic).tint(.red).disabled(store.saving)
+                                    }
+                                    .contextMenu {
+                                        Button("从当天移除", systemImage: "minus.circle", role: .destructive) { Task { await store.removeMarker(id, from: day) } }
+                                    }
                             }
                         }
                     }
@@ -166,26 +180,31 @@ struct DayContentsView<SearchContent: View>: View {
                     Button("删除路线", systemImage: "trash", role: .destructive) { deletingChain = index }
                 }
             }
-            HStack {
-                Button { chainEditor = ChainEditRequest(day: day, index: nil, ids: []) } label: { Label("新建路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
-                Spacer()
-                Button { addingMarkers = true } label: { Label("加入地点", systemImage: "plus") }
-            }.font(.caption.weight(.semibold)).frame(minHeight: 36)
             let linked = Set(day.chains.flatMap { $0 })
-            if day.markerIds.contains(where: { !linked.contains($0) }) {
-                Text("未安排").font(.caption.weight(.medium)).foregroundStyle(Theme.muted)
-            }
-            ForEach(day.markerIds.filter { !linked.contains($0) }, id: \.self) { id in
-                if let marker = store.markers.first(where: { $0.id == id }) {
-                    HStack {
-                        Button { store.focus(marker) } label: {
-                            MarkerRow(marker: marker, subtitle: day.chains.enumerated().filter { $0.element.contains(id) }.map { "路线 \($0.offset+1)" }.joined(separator: " · "))
-                        }.buttonStyle(.plain).accessibilityIdentifier("day-marker-\(id)")
-                        .contextMenu { Button("从当天移除", systemImage: "minus.circle", role: .destructive) { Task { await store.removeMarker(id, from: day) } } }
-
+            let unlinked = day.markerIds.filter { !linked.contains($0) }
+            if !unlinked.isEmpty {
+                Section {
+                    ForEach(unlinked, id: \.self) { id in
+                        if let marker = store.markers.first(where: { $0.id == id }) {
+                            Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }
+                                .buttonStyle(.plain).accessibilityIdentifier("day-marker-\(id)")
+                                .contextMenu {
+                                    Button("从当天移除", systemImage: "minus.circle", role: .destructive) { Task { await store.removeMarker(id, from: day) } }
+                                }
+                        }
                     }
                 }
             }
+            Section {
+                Button { chainEditor = ChainEditRequest(day: day, index: nil, ids: []) } label: {
+                    Label("新建路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath").fullRowActionLabel()
+                }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+                Button { addingMarkers = true } label: { Label("添加地点", systemImage: "plus").fullRowActionLabel() }
+                    .buttonStyle(.plain).foregroundStyle(Theme.accent)
+            } header: {
+                Color.clear.frame(height: 16).accessibilityHidden(true)
+            }.font(.body)
+
         }
         .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
         .sheet(isPresented: $addingMarkers) { DayMarkerPicker(store: store, day: day) }

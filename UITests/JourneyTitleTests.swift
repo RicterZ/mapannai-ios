@@ -21,6 +21,8 @@ final class JourneyTitleTests: XCTestCase {
             if UIDevice.current.userInterfaceIdiom == .phone {
                 app.buttons["itinerary-collapse"].tap()
                 XCTAssertEqual(title.frame.midX, container.frame.midX, accuracy: 3)
+                // Buttons and their native glass move up four points; text stays in place.
+                XCTAssertEqual(title.frame.midY - app.buttons["itinerary-header-location"].frame.midY, 4, accuracy: 1.5)
                 let left = app.buttons["journey-back"]
                 let right = app.buttons["itinerary-header-location"]
                 XCTAssertGreaterThanOrEqual(title.frame.minX, left.frame.maxX)

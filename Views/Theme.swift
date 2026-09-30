@@ -19,6 +19,11 @@ enum Theme {
 }
 
 extension View {
+    /// Apply inside a Button label so empty row space participates in hit testing.
+    func fullRowActionLabel() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+    }
     func softSurface(fill: Color = Theme.consoleRaised, border: Color = Theme.separator.opacity(0.35)) -> some View {
         background(fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(border, lineWidth: 1).allowsHitTesting(false))

@@ -97,14 +97,22 @@ struct JourneyDaysContents<SearchContent: View>: View {
 
                 }
             }
-            HStack {
+            Section {
                 Button { Task {
                     let next = Calendar(identifier: .gregorian).date(byAdding: .day, value: 1, to: .fromDay(trip.endDate))!.dayString
                     _ = await store.perform { client in
                         try await client.mutate("trips/\(APIClient.id(trip.id))/days", method: "POST", body: ["date": next])
                         try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: ["endDate": next])
                     }
-                }} label: { Label("添加一天", systemImage: "plus") }.disabled(store.saving)
+                }} label: { Label("添加一天", systemImage: "plus").fullRowActionLabel() }
+                    .buttonStyle(.plain).foregroundStyle(Theme.accent).disabled(store.saving)
+                    .accessibilityIdentifier("journey-add-day")
+                Button { editing = true } label: {
+                    Label("编辑旅行", systemImage: "pencil").fullRowActionLabel()
+                }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+                    .disabled(store.saving).accessibilityIdentifier("journey-edit-trip")
+            } header: {
+                Color.clear.frame(height: 16).accessibilityHidden(true)
             }
         }
             .sheet(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
