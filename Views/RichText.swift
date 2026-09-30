@@ -65,11 +65,18 @@ struct RichEditor: UIViewRepresentable {
         let view = UITextView(); view.delegate = context.coordinator; view.backgroundColor = .clear
         view.font = .systemFont(ofSize: 16); view.textContainerInset = UIEdgeInsets(top: 14, left: 10, bottom: 14, right: 10)
         view.allowsEditingTextAttributes = true
-        if !initialHTML.isEmpty, let data = initialHTML.data(using: .utf8),
-           let text = try? NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil) {
+        // HTML import spins a run loop. Defer it until SwiftUI has finished creating
+        // the view so adaptive editor sizing cannot re-enter the layout graph.
+        let html = initialHTML
+        Task { @MainActor [weak view] in
+            guard let view, !controller.changed, !html.isEmpty,
+                  let data = html.data(using: .utf8),
+                  let text = try? NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil),
+                  !controller.changed else { return }
             let mutable = NSMutableAttributedString(attributedString: text)
             mutable.addAttribute(.foregroundColor, value: UIColor(Theme.ink), range: NSRange(location: 0, length: text.length))
             view.attributedText = mutable
+            view.typingAttributes = [.font: UIFont.systemFont(ofSize: 16), .foregroundColor: UIColor(Theme.ink)]
         }
         view.typingAttributes = [.font: UIFont.systemFont(ofSize: 16), .foregroundColor: UIColor(Theme.ink)]
         controller.textView = view; return view

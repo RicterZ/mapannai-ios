@@ -101,54 +101,108 @@ struct MarkerEditorView: View {
     @StateObject private var rich = RichEditorController()
     @State private var photo: PhotosPickerItem?
     @State private var uploading = false
+    @State private var uploadedPreview: UIImage?
+    @State private var editorHeaderHeight: CGFloat = 0
     @State private var localError: String?
     @State private var latitude = ""
     @State private var longitude = ""
     init(store: AppStore, initial: MarkerDraft) {
         self.store = store; self.initial = initial; _draft = State(initialValue: initial)
     }
+    private var editorHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Menu {
+                    ForEach(MarkerIcon.allCases) { icon in
+                        Button {
+                            var transaction = Transaction(); transaction.disablesAnimations = true
+                            withTransaction(transaction) { draft.icon = icon }
+                        } label: {
+                            Label(icon.label, systemImage: icon.symbol)
+                        }.accessibilityIdentifier("marker-icon-option-\(icon.rawValue)")
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        MapMarkerCircle(icon: draft.icon).frame(width: 28, height: 28)
+                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted)
+                    }.frame(width: 56, height: 48)
+                        .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
+                }.buttonStyle(.plain).accessibilityLabel("地点类型：\(draft.icon.label)")
+                    .accessibilityIdentifier("marker-icon-picker")
+                TextField("地点名称", text: $draft.title)
+                    .font(.title3.weight(.semibold)).padding(.horizontal, 14).frame(height: 48)
+                    .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
+            }.transaction { $0.animation = nil }
+            if store.draft?.id == initial.id && store.draft?.resolvingPlace == true {
+                HStack { ProgressView(); Text("获取地点信息…").font(.caption).foregroundStyle(.secondary) }
+            }
+            if store.draft?.id == initial.id && store.draft?.placeLookupFailed == true {
+                Text("未获取到地点信息，可手动填写。").font(.caption).foregroundStyle(.secondary)
+            }
+            if !draft.address.isEmpty { Text(draft.address).font(.caption).foregroundStyle(.secondary) }
+            if initial.marker == nil {
+                DisclosureGroup("标点坐标 · WGS-84") {
+                    HStack {
+                        TextField("纬度", text: $latitude).keyboardType(.numbersAndPunctuation)
+                        TextField("经度", text: $longitude).keyboardType(.numbersAndPunctuation)
+                    }.textFieldStyle(.roundedBorder).padding(.vertical, 8)
+                }.font(.caption)
+            }
+            PhotosPicker(selection: $photo, matching: .images) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(Theme.paper)
+                    if let uploadedPreview {
+                        Image(uiImage: uploadedPreview).resizable().scaledToFill()
+                    } else if let url = imageURL(draft.headerImage) {
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image { image.resizable().scaledToFill() }
+                            else { coverPlaceholder }
+                        }
+                    } else { coverPlaceholder }
+                    if uploading {
+                        Theme.paper.opacity(0.85)
+                        ProgressView().tint(Theme.accent)
+                    }
+                }.frame(maxWidth: .infinity).frame(height: 110).clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(Theme.muted.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            }.buttonStyle(.plain).disabled(uploading || store.saving)
+                .accessibilityLabel(draft.headerImage.isEmpty && uploadedPreview == nil ? "上传封面图" : "重新上传封面图")
+                .accessibilityIdentifier("marker-cover-upload")
+            if let localError { Text(localError).font(.caption).foregroundStyle(.red) }
+        }
+    }
+    private var coverPlaceholder: some View {
+        Label("点击上传封面图", systemImage: "photo")
+            .font(.subheadline).foregroundStyle(Theme.muted)
+    }
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    TextField("地点名称", text: $draft.title).font(.title3.weight(.semibold)).padding(14).background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
-                    if store.draft?.id == initial.id && store.draft?.resolvingPlace == true {
-                        HStack { ProgressView(); Text("获取地点信息…").font(.caption).foregroundStyle(.secondary) }
-                    }
-                    if store.draft?.id == initial.id && store.draft?.placeLookupFailed == true {
-                        Text("未获取到地点信息，可手动填写。").font(.caption).foregroundStyle(.secondary)
-                    }
-                    if !draft.address.isEmpty { Text(draft.address).font(.caption).foregroundStyle(.secondary) }
-                    Picker("地点类型", selection: $draft.icon) {
-                        ForEach(MarkerIcon.allCases) { Label($0.label, systemImage: $0.symbol).tag($0) }
-                    }.pickerStyle(.menu)
-                    if initial.marker == nil {
-                        DisclosureGroup("标点坐标 · WGS-84") {
-                            HStack {
-                                TextField("纬度", text: $latitude).keyboardType(.numbersAndPunctuation)
-                                TextField("经度", text: $longitude).keyboardType(.numbersAndPunctuation)
-                            }.textFieldStyle(.roundedBorder).padding(.vertical, 8)
-                        }.font(.caption)
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 18) {
-                            Text("地点笔记").font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Button { rich.toggleBold() } label: { Image(systemName: "bold").frame(width: 32, height: 32) }.accessibilityLabel("粗体")
-                            Button { rich.toggleItalic() } label: { Image(systemName: "italic").frame(width: 32, height: 32) }.accessibilityLabel("斜体")
-                            Button { rich.insertBullet() } label: { Image(systemName: "list.bullet").frame(width: 32, height: 32) }.accessibilityLabel("列表")
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        editorHeader
+                            .background(GeometryReader { header in
+                                Color.clear.preference(key: MarkerEditorHeaderHeight.self, value: header.size.height)
+                            })
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 14) {
+                                Text("地点笔记").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
+                                Spacer()
+                                Button { rich.toggleBold() } label: { Image(systemName: "bold").frame(width: 32, height: 32) }.accessibilityLabel("粗体")
+                                Button { rich.toggleItalic() } label: { Image(systemName: "italic").frame(width: 32, height: 32) }.accessibilityLabel("斜体")
+                                Button { rich.insertBullet() } label: { Image(systemName: "list.bullet").frame(width: 32, height: 32) }.accessibilityLabel("列表")
+                            }
+                            RichEditor(controller: rich, initialHTML: draft.html)
+                                .frame(height: max(220, geometry.size.height - editorHeaderHeight - 96))
+                                .background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
+                                .accessibilityIdentifier("marker-note-editor")
                         }
-                        RichEditor(controller: rich, initialHTML: draft.html).frame(height: 240).background(Theme.paper, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    TextField("首图 URL（可选）", text: $draft.headerImage).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
-                    PhotosPicker(selection: $photo, matching: .images) {
-                        HStack { Label("上传首图", systemImage: "photo.badge.plus"); if uploading { ProgressView() } }
-                    }.disabled(uploading || store.demo)
-                    Text("图片直传到已配置的 COS。已有笔记保留 HTML 格式，支持原生文本编辑、粗体、斜体及列表。")
-                        .font(.caption2).foregroundStyle(.secondary)
-                    if let localError { Text(localError).font(.caption).foregroundStyle(.red) }
-                }.padding(20)
-            }.scrollDismissesKeyboard(.interactively)
+                    }.padding(20)
+                }.scrollDismissesKeyboard(.interactively)
+                    .onPreferenceChange(MarkerEditorHeaderHeight.self) { editorHeaderHeight = $0 }
+            }
                 .navigationTitle(initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(store.saving || uploading) }
@@ -182,16 +236,26 @@ struct MarkerEditorView: View {
         .onChange(of: photo) { _, item in
             guard let item else { return }
             Task {
-                uploading = true; localError = nil; defer { uploading = false }
+                uploading = true; localError = nil; defer { uploading = false; photo = nil }
                 do {
-                    guard let bytes = try await item.loadTransferable(type: Data.self), let image = UIImage(data: bytes) else { throw AppError.message("无法读取图片") }
-                    let size = image.size, scale = min(1, 1600/max(size.width, size.height))
-                    let renderer = UIGraphicsImageRenderer(size: CGSize(width: size.width*scale, height: size.height*scale))
-                    let reduced = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: CGSize(width: size.width*scale, height: size.height*scale))) }
-                    guard let data = reduced.jpegData(compressionQuality: 0.82) else { throw AppError.message("无法编码图片") }
-                    draft.headerImage = try await store.api.uploadImage(data)
+                    guard let bytes = try await item.loadTransferable(type: Data.self) else { throw AppError.message("无法读取图片") }
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        try MarkerImageCompression.jpeg(from: bytes)
+                    }.value
+                    if store.demo {
+                        uploadedPreview = UIImage(data: data)
+                    } else {
+                        let url = try await store.api.uploadImage(data)
+                        draft.headerImage = url
+                        uploadedPreview = UIImage(data: data)
+                    }
                 } catch { localError = error.localizedDescription }
             }
         }.interactiveDismissDisabled(store.saving || uploading)
     }
+}
+
+private struct MarkerEditorHeaderHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
