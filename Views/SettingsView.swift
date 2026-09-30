@@ -1,0 +1,85 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @ObservedObject var settings: Settings
+    @ObservedObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var url = ""
+    @State private var token = ""
+    @State private var localError: String?
+    @State private var consent = false
+    @State private var checking = false
+    @State private var connectionResult: String?
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("路线规划") {
+                    Toggle("路线规划", isOn: $settings.planning).accessibilityIdentifier("planning-toggle")
+                    if settings.planning {
+                        Picker("出行方式", selection: $settings.mode) {
+                            ForEach(TravelMode.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }.pickerStyle(.segmented).accessibilityIdentifier("route-mode-picker")
+                        if !store.routeProgress.isEmpty {
+                            HStack { ProgressView(); Text("正在规划").font(.subheadline).foregroundStyle(.secondary) }
+                        }
+                        if store.routeError != nil {
+                            Button("重试") { store.rebuildRoutes() }
+                        }
+                    }
+                }
+                Section {
+                    TextField("https://map.example.com", text: $url).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("API token（可留空）", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
+                } header: { Text("MapAnNai 服务") } footer: { Text("可先留空服务地址，只开启原生地图。填写现有 Web 服务的根地址后，地点与旅行会和网页共享；token 保存在系统钥匙串。HTTP 可用于局域网开发，公网建议使用 HTTPS。") }
+                Section {
+                    Toggle("同意高德地图隐私说明", isOn: $consent)
+                    Link("查看高德隐私政策", destination: URL(string: "https://lbs.amap.com/pages/privacy/")!)
+                    Text("高德 SDK 将处理设备信息、网络信息与地图交互信息。定位权限仅在点击定位按钮时请求，用于地图显示当前位置。未同意前不会初始化地图 SDK。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } header: { Text("地图隐私") }
+                Section {
+                    Button {
+                        Task {
+                            checking = true; connectionResult = nil; localError = nil
+                            defer { checking = false }
+                            do {
+                                let normalized = try Settings.normalizedURL(url)
+                                let _: [Trip] = try await APIClient(baseURL: normalized, token: token.trimmingCharacters(in: .whitespacesAndNewlines)).request("trips")
+                                try settings.save(url: normalized, token: token)
+                                settings.setPrivacyAccepted(consent)
+                                await store.connect()
+                                connectionResult = "服务连接成功"
+                            } catch { localError = error.localizedDescription }
+                        }
+                    } label: { HStack { Text("保存并测试服务连接"); if checking { Spacer(); ProgressView() } } }.disabled(checking || store.saving)
+                    if let connectionResult { Label(connectionResult, systemImage: "checkmark.circle.fill").foregroundStyle(Theme.accent) }
+                    if let localError { Text(localError).foregroundStyle(.red).font(.footnote) }
+                }
+                Section {
+                    Text("标记地点 · 整理旅行 · 关联路线").font(.subheadline)
+                    Text("连线用于表达访问顺序。不会展示逐路口导航、路线公里数或预计耗时。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    #if targetEnvironment(simulator)
+                    Text("当前为模拟器，地图使用交互预览画布。高德地图需使用真机验证，服务端地点与路线 API 可正常调用。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    #endif
+                } header: { Text("MapAnNai") }
+            }.navigationTitle("连接设置").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    PanelCloseToolbarItem(identifier: "close-settings", disabled: checking) { dismiss() }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") {
+                            do {
+                                let normalized = url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : try Settings.normalizedURL(url)
+                                let reconnect = normalized != settings.baseURL || token.trimmingCharacters(in: .whitespacesAndNewlines) != settings.token
+                                try settings.save(url: url, token: token)
+                                settings.setPrivacyAccepted(consent)
+                                if reconnect { Task { await store.connect() } }
+                                dismiss()
+                            } catch { localError = error.localizedDescription }
+                        }.disabled(store.saving || checking)
+                    }
+                }
+        }.onAppear { url = settings.baseURL; token = settings.token; consent = settings.privacyAccepted }
+    }
+}

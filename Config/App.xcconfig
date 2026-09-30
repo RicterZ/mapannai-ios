@@ -1,0 +1,3 @@
+// Developer-owned SDK configuration. The local value is embedded in the app, not shown in Settings.
+AMAP_IOS_KEY =
+#include? "Local.xcconfig"

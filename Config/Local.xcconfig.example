@@ -1,0 +1,2 @@
+// Copy to Local.xcconfig and use the iOS SDK key registered for me.mapannai.ios.
+AMAP_IOS_KEY =

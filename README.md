@@ -1,0 +1,156 @@
+# MapAnNai iOS
+
+基于 MapAnNai Plus 现有 API 的原生 iOS 客户端。SwiftUI 界面、UIKit 富文本编辑与官方高德原生地图；地点和行程仍存储在现有服务端，与 Web / MCP 共享数据。最低 iOS 17。
+
+## 运行
+
+SDK 已下载在本机 `Vendor/`，直接用 Xcode 打开 `MapAnNai.xcodeproj`。选择签名 Team，连接 iPhone 后运行。默认 Bundle ID 为 `me.mapannai.ios`，高德 iOS Key 必须绑定相同 Bundle ID；修改 ID 后也要在高德控制台重新绑定。
+
+全新 checkout 时：
+
+```sh
+brew install xcodegen
+python3 Scripts/fetch-sdk.py
+xcodegen generate
+open MapAnNai.xcodeproj
+```
+
+下载脚本从官方 CocoaPods spec 获取固定版本的高德 SDK 分发包：AMap3DMap 11.2.100、AMapFoundation 1.9.1。依赖不上传 Git；不需要 CocoaPods、不需要把 Key 写进源码。
+
+高德 iOS Key 由开发者在 `Config/Local.xcconfig` 配置，构建时嵌入应用；用户无需填写 Key。可先留空服务地址并确认隐私说明，单独开启地图。
+
+打开应用 → 设置 → 填服务根地址（例如 `https://map.example.com`）和可选 API token → 阅读并同意高德地图隐私说明 → 保存。token 保存在系统钥匙串；地址和界面设置保存在 UserDefaults。可填写尾部 `/api`，应用会规范化为服务根地址。Bearer token 不进入 URL、不发送给图片存储服务。
+
+支持局域网 HTTP 服务与 HTTPS 服务。公网 HTTP 没有开启全局 ATS 放行，建议使用 HTTPS。
+
+## 当前功能
+
+界面以白色、浅蓝和少量粉色为主，采用简洁的连续圆角。手机行程面板延伸到屏幕底边，通过顶部拖动区在收起、半屏和展开三档吸附，列表可独立滚动。
+
+- 原生地图：显示、选择地点，长按标点，定位，查看路线 / 全天，日期切换后定位首条路线首个地点。
+- iPad 横屏：左侧一体化面板，将旅行、搜索、日期和行程集中在同一编辑区；定位固定右下角。面板可收起，镜头适配右侧地图剩余区域。iPad 竖屏和窄分屏窗口使用底部面板。
+- 地点搜索：调用 `/api/search`，使用地图可见范围并向各侧扩展 20%；选中搜索结果后填写类型、笔记并保存。
+- 地点：创建、编辑、删除、十类图标、原生笔记编辑（粗体、斜体、列表）、HTML 内容展示、首图 URL、PhotosPicker 图片压缩与 COS 直传。
+- 旅行：列表、创建、名称 / 简介 / 图标编辑、移动开始日期、删除旅行；所有地点 / 旅行总览 / 每日视图。
+- 每日行程：标题、加一天、删除指定天、加入和移除已有地点。
+- 路线链：从已有地点创建多条路线，拖动排序、增删链内地点、删除链，一个地点显示所有路线归属。
+- 路线规划：通过 `/api/directions` 请求步行 / 驾车路线；串行请求、缓存原始路径、显示几何去重和平滑、计算进度与失败重试。失败段保留关联曲线。
+- 路线点击：统一按屏幕距离命中，28pt 点击范围，重叠日期弹出候选选择；跳转日期时保留镜头。
+- 删除地点 / 旅行 / 日期使用系统二次确认；表单不自动唤起键盘；原生面板与键盘布局。
+
+地图和面板是原生实现。WKWebView 仅用于已有 HTML 笔记内容的展示，JavaScript 禁用；地图和应用界面没有嵌入 Web 版。
+
+## 地图配置与扩展
+
+`Core/MapServices.swift` 定义 `MapConfigurationSource`、`MapConfiguration`、`MapServices`。目前 `FixedMapConfigurationSource` 返回硬编码 `.amap` 配置。用户后续提供服务端配置接口的地址和返回格式后，在此新增服务端配置源并注入 `AppStore`；当前没有调用假定的配置接口。
+
+`Map/MapRenderer.swift` 定义 `MapRendererFactory` 和 `MapRendererRegistry`，已接入 `AMapRendererFactory`。模型支持 `amap` / `google`，但 Google 原生 SDK 尚未实现。若配置返回 `google`，显示明确的暂不支持提示，避免静默使用错误底图。新增 Google renderer 后，注册到该入口即可，行程与地点界面无需改变。
+
+渲染引擎与服务能力独立：`ServerMapServices` 始终调用现有服务器的搜索、详情和 directions API，服务器依环境变量选择 provider。当前这几个 API **不支持客户端 provider override**。现阶段要获得全高德服务，请在服务器设置：
+
+```env
+MAP_SEARCH_PROVIDER=amap
+MAP_DETAILS_PROVIDER=amap
+MAP_DIRECTIONS_PROVIDER=amap
+AMAP_API_KEY=服务端自行配置的Web服务Key
+```
+
+高德原生渲染使用 iOS Key；服务端的 Web 服务 Key 不进入应用。后续配置接口应至少报告底图类型；建议同时返回服务 provider，使缓存 namespace 对应真实 provider。当前配置没有此接口可验证，provider 元数据也暂为硬编码高德。
+
+坐标合约使用 WGS-84；仅高德 renderer 边界转换 GCJ-02，搜索和路线 API 的输入输出直接使用 WGS-84。客户端缓存按服务根地址、directions provider、出行方式和精确起终点坐标区分；服务端缓存继续生效。
+
+## API 对照
+
+| API | 功能 |
+| --- | --- |
+| `GET /api/markers` | 地点列表 |
+| `POST /api/markers` | 创建地点（服务端处理坐标去重） |
+| `PUT / DELETE /api/markers/{id}` | 更新 / 删除地点 |
+| `GET / POST /api/trips` | 旅行列表 / 创建旅行及日期 |
+| `PUT / DELETE /api/trips/{id}` | 更新 / 删除旅行 |
+| `POST /api/trips/{id}/days` | 新增一天 |
+| `PUT / DELETE /api/trips/{id}/days/{dayId}` | 更新成员、chains、标题 / 删除日期 |
+| `POST / DELETE /api/trips/{id}/days/{dayId}/markers` | 加入 / 移除地点 |
+| `GET /api/search?q=...&bounds=...` | 搜索地点 |
+| `POST /api/places` | 查询地点详情 |
+| `POST /api/directions` | 获取原始路线 |
+| `POST /api/upload` + COS `PUT` | 图片直传 |
+
+当前后端新增一天不会自动更新旅行结束日期，客户端新增后补一次旅行 `PUT endDate`。这两步不是服务端事务，第二步失败时会显示错误，需同步后检查旅行日期。
+
+## 验证
+
+```sh
+xcodebuild -project MapAnNai.xcodeproj -scheme MapAnNai \
+  -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project MapAnNai.xcodeproj -scheme MapAnNai \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO test
+```
+
+模拟器构建排除官方高德 framework，使用明确标记的交互预览画布，不连接其他底图 provider。使用 Run Scheme 的 Arguments 添加 `--demo` 可加载只读示例旅行；关闭该参数后连接真实 API。真机构建会链接高德原生 SDK。模拟器界面测试不能证明真实高德地图服务可用。
+
+已验证真机目标无签名编译、模拟器编译，17 项 API mock / 核心逻辑测试、4 项 iPhone 原生界面交互测试与 1 项 iPad 横竖屏布局交互测试。iOS Key 已在本地构建配置中提供；真实高德地图展示、地图手势与定位需在真机验证；真实 API 与 COS 联调需服务地址和 token。没有操作生产数据。
+
+## 当前边界
+
+- Google 是扩展入口，尚未接入 SDK；服务端配置接口等待确定合约。
+- 路径显示当前实现保守平滑，没有完整移植 Web 的局部回环剪枝、同日往返分离和路线小球动画。原始路线保持不变。
+- 富文本通过原生 UITextView 编辑；未改正文时保留原始 HTML，改正文后由 NSAttributedString 导出 HTML，不保证 Tiptap 特定节点、复杂表格和自定义样式完全保留。可展示原有 HTML，但编辑功能不等同于完整 Tiptap。
+- 首图支持上传；正文内插图上传、数据集导入导出、离线数据库编辑尚未实现。
+- 工程不固定开发者签名 Team；本地可通过 Xcode 或构建参数选择。已包含可直接使用的应用图标。隐私 manifest 仅声明本应用使用的 UserDefaults；上架前需要结合高德 SDK 实际数据处理填写最终隐私披露与 SDK 合规信息。
+
+## 开发者地图 Key 配置
+
+复制 `Config/Local.xcconfig.example` 到 `Config/Local.xcconfig`，填写 `AMAP_IOS_KEY`。当前机器已配置用户提供的 Key，无需再次填写。`Local.xcconfig` 被 Git 忽略；`Config/App.xcconfig` 在 Debug / Release 构建中引用它。CI 可提供同名本地文件或使用构建设置注入。
+
+构建将该值写入应用 `Info.plist` 的 `AMapIOSKey`，原生 SDK 从 App 配置读取；设置页不显示 Key 输入框。iOS 客户端 Key 本就随应用分发，不应视为不可提取的服务端秘密。请在高德控制台将 Key 类型设为 iOS，并绑定 `me.mapannai.ios`，修改 Bundle ID 时同步更新。API token 仍作为用户凭据保存在 Keychain。
+
+已移除先前的启动环境 / Caches 暂存导入逻辑。用户已授权将浅色新版 UI 安装至 Hibiki / Hikari 进行真机测试。地图隐私说明与定位权限仍由用户自行确认。
+
+2026-09-30：浅色普通圆角版 0.1.0 (build 3) 已安装到 Hibiki 与 Hikari。17 项核心测试和 3 项 iPhone 交互测试通过，包含面板贴底、向下收起、向上展开和列表操作。拖动使用固定屏幕坐标，手指移动期间禁用动画，松手后统一吸附。真实高德地图与拖动手感由真机体验继续验证。
+
+界面文案仅展示地点、旅行、日期、数量和必要操作提示，不添加装饰性口号。
+
+资源验证：安装包必须包含完整 AMap.bundle（包括 localization.bundle 和 AMap3D.bundle）。连接设置保存时保持现有地图实例，避免因 API 凭据修改重复创建 SDK 地图。
+
+2026-09-30 build 5：修复首次开启地图时资源缺失导致的闪退，已安装到两台设备。Hibiki 启动并保持运行；Hikari 锁屏，等待手动验证。安装前运行 `python3 Scripts/verify-app-resources.py /path/to/MapAnNai.app` 校验资源完整性。
+
+应用图标保留原来的地图连线图形，仅将配色换成蓝色，通过 `python3 Scripts/make-icon.py` 可重复生成，不使用像素边角。
+
+顶部仅显示旅行与日期胶囊导航；日期下拉使用自绘列表，显示日期与标题，不加数字序号。搜索与设置集中在旅途面板，定位按钮为圆形。
+
+面板通过拖动条与箭头表达状态，不显示“返回地图”“拖动展开”文案。详情、旅行列表和设置保留系统下拉关闭手势，关闭按钮使用图标；iPad 面板标题支持向左滑动收起。
+
+2026-09-30 build 8 已安装到 Hibiki/Hikari：移除“返回地图”“拖动展开”等可见引导文字，关闭入口改图标；验证旅行列表原生下拉关闭与 iPad 面板标题左滑收起。
+
+- 旅途层级遵循 Web：面板总览显示旅行及独立地点，旅行显示日期，日期显示路线与未安排地点。顶部仅为当前旅行/日期面包屑，旅行库在下方面板。地图使用 Web 同色同 emoji 的圆圈（28pt 白边，低于 zoom 9 显示小点），保持地图可选已有地点。加入地点默认不列整个库，搜索已保存地点或地图选点；路线候选仅当天地点。
+
+2026-09-30 build 9：按 Web 重整面板层级（旅行 → 日期 → 路线/未安排地点），地图切换为类型色圆圈，加入地点改为搜索/地图选点，路线仅选当天地点。17 项核心测试、4 项手机交互检查与 iPad 横竖屏检查通过（手机旧 runner 缓存导致失败的用例以独立新构建复测通过）。已安装 Hibiki/Hikari；类型色圆圈的真机 SDK 手感及真实保存仍由设备测试验证，模拟器使用 mock。
+
+# 路线规划集中在设置页，地图面板无模式/进度/错误详情。自动模式按每段直线距离小于2km步行，否则驾车；请求和缓存使用解析后的实际模式。服务器 OVER_DIRECTION_RANGE/UNSUPPORTED_REGION 返回空指标和 fallback 标记，缓存后以贝塞尔关联曲线显示，不作为可重试失败。
+
+# iOS 不使用编辑模式开关，旅行/日期/路线操作使用长按菜单；胶囊按屏幕水平居中。地图长按请求 /api/places，异步补全新地点名称和地址，保留原始点击坐标与用户已输入字段。
+
+# 面板标题跟随层级：旅途 → 旅行名/日期范围 → 第N天/日期和当天信息，正文不重复标题。顶部胶囊居中，日期菜单宽196pt，显示第N天，右侧小字M月D日。仅改变规划设置不重新连接/清空当前旅行。
+
+# 手机旅途面板上拉到整页（覆盖顶部安全区），内容避开状态栏；整页隐藏地图胶囊和定位按钮，向下拖动返回半屏或收起。
+
+2026-09-30 build 13 已安装到 Hibiki/Hikari：面板可上拉为整页并下拉返回；标题跟随旅行/日期层级；胶囊居中、日期菜单196pt；去除编辑模式改为长按；长按地图自动补全名称/地址；规划设置迁入设置、支持2km自动模式与终态fallback缓存。23项核心测试、相关手机界面与全屏往返检查通过，iPad布局已验证。新增信息查询使用 mock/API合约验证，真实服务和高德手势需真机体验。
+
+- iPad 横屏侧栏背景贴屏幕左、上、下边缘，无悬浮圆角或外边距；内容避开系统安全区。未连接时，连接服务提示与按钮位于地图的“地图未开启”下方，行程面板不重复展示。
+
+- 选中当天的面板标题、日期胶囊与菜单均显示第N天，右侧小字日期，避免日期重复占行。
+
+2026-09-30 build 14 已安装到 Hibiki/Hikari：iPad 横屏侧栏上下左贴边；连接提示移到地图未开启下方；当天标题、胶囊和菜单用第N天搭配右侧小字日期；定位按钮保留屏幕内安全间距。iPad 横竖屏/贴边、连接入口及手机面板拖动共4项模拟器交互检查通过，真机签名构建和187项 SDK资源校验通过；真实地图交互待设备体验。
+
+- 地点详情允许背景地图交互，不压暗地图；单点镜头以一次原子更新设为15级，重复选中同一地点不再次定位。空Tiptap笔记（含空段落/换行/不换行空格）不创建笔记区域，无笔记和头图时使用紧凑详情面板。
+
+- 旅途标题左侧不显示图标，展开/收起箭头使用浅蓝圆底和蓝灰色箭头；关闭按钮使用单层实色圆底，iOS 26 隐藏额外工具栏玻璃背景，保留44pt点击区域与无障碍标签。
+
+- 初次连接后，按设备本地日历日期寻找今天或之后最近开始且有有效地点的旅行，以其全部每日地点范围设置镜头；保持总览，不选中旅行、日期或地点。空旅行跳过，仅一个地点时使用Web总览11级；刷新不重复定位，加载期间的用户选择优先。
+
+- 回退按钮放在旅行/日期面板标题左侧的原图标位置，搜索栏只保留搜索与设置；旅途总览不显示回退按钮。
+
+2026-09-30 build 16 已安装到 Hibiki/Hikari：启动按本地日期寻找最近尚未开始（含今天）的有地点旅行，适配全部地点范围并保持总览，仅初次加载执行；延续build15的地点详情不压暗地图、固定15级单点定位、空笔记紧凑面板。30项核心测试通过；地点详情的手机流程与iPad背景地图交互已在模拟器验证，真机签名构建和187项SDK资源校验通过。实际高德镜头与真实服务数据仍需设备体验。
+
+2026-09-30 build 17：移除旅途标题图标，回退移到旅行/日期标题左侧，搜索栏保留搜索与设置；展开/收起改为浅蓝圆底箭头，关闭按钮移除重复玻璃背景。真机目标无签名和签名构建通过，187项高德资源校验通过；手机逐层返回、三档拖动/整页往返及iPad地点详情/地图选择等4项相关模拟器交互检查通过。
