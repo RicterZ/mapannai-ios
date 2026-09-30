@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var dayTitle = ""
     @State private var deletingPanelDay = false
     @State private var expanded = true
+    @State private var journeyAvailableHeight: CGFloat = 0
     @State private var nativeJourneyPresented = false
     @State private var journeyPath: [JourneyDestination] = []
     @State private var sheetDetent: ItineraryDetent = .half
@@ -27,6 +28,9 @@ struct HomeView: View {
                     modalContent(nativeJourneyPanel)
                         .presentationDetents([.height(68), .medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
+                        .presentationBackground {
+                            JourneySheetBackground(availableHeight: journeyAvailableHeight)
+                        }
                         .presentationBackgroundInteraction(.enabled)
                         .presentationContentInteraction(.resizes)
                         .interactiveDismissDisabled()
@@ -43,7 +47,13 @@ struct HomeView: View {
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
                                    sheetHeight: UIDevice.current.userInterfaceIdiom != .pad && store.draft != nil && !store.draftExpanded ? proxy.size.height * 0.5 : UIDevice.current.userInterfaceIdiom == .phone && sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
-                .onAppear { store.mapViewportInsets = layout.insets }
+                .onAppear {
+                    store.mapViewportInsets = layout.insets
+                    journeyAvailableHeight = proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
+                }
+                .onChange(of: proxy.size) { _, size in
+                    journeyAvailableHeight = size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
+                }
                 .onChange(of: layout.insets) { _, insets in store.mapViewportInsets = insets }
                 .onChange(of: store.selectedMarker?.id) { _, markerID in
                     guard markerID != nil else { return }
@@ -210,10 +220,12 @@ struct HomeView: View {
             } else {
                 JourneyOverviewContents(store: store, searchContent: { EmptyView() }, settingsContent: { journeySettingsRow })
             }
-        }.listStyle(.insetGrouped).buttonStyle(.borderless).scrollContentBackground(.visible)
+        }.listStyle(.insetGrouped).buttonStyle(.borderless)
+            .scrollContentBackground(sidebar ? .visible : .hidden)
             .contentMargins(.top, 0, for: .scrollContent).listSectionSpacing(8)
             .id(itineraryScrollIdentity).scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("itinerary-marker-list")
+            .modifier(JourneyNavigationBackground())
             .navigationTitle(journeyTitle(destination)).navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden()
             .toolbar { journeyToolbar(sidebar: sidebar, destination: destination) }

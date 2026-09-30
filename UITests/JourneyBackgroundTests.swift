@@ -9,6 +9,7 @@ final class JourneyBackgroundTests: XCTestCase {
         XCTAssertTrue(list.waitForExistence(timeout: 10))
         let settings = app.buttons["itinerary-settings-bottom"]
         XCTAssertFalse(settings.exists)
+        capture("Medium day shared translucent background")
         let header = app.navigationBars["第1天"]
         let drag = header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
         drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: 0, dy: -450)))
@@ -30,6 +31,12 @@ final class JourneyBackgroundTests: XCTestCase {
         trip.tap()
         XCTAssertTrue(app.buttons["journey-day-day-1"].waitForExistence(timeout: 5))
         XCTAssertFalse(settings.exists)
+        app.buttons["itinerary-collapse"].tap()
+        app.buttons["itinerary-collapse"].tap()
+        capture("Medium pushed trip shared translucent background")
+        app.buttons["journey-day-day-1"].tap()
+        XCTAssertTrue(app.navigationBars["第1天"].waitForExistence(timeout: 5))
+        capture("Medium pushed day shared translucent background")
     }
     private func capture(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
