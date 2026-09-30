@@ -51,7 +51,6 @@ struct TripEditorView: View {
     let trip: Trip?
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var description = ""
     @State private var start = Date.now
     @State private var end = Date.now
     @State private var emoji = "✈️"
@@ -59,18 +58,34 @@ struct TripEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("旅行信息") {
-                    TextField("旅行名称", text: $name)
-                    TextField("简介", text: $description, axis: .vertical)
-                    TextField("旅行图标", text: $emoji)
+                Section {
+                    HStack(spacing: 12) {
+                        Menu {
+                            ForEach(["✈️", "🏍️", "🚗", "🚆", "🚲", "🥾", "🏕️", "🏖️", "🏔️", "🍂"], id: \.self) { symbol in
+                                Button { emoji = symbol } label: {
+                                    if emoji == symbol { Label(symbol, systemImage: "checkmark") }
+                                    else { Text(symbol) }
+                                }.accessibilityIdentifier("trip-icon-option-\(symbol)")
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(emoji).font(.system(size: 22))
+                                Image(systemName: "chevron.down").font(.caption2)
+                            }.frame(width: 44, height: 44)
+                        }.buttonStyle(.borderless).accessibilityLabel("旅行图标：\(emoji)")
+                            .accessibilityIdentifier("trip-icon-picker")
+                        TextField("旅行名称", text: $name).font(.body).frame(minHeight: 44)
+                            .accessibilityIdentifier("trip-name-field")
+                    }.transaction { $0.animation = nil }
                 }
                 Section("日期") {
                     DatePicker("开始日期", selection: $start, displayedComponents: .date)
                     if trip == nil { DatePicker("结束日期", selection: $end, in: start..., displayedComponents: .date) }
                     else { Text("修改开始日期会保留天数并顺移每日安排。增减天数在每日行程中操作。").font(.caption).foregroundStyle(.secondary) }
                 }
-                if let error { Text(error).foregroundStyle(.red) }
-            }.navigationTitle(trip == nil ? "创建旅行" : "编辑旅行").navigationBarTitleDisplayMode(.inline)
+                if let error { Section { Text(error).foregroundStyle(.red) } }
+            }.scrollDismissesKeyboard(.interactively)
+                .navigationTitle(trip == nil ? "创建旅行" : "编辑旅行").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(store.saving) }
                     ToolbarItem(placement: .confirmationAction) {
@@ -80,7 +95,7 @@ struct TripEditorView: View {
                             // Bound creation to protect against accidental multi-year ranges.
                             if trip == nil && end.timeIntervalSince(start) > 366*86400 { error = "一次最多创建 367 天，请缩短日期范围"; return }
                             let ok = await store.perform { client in
-                                var body: [String: Any] = ["name": name, "description": description, "startDate": start.dayString, "emoji": emoji]
+                                var body: [String: Any] = ["name": name.trimmingCharacters(in: .whitespacesAndNewlines), "startDate": start.dayString, "emoji": emoji]
                                 if let trip { try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: body) }
                                 else {
                                     body["endDate"] = end.dayString
@@ -89,11 +104,13 @@ struct TripEditorView: View {
                                 }
                             }
                             if ok { dismiss() } else { error = store.errorMessage }
-                        }}.disabled(store.saving || name.isEmpty)
+                        }}.disabled(store.saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
         }.onAppear {
-            if let trip { name = trip.name; description = trip.description ?? ""; start = .fromDay(trip.startDate); end = .fromDay(trip.endDate); emoji = trip.emoji ?? "✈️" }
+            if let trip { name = trip.name; start = .fromDay(trip.startDate); end = .fromDay(trip.endDate); emoji = trip.emoji ?? "✈️" }
+        }.onChange(of: start) { _, value in
+            if trip == nil && end < value { end = value }
         }.interactiveDismissDisabled(store.saving)
     }
 }
