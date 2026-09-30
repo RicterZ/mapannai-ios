@@ -248,6 +248,9 @@ struct HomeView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
+    private var panelActionTransition: AnyTransition {
+        reduceMotion ? .identity : .opacity.combined(with: .scale(scale: 0.85))
+    }
     // Normalize the drawn symbol bounds, not just the font size or tap target.
     private func panelActionIcon(_ symbol: String) -> some View {
         Image(systemName: symbol)
@@ -363,6 +366,7 @@ struct HomeView: View {
         let height = max(ItineraryDetent.compact.height(in: layout.height), min(fullHeight, baseHeight - sheetDrag))
         let headerInset = max(0, min(topInset, height - layout.height))
         let compactHeader = height < 100
+        let showHeaderActions = store.trip == nil && sheetDetent != .compact
         return VStack(spacing: 0) {
             VStack(spacing: compactHeader ? 2 : 10) {
                 Capsule().fill(Theme.muted.opacity(0.3)).frame(width: 36, height: 5)
@@ -387,14 +391,18 @@ struct HomeView: View {
                             else { sheetDetent = ItineraryDetent(rawValue: max(0, sheetDetent.rawValue-1)) ?? .compact }
                         }
                     HStack(spacing: 0) {
-                        if store.trip == nil && !compactHeader { addTripButton }
+                        if showHeaderActions {
+                            addTripButton.transition(panelActionTransition)
+                        }
                         if UIDevice.current.userInterfaceIdiom == .phone {
                             Button { location.request { store.locating = UUID() } } label: {
                                 panelActionIcon("location").foregroundStyle(Theme.accent)
                             }.buttonStyle(.plain).accessibilityLabel("定位到当前位置")
                                 .accessibilityIdentifier("itinerary-header-location")
                         }
-                        if store.trip == nil && !compactHeader { settingsButton }
+                        if showHeaderActions {
+                            settingsButton.transition(panelActionTransition)
+                        }
                         Button {
                             withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                                 sheetDetent = sheetDetent == .compact ? .half : .compact
@@ -406,6 +414,7 @@ struct HomeView: View {
                             .accessibilityLabel(sheetDetent == .compact ? "展开旅途" : "收起旅途")
                             .accessibilityIdentifier("itinerary-collapse")
                     }
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: showHeaderActions)
                 }.padding(.horizontal, 18)
             }
             .padding(.top, headerInset).frame(height: min(76, height) + headerInset).contentShape(Rectangle())
