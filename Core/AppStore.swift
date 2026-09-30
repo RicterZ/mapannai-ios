@@ -6,6 +6,7 @@ import SwiftUI
     private let servicesOverride: (any MapServices)?
     @Published private(set) var mapConfiguration: MapConfiguration = .current
     let routeCache = RouteCache()
+    let markerRepository: MarkerRepository
     @Published var markers: [Marker] = []
     @Published var trips: [Trip] = []
     @Published var tripID: String?
@@ -34,6 +35,7 @@ import SwiftUI
     private var searchGeneration = UUID()
     private var routeGeneration = UUID()
     private var connectionRevision = UUID()
+    private var dataRevision = UUID()
     private var refreshing = false
     private var startupCameraPending = true
     var api: APIClient { APIClient(baseURL: settings.baseURL, token: settings.token) }
@@ -50,7 +52,8 @@ import SwiftUI
         guard tripID != nil else { return markers }
         let ids = Set(visibleDays.flatMap(\.markerIds)); return markers.filter { ids.contains($0.id) }
     }
-    init(settings: Settings, demo: Bool = ProcessInfo.processInfo.arguments.contains("--demo"), configurationSource: (any MapConfigurationSource)? = nil, services: (any MapServices)? = nil) {
+    init(settings: Settings, demo: Bool = ProcessInfo.processInfo.arguments.contains("--demo"), configurationSource: (any MapConfigurationSource)? = nil, services: (any MapServices)? = nil, markerRepository: MarkerRepository = MarkerRepository()) {
+        self.markerRepository = markerRepository
         self.settings = settings; self.demo = demo; self.servicesOverride = services; self.configurationSource = configurationSource ?? FixedMapConfigurationSource()
         if demo { loadDemo() }
     }
@@ -61,27 +64,60 @@ import SwiftUI
         searchGeneration = UUID(); searching = false; rebuildRoutes()
         if demo { loadDemo(); rebuildRoutes(); return }
         guard settings.configured else { return }
+        let revision = connectionRevision, client = api
+        if let cached = await markerRepository.cached(using: client), revision == connectionRevision {
+            apply(cached)
+        }
+        guard revision == connectionRevision else { return }
         do { mapConfiguration = try await configurationSource.load(using: api) }
         catch { report(error); return }
-        await refresh()
+        await refresh(force: false, quietly: !markers.isEmpty)
     }
-    func refresh() async {
+    func refresh(force: Bool = true, quietly: Bool = false) async {
         guard !demo else { rebuildRoutes(); return }
-        let generation = UUID(); refreshGeneration = generation; loading = true; refreshing = true
-        let client = api
+        guard settings.configured, !refreshing, !saving else { return }
+        let generation = UUID(); refreshGeneration = generation
+        let revision = connectionRevision, client = api
+        refreshing = true; if !quietly { loading = true }
         defer { if refreshGeneration == generation { loading = false; refreshing = false } }
         do {
-            async let fetchedMarkers: [Marker] = client.request("markers")
-            async let fetchedTrips: [Trip] = client.request("trips")
-            let (newMarkers, newTrips) = try await (fetchedMarkers, fetchedTrips)
-            guard refreshGeneration == generation else { return }
-            markers = newMarkers; trips = newTrips
-            if let tripID, !trips.contains(where: { $0.id == tripID }) { self.tripID = nil; dayID = nil }
-            if let dayID, !(trip?.days.contains(where: { $0.id == dayID }) ?? false) { self.dayID = nil }
-            if let selection = selectedMarker { selectedMarker = markers.first { $0.id == selection.id } }
-            rebuildRoutes()
-            applyStartupCamera()
-        } catch { if refreshGeneration == generation { report(error) } }
+            let value = try await markerRepository.refresh(using: client, force: force)
+            guard refreshGeneration == generation, connectionRevision == revision else { return }
+            apply(value)
+        } catch { if !quietly, refreshGeneration == generation { report(error) } }
+    }
+    private func apply(_ snapshot: MarkerSnapshot) {
+        let changedMarkers = markers != snapshot.markers
+        let geometry = Dictionary(markers.map { ($0.id, $0.coordinates) }, uniquingKeysWith: { _, last in last })
+        let nextGeometry = Dictionary(snapshot.markers.map { ($0.id, $0.coordinates) }, uniquingKeysWith: { _, last in last })
+        let changedTrips = trips != snapshot.trips
+        if changedMarkers { markers = snapshot.markers }
+        if changedTrips { trips = snapshot.trips }
+        if let tripID, !trips.contains(where: { $0.id == tripID }) { self.tripID = nil; dayID = nil }
+        if let dayID, !(trip?.days.contains(where: { $0.id == dayID }) ?? false) { self.dayID = nil }
+        if let selection = selectedMarker, let updated = markers.first(where: { $0.id == selection.id }) {
+            if selection != updated { selectedMarker = updated }
+        } else if selectedMarker != nil { selectedMarker = nil }
+        if geometry != nextGeometry || changedTrips { rebuildRoutes() }
+        applyStartupCamera()
+    }
+    func refreshSelectedMarker(_ id: String) async {
+        guard !demo, settings.configured, !saving else { return }
+        let revision = connectionRevision, dataVersion = dataRevision, client = api
+        do {
+            guard let marker = try await markerRepository.detail(id, using: client), revision == connectionRevision, dataVersion == dataRevision,
+                  !saving, let index = markers.firstIndex(where: { $0.id == id }), markers[index] != marker else { return }
+            let moved = markers[index].coordinates != marker.coordinates
+            markers[index] = marker
+            if selectedMarker?.id == id { selectedMarker = marker }
+            if moved { rebuildRoutes() }
+        } catch { /* Keep cached detail visible on background failure. */ }
+    }
+    func runBackgroundUpdates() async {
+        while !Task.isCancelled {
+            await refresh(force: false, quietly: true)
+            do { try await Task.sleep(for: .seconds(60)) } catch { return }
+        }
     }
     func applyStartupCamera(now: Date = Date(), calendar: Calendar = Calendar(identifier: .gregorian)) {
         guard startupCameraPending else { return }
@@ -95,12 +131,18 @@ import SwiftUI
     }
     func perform(_ operation: @escaping (APIClient) async throws -> Void) async -> Bool {
         guard !demo else { errorMessage = "当前为只读示例。配置服务后退出示例模式，即可保存到你的数据库。"; return false }
-        guard !saving, !refreshing else { errorMessage = "请等待当前同步完成"; return false }
+        guard !saving else { errorMessage = "请等待当前保存完成"; return false }
+        // A background read must not block edits or overwrite their results.
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
         saving = true; let revision = connectionRevision, client = api
         defer { saving = false }
+        await markerRepository.invalidate(using: client)
         do {
             try await operation(client)
             guard revision == connectionRevision else { return false }
+            await markerRepository.invalidate(using: client)
+            // The mutation has finished; refresh should not be blocked by saving.
+            saving = false
             await refresh(); return true
         } catch { if revision == connectionRevision { report(error) }; return false }
     }

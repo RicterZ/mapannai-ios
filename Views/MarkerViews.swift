@@ -77,7 +77,8 @@ struct MarkerDetailView: View {
                     Button("取消", role: .cancel) {}
                     Button("删除", role: .destructive) { Task { await store.deleteMarker(current); if store.selectedMarker == nil { dismiss() } } }
                 } message: { Text("会从所有每日行程和路线中移除这个地点。") }
-        }.presentationDetents(compactDetails ? [.height(380), .large] : [.medium, .large])
+        }.task(id: current.id) { await store.refreshSelectedMarker(current.id) }
+            .presentationDetents(compactDetails ? [.height(380), .large] : [.medium, .large])
             .presentationBackgroundInteraction(.enabled)
             .presentationDragIndicator(.visible)
     }
