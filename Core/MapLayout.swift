@@ -29,7 +29,7 @@ enum ItineraryDetent: Int, CaseIterable {
     case compact, half, full
     func height(in availableHeight: Double) -> Double {
         switch self {
-        case .compact: 92
+        case .compact: 60
         case .half: max(260, min(380, availableHeight * 0.48))
         case .full: max(300, availableHeight)
         }

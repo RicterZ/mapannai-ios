@@ -180,7 +180,7 @@ struct HomeView: View {
         if let trip = store.trip { return "\(shortDate(trip.startDate)) – \(shortDate(trip.endDate)) · \(trip.days.count)天" }
         return "\(store.trips.count)个旅行"
     }
-    private var panelHeading: some View {
+    private func panelHeading(compact: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(panelTitle).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
@@ -188,7 +188,9 @@ struct HomeView: View {
                     Text(shortDate(day.date)).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
                 }
             }.accessibilityElement(children: .contain).accessibilityIdentifier("itinerary-panel-heading")
-            Text(panelInfo).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+            if !compact {
+                Text(panelInfo).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+            }
         }.contextMenu {
             if let day = store.day {
                 Button("日期标题", systemImage: "pencil") { dayTitle = day.title ?? ""; editingDayTitle = true }
@@ -230,7 +232,7 @@ struct HomeView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 panelBackButton
-                panelHeading
+                panelHeading()
                 Spacer()
                 Button { togglePanel() } label: {
                     Image(systemName: "sidebar.left").foregroundStyle(Theme.muted).frame(width: 40, height: 40)
@@ -319,10 +321,11 @@ struct HomeView: View {
         let baseHeight = sheetDetent == .full ? fullHeight : sheetDetent.height(in: layout.height)
         let height = max(ItineraryDetent.compact.height(in: layout.height), min(fullHeight, baseHeight - sheetDrag))
         let headerInset = max(0, min(topInset, height - layout.height))
+        let compactHeader = height < 100
         return VStack(spacing: 0) {
-            VStack(spacing: 10) {
+            VStack(spacing: compactHeader ? 2 : 10) {
                 Capsule().fill(Theme.muted.opacity(0.3)).frame(width: 36, height: 5)
-                    .frame(height: 14)
+                    .frame(height: compactHeader ? 10 : 14)
                 HStack(spacing: 8) {
                     panelBackButton
                     Button {
@@ -331,7 +334,7 @@ struct HomeView: View {
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            panelHeading
+                            panelHeading(compact: compactHeader)
                             Spacer(minLength: 4)
                             Image(systemName: sheetDetent == .compact ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 14, weight: .semibold))
@@ -349,7 +352,7 @@ struct HomeView: View {
                         }
                 }.padding(.horizontal, 18)
             }
-            .padding(.top, headerInset).frame(height: 76 + headerInset).contentShape(Rectangle())
+            .padding(.top, headerInset).frame(height: min(76, height) + headerInset).contentShape(Rectangle())
             .highPriorityGesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
                     var transaction = Transaction(); transaction.disablesAnimations = true
