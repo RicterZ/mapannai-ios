@@ -70,3 +70,5 @@
 - 地图标点由同时识别的单击手势按可见annotation view直接命中和高亮，SDK选中回调作幂等补充。详情先显示缓存与操作，WebKit/图片/后台详情提交等待镜头预计结束；空笔记判断使用有界缓存。
 - API请求/编解码使用非MainActor异步入口；磁盘I/O用独立actor；路线构建、平滑、批量转换用RouteProcessing。主线程只做状态/UI/SDK提交；检查取消与generation/快照，不用同步I/O、信号量或等待串行动画和API。
 - 设置底部保留 RicterZ/mapannai-plus、RicterZ/mapannai-ios 入口及 MIT 许可说明，第三方SDK不随源码发布。
+
+- 发布使用 .github/workflows/unsigned-ipa.yml 和 Scripts/build-unsigned-ipa.sh：Release配置、真机无签名包、资源/Key存在性校验及SHA256。main推送产出artifact，v版本标签发布Release；tag必须匹配MARKETING_VERSION。Key只从仓库Secret注入，不输出；不要将AltStore重签宣称为已验证兼容，注意高德Bundle ID绑定。

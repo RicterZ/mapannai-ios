@@ -9,3 +9,5 @@ xcuserdata/
 Screenshots/
 
 Config/Local.xcconfig
+
+dist/

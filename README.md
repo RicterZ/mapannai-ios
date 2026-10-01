@@ -1,41 +1,45 @@
-# MapAnNai iOS
+# MapAnNai iOS（マップ案内）
 
-为 iPhone 和 iPad 打造的地图旅行手帐。
+[MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) · [下载 IPA](https://github.com/RicterZ/mapannai-ios/releases/latest)
 
-收藏想去的地方，把地点串成每天的行程，用照片和笔记记录沿途见闻。MapAnNai iOS 是 [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) 的原生客户端，与 Web 端共用你的地点和旅行数据。
+把想去的地方放到地图上，再把每天的旅行计划带在身边。
 
-## Features
+MapAnNai iOS 是 MapAnNai Plus 的原生 iPhone 和 iPad 客户端。你可以收藏餐厅、酒店和景点，记录照片与笔记，按旅行和日期安排访问顺序。客户端与网页使用同一服务端的地点和旅行数据，在电脑上做好的计划，可以在手机上继续查看和编辑。
 
-### 📍 你的地点收藏
+## 产品功能
 
-餐厅、咖啡馆、酒店、景点，随时搜到、随手收藏。搜索结果同时呈现在地图上，方便比较位置；也可以直接长按地图，记下没有名字的小店或风景。还没决定什么时候去的地方，可以先收藏，留待下一次旅行。
+- **收藏地点与旅行笔记**：搜索想去的地方，或长按地图添加地点，记下攻略、预订信息与旅行见闻。
+- **按天安排行程**：创建旅行，把地点加入每天的安排；支持增减日期、调整出发时间，复用已经收藏的地点。
+- **自由组织访问顺序**：一天可以有多条路线，调整地点顺序，分别安排不同活动。
+- **在地图上看清整体安排**：查看全部地点、某次旅行或当天路线，用颜色区分日期，点击地点或连线查看对应行程。
+- **查看路线与打开导航**：支持步行、驾车和自动路线规划，出发时可以从地点打开 Apple Maps 导航。
+- **在手机和平板上使用**：iPhone 上拉起面板查看行程，iPad 上地图与行程并排显示，方便比较地点、整理安排。
+- **与网页共用旅行数据**：连接自己的 MapAnNai Plus 服务，在 Web、iPhone 和 iPad 上继续编辑同一份旅行。
 
-### 🗓️ 从收藏到行程
+## 开始规划
 
-按旅行和日期整理地点，为每天安排一条或多条路线，自由调整游览顺序。一个地点可以出现在不同旅行中，不必重复记录。计划有变时，移动旅行开始日期，整段行程也随之顺延。
+1. 在应用设置中连接自己的 MapAnNai Plus 服务。
+2. 搜索或长按地图添加想去的地方，记录笔记与照片。
+3. 创建旅行，把地点加入每天的安排，再调整路线中的访问顺序。
+4. 出行时打开当天行程，查看地点、阅读攻略或打开导航。
 
-### 🗺️ 一张地图看清旅途
+还没有服务端？按照 [MapAnNai Plus 的部署说明](https://github.com/RicterZ/mapannai-plus/blob/main/README.zh.md#部署自己的服务) 准备服务，再在客户端填写服务地址及服务需要的 API token。搜索、保存和路线规划需要网络连接。
 
-不同日期用不同颜色呈现，地点之间的连线让每天的安排一目了然。点击路线即可查看当天行程，支持步行、驾车及自动路线规划；出发时，从地点详情打开 Apple Maps 导航。
+## 安装到 iPhone / iPad
 
-### 📝 每个地点都有自己的笔记
+需要 **iOS / iPadOS 17 或更新版本**。Release 提供未签名的 `.ipa`，可通过 **AltStore Classic** 签名安装。
 
-给地点配上分类图标和封面照片，记录必点菜、预约信息、游览建议，或旅途中的见闻。富文本笔记支持粗体、斜体和列表，让攻略与回忆都留在对应的位置。
+1. 按照 [AltStore 官方指南](https://faq.altstore.io/altstore-classic/how-to-install-altstore) 在电脑安装 AltServer，再为 iPhone 或 iPad 安装 AltStore Classic。根据系统提示开启开发者模式。
+2. 在设备上打开 [Releases](https://github.com/RicterZ/mapannai-ios/releases/latest)，下载 `MapAnNai-0.0.1-unsigned.ipa`，存到“文件”。
+3. 打开 AltStore Classic → **My Apps** → 左上角 **＋**，选择下载的 IPA，按提示完成签名和安装。按 AltStore 要求保持与 AltServer 的连接。
+4. 使用免费 Apple 账号安装的应用通常需要每 **7 天续签**，在 AltStore 中刷新应用即可。连接和自动刷新方式见 [AltStore 使用指南](https://faq.altstore.io/altstore-classic/your-altstore)。
 
-### 📱 随身查看，大屏规划
+这里使用的是 **AltStore Classic**，不是 AltStore PAL。重签可能改变应用 Bundle ID，而高德地图 Key 绑定 Bundle ID；如果安装后地图鉴权失败，需要使用与签名后 Bundle ID 匹配的 Key 重新构建，详见 [构建指南](docs/development.md)。不能保证任意账号重签后地图均可用。
 
-在 iPhone 上，一边看地图，一边拉起行程面板查看当天安排。在 iPad 上，地图与行程并排展示，横竖屏都能利用大屏空间，方便搜索地点、比较位置和整理路线。
+## 自行构建
 
-### 🔄 与 MapAnNai Plus 共用数据
+见 [构建指南](docs/development.md)。推送 main 或手动运行 GitHub Actions 会构建 unsigned IPA；推送版本标签后，构建成功的安装包会自动发布到 Releases。
 
-在电脑上规划，在手机上随身查看，也可以用 iPad 继续整理。连接同一个 [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) 服务，地点、笔记和旅行都保存在你自己的服务端。
-
-## 开始使用
-
-支持 **iOS / iPadOS 17 及以上版本**，需要搭配 [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) 使用。
-
-准备好服务后，在客户端设置中填写服务地址和 API token，即可连接自己的地点与旅行。客户端目前可通过源码构建安装，详见 [构建指南](docs/development.md)。
-
-## License
+## 许可
 
 [MIT](LICENSE)。高德地图 SDK 遵循其自身授权条款。
