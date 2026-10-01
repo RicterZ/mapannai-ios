@@ -529,7 +529,7 @@ struct HomeView: View {
     private var searchField: some View {
         NativePlaceSearchBar(text: $store.searchText, searching: store.searching,
                              onSearch: { Task { await store.search() } }, onClear: { store.clearSearch() })
-            .frame(height: 44)
+            .frame(height: 56)
     }
     private var animatedItineraryList: some View {
         ZStack {

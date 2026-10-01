@@ -266,7 +266,7 @@ import SwiftUI
                 results = markers.filter { $0.title.localizedCaseInsensitiveContains(query) }.map {
                     Place(id: $0.id, name: $0.title, address: $0.content.address ?? "", coordinates: $0.coordinates)
                 }
-            } else { results = try await mapServices.search(query, bounds: bounds?.expanded()) }
+            } else { results = try await mapServices.search(query, bounds: bounds) }
             guard searchGeneration == generation else { return }; searchResults = results
             fly(results.map(\.coordinates))
             if results.isEmpty { errorMessage = "当前地图范围内没有结果。可移动地图或使用更精确的城市与地点名称。" }

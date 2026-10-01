@@ -73,6 +73,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var selectionRoutes: [DisplayRoute] = []
         private let motion = RouteMotionAnimation()
         private var motionDots: [CAShapeLayer] = []
+        private var filteringSearchPOIs = false
         private var renderedCoordinates: [String: [Coordinate]] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
@@ -100,6 +101,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 if let pin = searchPins[place.id], let view = map.view(for: pin) { styleSearch(view, pin: pin) }
             }
             updateZoomPresentation(map)
+            updateSearchPOIFilter(map)
             updateRoutes(map)
             updateRouteSelection(map)
             if let command = store.camera, lastCamera != command.id {
@@ -138,6 +140,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
             }
             updatePinStyles(map)
+            updateSearchBounds(map)
             if lastLocate == nil { lastLocate = store.locating }
             else if lastLocate != store.locating {
                 lastLocate = store.locating; map.showsUserLocation = true
@@ -297,11 +300,37 @@ struct AMapNativeRenderer: UIViewRepresentable {
             renderedCoordinates[route.id] = prepared.coordinates
             return added
         }
+        private func applyAnnotationOrder(_ view: MAAnnotationView, selected: Bool, search: Bool) {
+            let order = selected ? (search ? 200_000 : 100_000) : search ? 1_000 : 100
+            // SDK zIndex applies during annotation creation; the UIView layer also handles live selection.
+            view.zIndex = order
+            view.layer.zPosition = CGFloat(order)
+            if selected { view.superview?.bringSubviewToFront(view) }
+        }
+        private func updateSearchPOIFilter(_ map: MAMapView) {
+            let active = store.addPlaceDay != nil || store.searching || !store.searchResults.isEmpty
+            guard active else {
+                if filteringSearchPOIs { map.removePoiFilter("search-results"); filteringSearchPOIs = false }
+                return
+            }
+            let rect = map.bounds
+            guard rect.width > 0, rect.height > 0 else { return }
+            let filter = MAPoiFilter()
+            filter.filterType = .poi
+            filter.keyName = "search-results"
+            filter.position = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+                               CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)].map {
+                NSValue(maCoordinate: map.convert($0, toCoordinateFrom: map))
+            }
+            if filteringSearchPOIs { map.removePoiFilter("search-results") }
+            map.add(filter); filteringSearchPOIs = true
+        }
         private func styleSearch(_ view: MAAnnotationView, pin: SearchPin) {
             let selected = store.selectedSearchPlaceID == pin.place.id
-            let key = "search-\(pin.number)-\(selected)"
-            if pinImages[key] == nil { pinImages[key] = SearchPinAppearance.image(number: pin.number, selected: selected) }
-            view.image = pinImages[key]; view.centerOffset = CGPoint(x: 0, y: -22)
+            let key = "search-\(selected)"
+            if pinImages[key] == nil { pinImages[key] = SearchPinAppearance.image(selected: selected) }
+            view.image = pinImages[key]; view.centerOffset = .zero
+            applyAnnotationOrder(view, selected: selected, search: true)
             view.isAccessibilityElement = true; view.accessibilityLabel = "搜索结果\(pin.number)：\(pin.place.name)"
             view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
         }
@@ -343,6 +372,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let image = markerImage(pin, dot: false, selected: selected)
             if view.image !== image { view.image = image }
             view.centerOffset = .zero
+            applyAnnotationOrder(view, selected: selected, search: false)
             let dotView: UIImageView
             if let existing = view.viewWithTag(48276) as? UIImageView { dotView = existing }
             else {
@@ -385,6 +415,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         func mapViewRegionChanged(_ mapView: MAMapView!) {
             updateZoomPresentation(mapView)
+            if filteringSearchPOIs { updateSearchPOIFilter(mapView) }
         }
         private func updatePinStyles(_ map: MAMapView) {
             let compact = MapZoomPresentation.isCompact(Double(map.zoomLevel))
@@ -443,7 +474,12 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MAMapView!, regionDidChangeAnimated animated: Bool) {
             updateZoomPresentation(mapView)
-            let rect = mapView.bounds
+            updateSearchBounds(mapView)
+        }
+        private func updateSearchBounds(_ mapView: MAMapView) {
+            let insets = padding(mapView)
+            let rect = mapView.bounds.inset(by: insets)
+            guard rect.width > 0, rect.height > 0 else { return }
             let nw = mapView.convert(CGPoint(x: rect.minX, y: rect.minY), toCoordinateFrom: mapView)
             let se = mapView.convert(CGPoint(x: rect.maxX, y: rect.maxY), toCoordinateFrom: mapView)
             let a = Coordinates.wgs(Coordinate(latitude: nw.latitude, longitude: nw.longitude)), b = Coordinates.wgs(Coordinate(latitude: se.latitude, longitude: se.longitude))
@@ -516,16 +552,17 @@ struct PreviewMap: View {
                     }.buttonStyle(.plain).accessibilityLabel(marker.title).accessibilityIdentifier("map-marker-\(marker.id)")
                         .accessibilityValue(MapZoomPresentation.isCompact(zoom) ? "圆点" : "图标")
                         .position(point(marker.coordinates, size: proxy.size))
+                        .zIndex(store.selectedMarker?.id == marker.id ? 100_000 : 100)
                 }
                 ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
                     Button { store.choose(place, fromMap: true) } label: {
-                        Image(uiImage: SearchPinAppearance.image(number: index + 1, selected: store.selectedSearchPlaceID == place.id))
-                            .frame(width: 44, height: 48)
+                        Image(uiImage: SearchPinAppearance.image(selected: store.selectedSearchPlaceID == place.id))
+                            .frame(width: 44, height: 44)
                     }.buttonStyle(.plain)
                         .accessibilityLabel("搜索结果\(index + 1)：\(place.name)")
                         .accessibilityIdentifier("map-search-result-\(place.id)")
                         .position(point(place.coordinates, size: proxy.size))
-                        .offset(y: -22)
+                        .zIndex(store.selectedSearchPlaceID == place.id ? 200_000 : 1_000)
                 }
                 Text("模拟器 · 交互预览画布").font(.caption2).foregroundStyle(.secondary)
                     .padding(6).background(.regularMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.bottom, store.mapViewportInsets.bottom+12).padding(.leading, store.mapViewportInsets.left+8)

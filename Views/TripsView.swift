@@ -309,13 +309,17 @@ struct DayMarkerPicker: View {
                         searched = true
                         Task { await store.search() }
                     }, onClear: { store.clearSearch(); searched = false })
-                    .frame(height: 40).listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                    .frame(height: 56)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
                 if store.searching { ProgressView().frame(maxWidth: .infinity) }
                 ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
                     Button { store.choose(place) } label: {
                         HStack(spacing: 12) {
-                            Image(uiImage: SearchPinAppearance.image(number: index + 1, selected: store.selectedSearchPlaceID == place.id))
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.system(size: 24)).foregroundStyle(store.selectedSearchPlaceID == place.id ? Theme.accent : .red)
                                 .frame(width: 32, height: 40)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(place.name).font(.body).foregroundStyle(.primary)

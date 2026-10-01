@@ -12,6 +12,7 @@ final class SearchMapTests: XCTestCase {
         add.tap()
         let search = app.searchFields["map-place-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
+        screenshot("Add place search container before typing")
         search.tap(); search.typeText("静安\n")
         let result = app.buttons["add-place-result-demo-3"]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
@@ -48,6 +49,7 @@ final class SearchMapTests: XCTestCase {
         let search = app.searchFields["map-place-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(search.frame.minY, app.windows.firstMatch.frame.height * 0.4)
+        screenshot("Add place search container before typing")
         search.tap(); search.typeText("静安\n")
         let pin = app.buttons["map-search-result-demo-3"]
         XCTAssertTrue(pin.waitForExistence(timeout: 5)); XCTAssertTrue(pin.isHittable)
