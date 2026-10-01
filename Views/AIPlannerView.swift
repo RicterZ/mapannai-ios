@@ -44,6 +44,18 @@ struct AIPlannerView: View {
     @State private var deleteConfirmation = false
     @State private var resetConfirmation = false
     @FocusState private var inputFocused: Bool
+    private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && planner.ready }
+
+    private func composerIcon(_ symbol: String, active: Bool, stopping: Bool = false) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: stopping ? 13 : 16, weight: .medium))
+            .foregroundStyle(active ? (stopping ? Color.primary : Color.accentColor) : Color(uiColor: .tertiaryLabel))
+            .frame(width: 28, height: 28)
+            .background(active ? (stopping ? Color(uiColor: .tertiarySystemFill) : Color.accentColor.opacity(0.08)) : .clear,
+                        in: RoundedRectangle(cornerRadius: 8))
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+    }
+
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
@@ -72,22 +84,32 @@ struct AIPlannerView: View {
                 }
                 .onChange(of: planner.conversation?.messages.count) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
                 .safeAreaInset(edge: .bottom) {
-                    HStack(alignment: .bottom) {
-                        TextField("描述目的地、日期和偏好", text: $text, axis: .vertical)
-                            .lineLimit(1...5).focused($inputFocused).textFieldStyle(.roundedBorder)
+                    HStack(alignment: .bottom, spacing: 4) {
+                        TextField("输入消息…", text: $text, axis: .vertical)
+                            .lineLimit(1...5).focused($inputFocused).textFieldStyle(.plain)
+                            .padding(.leading, 16).padding(.vertical, 12)
                             .accessibilityIdentifier("ai-message-input")
                         if planner.busy {
-                            Button { planner.stop() } label: { Image(systemName: "stop.circle.fill").font(.title2) }
-                                .accessibilityLabel("停止回复").accessibilityIdentifier("ai-stop")
+                            Button { planner.stop() } label: {
+                                composerIcon("stop.fill", active: true, stopping: true)
+                            }.accessibilityLabel("停止回复").accessibilityIdentifier("ai-stop")
                         } else {
                             Button {
                                 planner.send(text, store: store)
                                 if planner.busy { text = ""; inputFocused = false }
-                            } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !planner.ready)
-                                .accessibilityLabel("发送").accessibilityIdentifier("ai-send")
+                            } label: {
+                                composerIcon("paperplane", active: canSend)
+                            }
+                            .disabled(!canSend)
+                            .accessibilityLabel("发送").accessibilityIdentifier("ai-send")
                         }
-                    }.padding().background(.regularMaterial)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 4)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
+                    .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 0.5) }
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(.regularMaterial)
                 }
             }
             .navigationTitle(planner.conversation?.title ?? "AI 助手").navigationBarTitleDisplayMode(.inline)

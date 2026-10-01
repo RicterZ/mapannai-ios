@@ -402,8 +402,8 @@ struct HomeView: View {
             }
             if AIPlannerStore.entryEnabled && !aiPresented {
                 Button { aiPlanner.presented = true } label: {
-                    Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 20)).frame(width: 32, height: 32)
-                }.buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("AI 助手")
+                    Image(systemName: "bubble.left").font(.system(size: 20, weight: .regular)).foregroundStyle(.primary).frame(width: 32, height: 32)
+                }.modifier(AIEntryButtonStyle()).accessibilityLabel("AI 助手")
                     .accessibilityIdentifier("open-ai-planner")
                     .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16).padding(.top, 8)
             }
@@ -831,4 +831,14 @@ private extension VerticalAlignment {
 enum JourneyDestination: Hashable {
     case trip(String)
     case day(String, String)
+}
+
+private struct AIEntryButtonStyle: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.buttonStyle(.glass).buttonBorderShape(.circle).tint(.primary)
+        } else {
+            content.buttonStyle(.plain).padding(6).background(.regularMaterial, in: Circle())
+        }
+    }
 }
