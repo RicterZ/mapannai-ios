@@ -376,7 +376,7 @@ struct DayMarkerPicker: View {
                     }.accessibilityElement(children: .combine)
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { store.endAddingPlace() } label: {
+                    Button { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) { store.endAddingPlace() } } label: {
                         Image(systemName: "chevron.left")
                     }.disabled(store.saving)
                         .accessibilityLabel("返回旅途")

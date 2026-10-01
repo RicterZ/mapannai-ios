@@ -333,7 +333,7 @@ import SwiftUI
         endAddingPlace()
         routeCandidates = []; selectedMarker = nil
         addPlaceDay = day
-        placeSearchPresented = true
+        withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.28)) { placeSearchPresented = true }
     }
     func endAddingPlace() {
         addSession = UUID(); addedPlaceIDs = []; createdSearchMarkers = [:]

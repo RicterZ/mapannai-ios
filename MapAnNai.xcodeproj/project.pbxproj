@@ -74,6 +74,7 @@
 		E59A20A4E04ECD9CFFF72589 /* RouteProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FE4064B67BA89D296FCAFB /* RouteProcessing.swift */; };
 		E5E82A9A2F2526B35B873E8B /* JourneyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EE4DC6DD0A68391E9F7832E /* JourneyViews.swift */; };
 		EA7A0398EDDD1A5DFFE220EF /* IPadDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 455D902A90E28E3E96034F8D /* IPadDetailTests.swift */; };
+		F1949C4DCF21D01AF1A756B2 /* SearchReturnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B204CAEBC71F4234F1FC623 /* SearchReturnTests.swift */; };
 		F1C63FD2A82AAF743A72E3E0 /* StartupCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3978F19A26A8C390918515 /* StartupCamera.swift */; };
 		F454FB7809C094724227F0B8 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED85B293D18534AAB521985 /* CoreTests.swift */; };
 		F4F825F5B89CAF5DBED715F0 /* RouteSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 184D7AD5A43DD29A4BC180FA /* RouteSelectionTests.swift */; };
@@ -136,6 +137,7 @@
 		56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyEditingActionsTests.swift; sourceTree = "<group>"; };
 		5AAA4D8D79DFD1AE6A2DFD48 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		5AD8D5E25A1C9E0E2FACB862 /* AIPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerTests.swift; sourceTree = "<group>"; };
+		5B204CAEBC71F4234F1FC623 /* SearchReturnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchReturnTests.swift; sourceTree = "<group>"; };
 		5C8C9BD1EBF34357D9BDA56D /* JourneySheetBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneySheetBackground.swift; sourceTree = "<group>"; };
 		5F1DE90E8066F7692BEC6055 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompressionTests.swift; sourceTree = "<group>"; };
@@ -295,6 +297,7 @@
 				184D7AD5A43DD29A4BC180FA /* RouteSelectionTests.swift */,
 				0B62253EAC3829164040323C /* SearchMapTests.swift */,
 				F00A56773C523B6EC0BA67DC /* SearchPaginationUITests.swift */,
+				5B204CAEBC71F4234F1FC623 /* SearchReturnTests.swift */,
 				CEA9209DA30A602DD938E864 /* SettingsAboutTests.swift */,
 				5405CAA1777E9322D0EC643D /* TripEditorTests.swift */,
 			);
@@ -524,6 +527,7 @@
 				F4F825F5B89CAF5DBED715F0 /* RouteSelectionTests.swift in Sources */,
 				5DF08649B912E7DCD153DAF9 /* SearchMapTests.swift in Sources */,
 				2CC9AE294B1D5677D1C16057 /* SearchPaginationUITests.swift in Sources */,
+				F1949C4DCF21D01AF1A756B2 /* SearchReturnTests.swift in Sources */,
 				766FE466F6D956CDA75A8209 /* SettingsAboutTests.swift in Sources */,
 				0D8DA2E591B528E9625BE0C1 /* TripEditorTests.swift in Sources */,
 			);
@@ -597,7 +601,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 82;
+				CURRENT_PROJECT_VERSION = 83;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -737,7 +741,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 82;
+				CURRENT_PROJECT_VERSION = 83;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

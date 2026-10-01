@@ -20,7 +20,7 @@ MapAnNai iOS 是 MapAnNai Plus 的原生 iPhone 和 iPad 客户端。你可以�
 
 1. 在应用设置中连接自己的 MapAnNai Plus 服务。
 2. 搜索或长按地图添加想去的地方，记录笔记与照片。
-3. 创建旅行，把地点加入每天的安排，再调整路线中的访问顺序。
+3. 在旅途总览点击“添加旅途”，把地点加入每天的安排，再调整路线中的访问顺序。
 4. 出行时打开当天行程，查看地点、阅读攻略或打开导航。
 
 还没有服务端？按照 [MapAnNai Plus 的部署说明](https://github.com/RicterZ/mapannai-plus/blob/main/README.zh.md#部署自己的服务) 准备服务，再在客户端填写服务地址及服务需要的 API token。搜索、保存和路线规划需要网络连接。

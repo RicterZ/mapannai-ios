@@ -5,6 +5,7 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
     @ViewBuilder var searchContent: () -> SearchContent
     @ViewBuilder var settingsContent: () -> SettingsContent
     var usesNativeNavigation = false
+    @State private var creatingTrip = false
     @State private var editing: Trip?
     @State private var deletion: Trip?
     private var years: [String] { Array(Set(store.trips.map { String($0.startDate.prefix(4)) })).sorted(by: >) }
@@ -14,6 +15,12 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
     }
     var body: some View {
         List {
+            Section {
+                Button { creatingTrip = true } label: {
+                    Label("添加旅途", systemImage: "plus").fullRowActionLabel()
+                }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+                    .accessibilityIdentifier("create-journey")
+            }
 
             ForEach(years, id: \.self) { year in
                 Section {
@@ -54,6 +61,7 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
             }
 
         }
+            .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
             .sheet(item: $editing) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
             .alert("删除旅行？", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
                 Button("取消", role: .cancel) {}

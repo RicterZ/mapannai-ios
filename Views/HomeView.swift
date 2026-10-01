@@ -23,6 +23,8 @@ struct HomeView: View {
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var sheetDrag: CGFloat = 0
     @State private var routeReturnDetent: ItineraryDetent?
+    @State private var searchReturnDetent: ItineraryDetent?
+    @State private var searchReturnExpanded = true
     @StateObject private var location = LocationPermission()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -36,7 +38,7 @@ struct HomeView: View {
             }
                 .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0; if !$0 && aiPresented { aiPlanner.close() } }), onDismiss: { nativeJourneyPresented = true }) {
                     modalContent(panelWorkspace(sidebar: false))
-                        .presentationDetents(!store.placeSearchPresented && !aiPresented ? [.height(compactJourneyHeight), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
+                        .presentationDetents(!aiPresented ? [.height(compactJourneyHeight), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
                         .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
                         .presentationBackgroundInteraction(.enabled)
@@ -75,7 +77,7 @@ struct HomeView: View {
                 DayMarkerPicker(store: store, day: store.addPlaceDay,
                     onInput: { if !sidebar { sheetDetent = .full } },
                     onSearch: { if !sidebar { sheetDetent = .half } })
-                    .transition(.opacity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(1)
             }
         }
@@ -150,8 +152,19 @@ struct HomeView: View {
                     .presentationDragIndicator(.visible)
             }
         }
-        .onChange(of: store.placeSearchPresented) { _, _ in
-            sheetDrag = 0; sheetDetent = .half; expanded = true; showDates = false
+        .onChange(of: store.placeSearchPresented) { _, open in
+            sheetDrag = 0; showDates = false
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
+                if open {
+                    searchReturnDetent = sheetDetent
+                    searchReturnExpanded = expanded
+                    sheetDetent = .half; expanded = true
+                } else {
+                    sheetDetent = searchReturnDetent ?? .half
+                    expanded = searchReturnExpanded
+                    searchReturnDetent = nil
+                }
+            }
         }
         .onChange(of: store.draft?.id) { old, new in
             guard !store.placeSearchPresented else { return }
@@ -178,7 +191,11 @@ struct HomeView: View {
             case .full: .large
             }
         }, set: { value in
-            sheetDetent = value == .large ? .full : value == .medium ? .half : .compact
+            if store.placeSearchPresented && value != .large && value != .medium {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) { store.endAddingPlace() }
+            } else {
+                sheetDetent = value == .large ? .full : value == .medium ? .half : .compact
+            }
         })
     }
 
@@ -361,11 +378,15 @@ struct HomeView: View {
                         .frame(width: 44, height: 44).contentShape(Rectangle())
                         .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
                 } else if sidebar || sheetDetent != .compact {
-                    Button { creatingTrip = true } label: {
-                        toolbarActionIcon("plus").frame(width: 30, height: 30)
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+                            if sidebar { expanded = false } else { sheetDetent = .compact }
+                        }
+                    } label: {
+                        toolbarActionIcon("xmark").frame(width: 30, height: 30)
                     }.modifier(JourneyCircleButtonStyle())
                         .frame(width: 44, height: 44).contentShape(Rectangle())
-                        .accessibilityLabel("创建旅行").accessibilityIdentifier("create-journey")
+                        .accessibilityLabel("收起旅途").accessibilityIdentifier("close-journey")
                 }
             }
             // Match the native trailing toolbar reservation so principal stays at the bar center.

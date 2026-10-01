@@ -22,7 +22,7 @@ Use the chat icon at the top right of the map to plan with the AI assistant. Con
 
 1. Connect to your MapAnNai Plus server in the app's settings.
 2. Search or long-press the map to save places, with notes and photos.
-3. Create a trip, add places to each day, and arrange their visit order within routes.
+3. Tap Add Trip in the trip overview, add places to each day, and arrange their visit order within routes.
 4. Open the day's itinerary while traveling to check places, read your notes, or start navigation.
 
 Need a server? Follow the [MapAnNai Plus deployment guide](https://github.com/RicterZ/mapannai-plus#deploy-your-own-server), then enter its address and API token, if required, in the client. Searching, saving changes, and route planning require a network connection.
