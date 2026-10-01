@@ -74,7 +74,7 @@ struct HomeView: View {
                 compactJourneyControls
             }
             if store.placeSearchPresented && !aiPresented {
-                DayMarkerPicker(store: store, day: store.addPlaceDay,
+                DayMarkerPicker(store: store, day: store.addPlaceDay, compact: !sidebar && sheetDetent == .compact,
                     onInput: { if !sidebar { sheetDetent = .full } },
                     onSearch: { if !sidebar { sheetDetent = .half } })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -180,7 +180,7 @@ struct HomeView: View {
 
     private var compactJourneyHeight: CGFloat { store.trip == nil ? 68 : 80 }
     private var compactNavigationVisible: Bool {
-        sheetDetent == .compact && store.trip != nil && !store.placeSearchPresented && !aiPresented
+        sheetDetent == .compact && !store.placeSearchPresented && !aiPresented
     }
 
     private var nativeJourneyDetent: Binding<PresentationDetent> {
@@ -191,11 +191,7 @@ struct HomeView: View {
             case .full: .large
             }
         }, set: { value in
-            if store.placeSearchPresented && value != .large && value != .medium {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) { store.endAddingPlace() }
-            } else {
-                sheetDetent = value == .large ? .full : value == .medium ? .half : .compact
-            }
+            sheetDetent = value == .large ? .full : value == .medium ? .half : .compact
         })
     }
 
@@ -459,6 +455,8 @@ struct HomeView: View {
 
     private var compactJourneyControls: some View {
         HStack(spacing: 4) {
+            Group {
+            if store.trip != nil {
             Button {
                 guard !journeyPath.isEmpty else { return }
                 withAnimation(reduceMotion ? nil : .default) { journeyPath.removeLast() }
@@ -467,7 +465,10 @@ struct HomeView: View {
             }.modifier(JourneyCircleButtonStyle())
                 .frame(width: 44, height: 44)
                 .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
-                .frame(width: 88, alignment: .leading)
+            } else {
+                Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
+            }
+            }.frame(width: 88, alignment: .leading)
             VStack(spacing: 0) {
                 compactDateNavigation
                 Text(store.trip?.name ?? "旅途")

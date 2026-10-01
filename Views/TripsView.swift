@@ -306,6 +306,7 @@ struct PlaceSelectionRow: View {
 struct DayMarkerPicker: View {
     @ObservedObject var store: AppStore
     let day: TripDay?
+    var compact = false
     var onInput: () -> Void = {}
     var onSearch: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -360,6 +361,8 @@ struct DayMarkerPicker: View {
                     }
                 }
             }
+            .opacity(compact ? 0 : 1)
+            .allowsHitTesting(!compact)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let error = store.addPlaceError {
                     Text(error).font(.footnote).foregroundStyle(.red).padding(16)
