@@ -66,7 +66,9 @@ actor RouteProcessing {
         var prepared: [PreparedRouteOverlay] = []
         for route in routes {
             try Task.checkCancellation()
-            prepared.append(PreparedRouteOverlay(geometry: route, coordinates: try amapCoordinates(route.points)))
+            let coordinates = try amapCoordinates(route.points)
+            prepared.append(PreparedRouteOverlay(geometry: route, coordinates: coordinates,
+                hitIndex: try RouteSpatialIndex(points: coordinates)))
         }
         try Task.checkCancellation()
         return prepared

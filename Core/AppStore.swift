@@ -16,9 +16,23 @@ import SwiftUI
     @Published var draft: MarkerDraft?
     @Published var draftExpanded = true
     @Published var selectedSearchPlaceID: String?
+    @Published private(set) var placeSearchPresented = false
     @Published var addPlaceDay: TripDay?
+    @Published var addPlaceError: String?
+    @Published private(set) var addingPlaceID: String?
+    @Published private(set) var addedPlaceIDs: Set<String> = []
+    @Published var editingSearchPlaceID: String?
+    @Published private(set) var searchError: String?
+    private var addSession = UUID()
+    private var createdSearchMarkers: [String: Marker] = [:]
     @Published var searchResults: [Place] = []
-    @Published var searchText = ""
+    @Published var searchText = "" {
+        didSet { if oldValue != searchText { resetSearchSession() } }
+    }
+    @Published private(set) var loadingMoreSearch = false
+    @Published private(set) var searchHasMore = false
+    @Published private(set) var searchPageError: String?
+    @Published private(set) var searchPageRevision = UUID()
     @Published var searching = false
     @Published var loading = false
     @Published var saving = false
@@ -29,6 +43,17 @@ import SwiftUI
     @Published var routeCandidatePoint = CGPoint.zero
     @Published var displayRoutes: [DisplayRoute] = []
     @Published var routeProgress = ""
+    // Heavy detail work waits until the renderer's camera interpolation has settled.
+    private var detailWorkNotBefore = Date.distantPast
+    func deferDetailWork(for duration: TimeInterval) {
+        detailWorkNotBefore = Date().addingTimeInterval(duration)
+    }
+    func waitForDetailPresentation() async throws {
+        while detailWorkNotBefore > Date() {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try Task.checkCancellation()
+    }
     @Published var camera: CameraCommand?
     @Published var locating = UUID()
     @Published var mapViewportInsets: MapViewportInsets = .phone
@@ -37,6 +62,9 @@ import SwiftUI
     private var routeTask: Task<Void, Never>?
     private var refreshGeneration = UUID()
     private var searchGeneration = UUID()
+    private var searchTask: Task<PlaceSearchPage, Error>?
+    private var activeSearch: (query: String, bounds: SearchBounds?, services: any MapServices, revision: UUID)?
+    private var nextSearchRequest: PlaceSearchRequest?
     private var routeGeneration = UUID()
     private var connectionRevision = UUID()
     private var dataRevision = UUID()
@@ -64,9 +92,10 @@ import SwiftUI
     }
     func connect() async {
         connectionRevision = UUID(); refreshGeneration = UUID(); loading = false; refreshing = false
+        endAddingPlace()
         tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
         camera = nil; startupCameraPending = true
-        searchGeneration = UUID(); searching = false; rebuildRoutes()
+        resetSearchSession(); rebuildRoutes()
         if demo { loadDemo(); rebuildRoutes(); return }
         guard settings.configured else { return }
         let revision = connectionRevision, client = api
@@ -110,7 +139,9 @@ import SwiftUI
         guard !demo, settings.configured, !saving else { return }
         let revision = connectionRevision, dataVersion = dataRevision, client = api
         do {
-            guard let marker = try await markerRepository.detail(id, using: client), revision == connectionRevision, dataVersion == dataRevision,
+            guard let marker = try await markerRepository.detail(id, using: client) else { return }
+            try await waitForDetailPresentation()
+            guard revision == connectionRevision, dataVersion == dataRevision,
                   !saving, let index = markers.firstIndex(where: { $0.id == id }), markers[index] != marker else { return }
             let moved = markers[index].coordinates != marker.coordinates
             markers[index] = marker
@@ -129,12 +160,20 @@ import SwiftUI
         startupCameraPending = false
         // Do not interrupt a selection or camera action made while data was loading.
         guard tripID == nil, dayID == nil, selectedMarker == nil, draft == nil, camera == nil else { return }
+        let today = StartupCamera.localDate(now: now, calendar: calendar)
+        let orderedTrips = trips.sorted { $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate < $1.startDate }
+        for trip in orderedTrips {
+            if let day = trip.days.filter({ $0.tripId == trip.id && $0.date == today }).sorted(by: { $0.id < $1.id }).first {
+                select(trip: trip, day: day)
+                return
+            }
+        }
         if let marker = StartupCamera.upcomingFirstMarker(trips: trips, markers: markers,
                                                           today: StartupCamera.localDate(now: now, calendar: calendar)) {
             camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 11)
         }
     }
-    func perform(_ operation: @escaping (APIClient) async throws -> Void) async -> Bool {
+    func perform(onSuccess: (() -> Void)? = nil, _ operation: @escaping (APIClient) async throws -> Void) async -> Bool {
         guard !demo else { errorMessage = "当前为只读示例。配置服务后退出示例模式，即可保存到你的数据库。"; return false }
         guard !saving else { errorMessage = "请等待当前保存完成"; return false }
         // A background read must not block edits or overwrite their results.
@@ -145,10 +184,11 @@ import SwiftUI
         do {
             try await operation(client)
             guard revision == connectionRevision else { return false }
+            onSuccess?()
             await markerRepository.invalidate(using: client)
             // The mutation has finished; refresh should not be blocked by saving.
             saving = false
-            await refresh(); return true
+            await refresh(quietly: onSuccess != nil); return true
         } catch { if revision == connectionRevision { report(error) }; return false }
     }
     func saveMarker(_ draft: MarkerDraft) async -> Bool {
@@ -176,8 +216,27 @@ import SwiftUI
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
         return await perform { try await $0.mutate(Self.dayPath(day) + "/markers", method: "POST", body: ["markerId": marker.id]) }
     }
-    func removeMarker(_ markerID: String, from day: TripDay) async {
-        _ = await perform { try await $0.mutate(Self.dayPath(day) + "/markers", method: "DELETE", body: ["markerId": markerID]) }
+    func removeMarker(_ markerID: String, from day: TripDay, animated: Bool = true) async {
+        _ = await perform(onSuccess: { [self] in
+            guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
+                  let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
+            var updated = trips
+            updated[ti].days[di].markerIds.removeAll { $0 == markerID }
+            updated[ti].days[di].chains = updated[ti].days[di].chains.map { $0.filter { $0 != markerID } }
+            withAnimation(animated ? .easeInOut(duration: 0.22) : nil) { trips = updated }
+            rebuildRoutes(preservingPlannedGeometry: true)
+        }) { try await $0.mutate(Self.dayPath(day) + "/markers", method: "DELETE", body: ["markerId": markerID]) }
+    }
+    func deleteDay(_ day: TripDay, animated: Bool = true) async {
+        guard let owner = trips.first(where: { $0.id == day.tripId }), owner.days.count > 1 else { return }
+        _ = await perform(onSuccess: { [self] in
+            guard let index = trips.firstIndex(where: { $0.id == day.tripId }) else { return }
+            withAnimation(animated ? .easeInOut(duration: 0.22) : nil) {
+                trips[index].days.removeAll { $0.id == day.id }
+                if dayID == day.id { dayID = nil }
+            }
+            rebuildRoutes(preservingPlannedGeometry: true)
+        }) { try await $0.mutate(Self.dayPath(day), method: "DELETE") }
     }
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
         let changedDay = tripID != trip?.id || dayID != day?.id
@@ -206,6 +265,7 @@ import SwiftUI
         return "第\(index + 1)天"
     }
     func offerRoutes(_ routes: [DisplayRoute], at point: CGPoint) {
+        guard !placeSearchPresented else { return }
         routeCandidatePoint = point
         routeCandidates = routes.sorted { a, b in
             if a.tripID != b.tripID { return a.tripID < b.tripID }
@@ -220,12 +280,28 @@ import SwiftUI
         routeSelectionRequest = UUID()
     }
     func focus(_ marker: Marker) {
+        if placeSearchPresented {
+            guard draft == nil else { return }
+            let place = Place(id: "saved-" + marker.id, name: marker.title, address: marker.content.address ?? "", coordinates: marker.coordinates)
+            if !searchResults.contains(where: { $0.id == place.id }) { searchResults.append(place) }
+            choose(place, fromMap: true)
+            return
+        }
         guard selectedMarker?.id != marker.id else { return }
-        selectedMarker = marker; fly([marker.coordinates])
+        let detail = MarkerDetailLayout(marker: marker,
+            itineraryCount: MarkerPresentation.itineraries(for: marker.id, trips: trips).count,
+            hasSelectedDay: day != nil)
+        deferDetailWork(for: 1.6) // Renderer replaces this with its actual camera duration.
+        selectedMarker = marker
+        camera = CameraCommand(points: [marker.coordinates], detailLayout: detail)
     }
     func fly(_ points: [Coordinate]) { if !points.isEmpty { camera = CameraCommand(points: points) } }
     func create(at coordinate: Coordinate) {
-        guard coordinate.isValid else { return }
+        guard coordinate.isValid, draft == nil else { return }
+        if placeSearchPresented {
+            let place = Place(id: UUID().uuidString, name: "", address: "", coordinates: coordinate)
+            searchResults.append(place); editingSearchPlaceID = place.id
+        }
         selectedSearchPlaceID = nil; draftExpanded = false
         var pending = MarkerDraft(coordinates: coordinate)
         pending.resolvingPlace = true
@@ -245,36 +321,104 @@ import SwiftUI
             }
         }
     }
-    func beginAddingPlace(to day: TripDay) {
-        clearSearch()
-        routeCandidates = []
+    func beginAddingPlace(to day: TripDay? = nil) {
+        endAddingPlace()
+        routeCandidates = []; selectedMarker = nil
         addPlaceDay = day
+        placeSearchPresented = true
     }
     func endAddingPlace() {
+        addSession = UUID(); addedPlaceIDs = []; createdSearchMarkers = [:]
+        addPlaceError = nil; editingSearchPlaceID = nil
         draft = nil
-        addPlaceDay = nil
+        addPlaceDay = nil; placeSearchPresented = false
         clearSearch()
     }
     func search() async {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { clearSearch(); return }
-        let generation = UUID(); searchGeneration = generation; searching = true; searchResults = []; selectedSearchPlaceID = nil
-        defer { if searchGeneration == generation { searching = false } }
-        do {
-            let results: [Place]
-            if demo && servicesOverride == nil {
-                results = markers.filter { $0.title.localizedCaseInsensitiveContains(query) }.map {
+        resetSearchSession()
+        // Freeze the bounds for this search. Camera focus or selection must not
+        // change page two's search area, nor reset already loaded results.
+        activeSearch = (query, bounds?.expanded(factor: 2), mapServices, connectionRevision)
+        await fetchSearchPage(PlaceSearchRequest(), first: true)
+    }
+    func loadMoreSearch() async {
+        guard !searching, !loadingMoreSearch, draft == nil, let request = nextSearchRequest else { return }
+        await fetchSearchPage(request, first: false)
+    }
+    private func fetchSearchPage(_ request: PlaceSearchRequest, first: Bool) async {
+        guard let context = activeSearch else { return }
+        let generation = searchGeneration
+        if first { searching = true } else { loadingMoreSearch = true }
+        searchPageError = nil
+        let mockPlaces: [Place]?
+        if demo && servicesOverride == nil {
+            if ProcessInfo.processInfo.arguments.contains("--paged-search-demo") {
+                mockPlaces = (0..<45).map { i in
+                    Place(id: "paged-\(i)", name: "\(context.query) \(i + 1)", address: "上海市",
+                          coordinates: Coordinate(latitude: 31.2 + Double(i) * 0.0001, longitude: 121.4))
+                }
+            } else {
+                mockPlaces = markers.filter { $0.title.localizedCaseInsensitiveContains(context.query) }.map {
                     Place(id: $0.id, name: $0.title, address: $0.content.address ?? "", coordinates: $0.coordinates)
                 }
-            } else { results = try await mapServices.search(query, bounds: bounds) }
-            guard searchGeneration == generation else { return }; searchResults = results
-            fly(results.map(\.coordinates))
-            if results.isEmpty { errorMessage = "当前地图范围内没有结果。可移动地图或使用更精确的城市与地点名称。" }
-        } catch { if searchGeneration == generation { report(error) } }
+            }
+        } else { mockPlaces = nil }
+        let task = Task<PlaceSearchPage, Error> {
+            if let mockPlaces {
+                let start = min(mockPlaces.count, (request.page - 1) * request.pageSize)
+                let end = min(mockPlaces.count, start + request.pageSize)
+                return PlaceSearchPage(places: Array(mockPlaces[start..<end]), page: request.page, pageSize: request.pageSize,
+                                       nextPage: end < mockPlaces.count ? request.page + 1 : nil)
+            }
+            return try await context.services.searchPage(context.query, bounds: context.bounds, request: request)
+        }
+        searchTask = task
+        defer {
+            if searchGeneration == generation { searching = false; loadingMoreSearch = false; searchTask = nil }
+        }
+        do {
+            let page = try await task.value
+            guard !Task.isCancelled, !task.isCancelled, searchGeneration == generation,
+                  connectionRevision == context.revision else { return }
+            // Across-page duplicates don't create repeated list/map identities.
+            var ids = Set(searchResults.map(\.id))
+            let additions = page.places.filter { ids.insert($0.id).inserted }
+            searchResults.append(contentsOf: additions)
+            if let next = page.nextPage, next > request.page {
+                nextSearchRequest = PlaceSearchRequest(page: next, pageSize: page.pageSize, pageToken: page.nextPageToken)
+            } else { nextSearchRequest = nil }
+            searchHasMore = nextSearchRequest != nil
+            searchPageRevision = UUID()
+            if first {
+                fly(searchResults.map(\.coordinates))
+
+            }
+        } catch {
+            guard searchGeneration == generation, !task.isCancelled, !(error is CancellationError) else { return }
+            if first { searchError = error.localizedDescription }
+            else { searchPageError = "加载更多失败，点击重试" }
+        }
     }
-    func clearSearch() { searchGeneration = UUID(); searchText = ""; searchResults = []; selectedSearchPlaceID = nil; searching = false }
+    private func resetSearchSession() {
+        searchTask?.cancel(); searchTask = nil
+        searchGeneration = UUID(); activeSearch = nil; nextSearchRequest = nil
+        searching = false; loadingMoreSearch = false; searchHasMore = false; searchPageError = nil; searchError = nil
+        searchResults = []; selectedSearchPlaceID = nil; searchPageRevision = UUID()
+    }
+    func clearSearch() { resetSearchSession(); searchText = "" }
     func choose(_ place: Place, fromMap: Bool = false) {
         guard place.coordinates.isValid else { return }
+        if placeSearchPresented {
+            guard draft == nil else { return }
+            if selectedSearchPlaceID != place.id {
+                selectedSearchPlaceID = place.id; addPlaceError = nil
+                fly([place.coordinates])
+            }
+            if fromMap && !isPlaceAdded(place) { prepareSearchPlaceAddition(place) }
+            return
+        }
         if fromMap, selectedSearchPlaceID == place.id, draft != nil {
             draftExpanded = true
             return
@@ -282,6 +426,79 @@ import SwiftUI
         selectedSearchPlaceID = place.id; draftExpanded = false
         fly([place.coordinates])
         draft = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+    }
+    var selectedSearchPlace: Place? { searchResults.first { $0.id == selectedSearchPlaceID } }
+    func savedMarker(for place: Place) -> Marker? {
+        // Provider POI IDs and our marker IDs are different namespaces.
+        createdSearchMarkers[place.id] ?? markers.first { $0.coordinates == place.coordinates }
+    }
+    func isPlaceAdded(_ place: Place) -> Bool {
+        if addedPlaceIDs.contains(place.id) { return true }
+        guard let marker = savedMarker(for: place) else { return false }
+        guard let target = addPlaceDay else { return true }
+        let current = trips.first { $0.id == target.tripId }?.days.first { $0.id == target.id } ?? target
+        return current.markerIds.contains(marker.id)
+    }
+    func prepareSearchPlaceAddition(_ place: Place) {
+        guard draft == nil else { return }
+        editingSearchPlaceID = place.id
+        draft = savedMarker(for: place).map(MarkerDraft.init(marker:))
+            ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+    }
+    /// Keep the created ID after a partial failure so retry only completes membership.
+    @discardableResult func addSearchPlace(_ place: Place, edited: MarkerDraft? = nil, using suppliedClient: APIClient? = nil) async -> Bool {
+        guard placeSearchPresented, !saving, addingPlaceID == nil else { return false }
+        let target = addPlaceDay
+        if let target, trips.first(where: { $0.id == target.tripId })?.days.contains(where: { $0.id == target.id }) != true {
+            addPlaceError = "目标日期已不存在，请返回行程重新选择。"; return false
+        }
+        if edited == nil && isPlaceAdded(place) { return true }
+        guard !demo || suppliedClient != nil else {
+            addPlaceError = "当前为只读示例，连接服务后可添加地点。"; return false
+        }
+        let value = edited ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+        guard value.coordinates.isValid, !value.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            addPlaceError = "请输入名称与有效坐标"; return false
+        }
+        let session = addSession, revision = connectionRevision, client = suppliedClient ?? api
+        addingPlaceID = place.id; saving = true; addPlaceError = nil
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false
+        defer { addingPlaceID = nil; saving = false }
+        do {
+            var marker: Marker
+            if let existing = savedMarker(for: place) { marker = existing }
+            else {
+                marker = try await client.request("markers", method: "POST", body: [
+                    "coordinates": ["latitude": value.coordinates.latitude, "longitude": value.coordinates.longitude],
+                    "title": value.title, "iconType": value.icon.rawValue, "address": value.address, "content": value.html])
+            }
+            guard revision == connectionRevision, session == addSession else { return false }
+            createdSearchMarkers[place.id] = marker
+            if edited != nil {
+                try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: [
+                    "title": value.title, "iconType": value.icon.rawValue, "markdownContent": value.html, "headerImage": value.headerImage])
+                guard revision == connectionRevision, session == addSession else { return false }
+                marker.content.title = value.title; marker.content.iconType = value.icon
+                marker.content.markdownContent = value.html; marker.content.headerImage = value.headerImage
+                createdSearchMarkers[place.id] = marker
+            }
+            if let target, !isPlaceAdded(place) {
+                try await client.mutate(Self.dayPath(target) + "/markers", method: "POST", body: ["markerId": marker.id])
+            }
+            guard revision == connectionRevision, session == addSession else { return false }
+            if let index = markers.firstIndex(where: { $0.id == marker.id }) { markers[index] = marker }
+            else { markers.append(marker) }
+            if let target, let ti = trips.firstIndex(where: { $0.id == target.tripId }),
+               let di = trips[ti].days.firstIndex(where: { $0.id == target.id }),
+               !trips[ti].days[di].markerIds.contains(marker.id) { trips[ti].days[di].markerIds.append(marker.id) }
+            addedPlaceIDs.insert(place.id); rebuildRoutes(preservingPlannedGeometry: true)
+            await markerRepository.invalidate(using: client)
+            return true
+        } catch {
+            guard revision == connectionRevision, session == addSession else { return false }
+            addPlaceError = createdSearchMarkers[place.id] == nil ? error.localizedDescription : "地点已保存，后续操作未完成：" + error.localizedDescription
+            return false
+        }
     }
     func report(_ error: Error) { if error is CancellationError { return }; errorMessage = error.localizedDescription }
     func rebuildRoutes(preservingPlannedGeometry: Bool = false) {
@@ -386,6 +603,17 @@ struct CameraCommand: Identifiable {
     var id = UUID()
     var points: [Coordinate]
     var singlePointZoom: Double = 15
+    var detailLayout: MarkerDetailLayout? = nil
+    func viewportInsets(base: MapViewportInsets, height: Double, bottomSafeArea: Double,
+                        bottomSheet: Bool) -> MapViewportInsets {
+        var insets = base
+        if bottomSheet, let detailLayout {
+            insets.bottom = max(insets.bottom, detailLayout.occlusion(height: height, bottomSafeArea: bottomSafeArea) + 25)
+        }
+        // Keep a visible region without truncating a half-height or taller detail sheet.
+        insets.bottom = min(insets.bottom, max(0, height - insets.top - 80))
+        return insets
+    }
     // Single places always use an absolute level, never the previous map scale.
     var zoomLevel: Double? { points.count == 1 ? singlePointZoom : nil }
 }

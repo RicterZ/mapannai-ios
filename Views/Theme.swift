@@ -132,15 +132,30 @@ struct PanelChevron: Shape {
     }
 }
 
-// Compact result dots sit on the actual coordinate, with a larger transparent tap target.
+// Short-tip map balloons share an exact anchor and a transparent 44pt hit target.
 enum SearchPinAppearance {
     static func image(selected: Bool) -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 44, height: 44)).image { _ in
-            let diameter: CGFloat = selected ? 16 : 10
-            let rect = CGRect(x: (44 - diameter) / 2, y: (44 - diameter) / 2, width: diameter, height: diameter)
-            let circle = UIBezierPath(ovalIn: rect)
-            (selected ? UIColor(Theme.accent) : UIColor.systemRed).setFill(); circle.fill()
-            UIColor.white.setStroke(); circle.lineWidth = 2; circle.stroke()
+        UIGraphicsImageRenderer(size: CGSize(width: 44, height: 44)).image { context in
+            let radius: CGFloat = selected ? 13 : 10
+            let tip = CGPoint(x: 22, y: 36)
+            let center = CGPoint(x: 22, y: tip.y - radius - 4)
+            let path = UIBezierPath()
+            path.move(to: tip)
+            path.addLine(to: CGPoint(x: center.x - radius * 0.65, y: center.y + radius * 0.76))
+            path.addArc(withCenter: center, radius: radius, startAngle: .pi * 0.725,
+                        endAngle: .pi * 2.275, clockwise: true)
+            path.close()
+            context.cgContext.saveGState()
+            context.cgContext.setShadow(offset: CGSize(width: 0, height: 1), blur: 2,
+                                        color: UIColor.black.withAlphaComponent(0.18).cgColor)
+            (selected ? UIColor.systemBlue : UIColor.systemBlue.withAlphaComponent(0.82)).setFill()
+            path.fill()
+            UIColor.white.setStroke(); path.lineWidth = 1.5; path.stroke()
+            context.cgContext.restoreGState()
+            let dotRadius: CGFloat = selected ? 4 : 3
+            UIColor.white.setFill()
+            UIBezierPath(ovalIn: CGRect(x: center.x - dotRadius, y: center.y - dotRadius,
+                                       width: dotRadius * 2, height: dotRadius * 2)).fill()
         }
     }
 }

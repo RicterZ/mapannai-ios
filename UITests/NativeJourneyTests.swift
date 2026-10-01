@@ -10,10 +10,12 @@ final class NativeJourneyTests: XCTestCase {
         let title = app.staticTexts["itinerary-panel-title"]
         XCTAssertEqual(title.label, "第1天")
         XCTAssertTrue(app.buttons["itinerary-header-location"].exists)
-        app.buttons["itinerary-collapse"].tap()
+        let down = app.navigationBars["第1天"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        down.press(forDuration: 0.1, thenDragTo: down.withOffset(CGVector(dx: 0, dy: 500)))
         let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in panel.frame.height < 200 }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 5), .completed)
-        app.buttons["itinerary-collapse"].tap()
+        let up = app.navigationBars["第1天"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        up.press(forDuration: 0.1, thenDragTo: up.withOffset(CGVector(dx: 0, dy: -300)))
         let medium = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in panel.frame.height > 300 }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [medium], timeout: 5), .completed)
         let bar = app.navigationBars["第1天"]

@@ -18,35 +18,56 @@ struct HomeView: View {
     @State private var journeyNavigationWidth: CGFloat = 0
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var sheetDrag: CGFloat = 0
+    @State private var routeReturnDetent: ItineraryDetent?
     @StateObject private var location = LocationPermission()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @ViewBuilder var body: some View {
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            mapPage
-                .sheet(isPresented: $nativeJourneyPresented) {
-                    modalContent(nativeJourneyPanel)
-                        .presentationDetents([.height(68), .medium, .large], selection: nativeJourneyDetent)
+    var body: some View {
+        GeometryReader { geometry in
+            let sidebar = horizontalSizeClass == .regular && geometry.size.width >= 700
+            Group {
+                if sidebar { modalContent(mapPage) }
+                else { mapPage }
+            }
+                .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0 })) {
+                    modalContent(panelWorkspace(sidebar: false))
+                        .presentationDetents(!store.placeSearchPresented ? [.height(68), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
-                        .presentationBackground {
-                            JourneySheetBackground(availableHeight: journeyAvailableHeight)
-                        }
+                        .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
                         .presentationBackgroundInteraction(.enabled)
                         .presentationContentInteraction(.resizes)
                         .interactiveDismissDisabled()
                 }
                 .onAppear { nativeJourneyPresented = true }
-        } else {
-            modalContent(mapPage)
+                .onChange(of: sidebar) { _, _ in nativeJourneyPresented = true }
         }
+    }
+
+    @ViewBuilder private func panelWorkspace(sidebar: Bool) -> some View {
+        ZStack {
+            journeyNavigation(sidebar: sidebar)
+                .opacity(!store.placeSearchPresented ? 1 : 0)
+                .allowsHitTesting(!store.placeSearchPresented)
+                .accessibilityHidden(store.placeSearchPresented)
+            if store.placeSearchPresented {
+                DayMarkerPicker(store: store, day: store.addPlaceDay,
+                    onInput: { if !sidebar { sheetDetent = .full } },
+                    onSearch: { if !sidebar { sheetDetent = .half } })
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: store.placeSearchPresented)
+        .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(sidebar ? "sidebar-workspace" : "phone-itinerary-panel")
     }
 
     private var mapPage: some View {
         GeometryReader { proxy in
             let layout = MapLayout(width: proxy.size.width, height: proxy.size.height,
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
-                                   sheetHeight: UIDevice.current.userInterfaceIdiom != .pad && (store.addPlaceDay != nil || store.draft != nil) && !store.draftExpanded ? proxy.size.height * 0.5 : UIDevice.current.userInterfaceIdiom == .phone && sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
+                                   sheetHeight: sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
                     store.mapViewportInsets = layout.insets
@@ -58,16 +79,16 @@ struct HomeView: View {
                 .onChange(of: layout.insets) { _, insets in store.mapViewportInsets = insets }
                 .onChange(of: store.routeSelectionRequest) { _, _ in
                     showDates = false; expanded = true
-                    if !layout.usesSidebar { sheetDrag = 0; sheetDetent = .half }
+                    if !layout.usesSidebar {
+                        if routeReturnDetent == nil { routeReturnDetent = sheetDetent }
+                        sheetDrag = 0
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { sheetDetent = .half }
+                    }
                 }
                 .onChange(of: store.selectedMarker?.id) { _, markerID in
                     guard markerID != nil else { return }
                     showDates = false
-                    // Reveal the map before the marker sheet covers the lower planning surface.
-                    if !layout.usesSidebar {
-                        sheetDrag = 0
-                        sheetDetent = .half
-                    }
+                    // Details preserve the journey detent, including after dismissal.
                 }
         }
     }
@@ -88,11 +109,11 @@ struct HomeView: View {
             Button("保存") { Task { if var day = store.day { day.title = dayTitle; _ = await store.updateDay(day) } } }
         }
         .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store).presentationDragIndicator(.visible) }
-        .sheet(item: $store.selectedMarker) { marker in MarkerDetailView(store: store, marker: marker, onNavigateItinerary: {
+        .sheet(item: Binding(get: { !store.placeSearchPresented ? store.selectedMarker : nil }, set: { store.selectedMarker = $0 })) { marker in MarkerDetailView(store: store, marker: marker, onNavigateItinerary: {
                 expanded = true
                 if sheetDetent == .compact { sheetDetent = .half }
             }) }
-        .sheet(item: Binding(get: { store.addPlaceDay == nil ? store.draft : nil }, set: { store.draft = $0 })) { draft in
+        .sheet(item: Binding(get: { !store.placeSearchPresented ? store.draft : nil }, set: { store.draft = $0 })) { draft in
             if UIDevice.current.userInterfaceIdiom == .pad {
                 MarkerEditorView(store: store, initial: draft).id(draft.id)
                     .onAppear { store.draftExpanded = true }
@@ -105,16 +126,13 @@ struct HomeView: View {
                     .presentationDragIndicator(.visible)
             }
         }
-        .sheet(item: $store.addPlaceDay, onDismiss: { store.endAddingPlace() }) { day in
-            DayMarkerPicker(store: store, day: day)
-        }
-        .onChange(of: store.addPlaceDay?.id) { _, dayID in
-            guard dayID != nil else { return }
-            sheetDrag = 0; sheetDetent = .compact
+        .onChange(of: store.placeSearchPresented) { _, _ in
+            sheetDrag = 0; sheetDetent = .half; expanded = true; showDates = false
         }
         .onChange(of: store.draft?.id) { old, new in
+            guard !store.placeSearchPresented else { return }
             if new != nil, UIDevice.current.userInterfaceIdiom != .pad, store.selectedSearchPlaceID != nil { sheetDetent = .compact }
-            else if old != nil, new == nil, !store.searchResults.isEmpty, store.addPlaceDay == nil { sheetDetent = .half }
+            else if old != nil, new == nil, !store.searchResults.isEmpty, !store.placeSearchPresented { sheetDetent = .half }
         }
         .alert("无法完成操作", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
@@ -169,6 +187,10 @@ struct HomeView: View {
                 withAnimation(reduceMotion ? nil : .default) { journeyPath = path }
             }
             .onChange(of: journeyPath) { previousPath, path in
+                if path.count < previousPath.count, let original = routeReturnDetent {
+                    routeReturnDetent = nil
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { sheetDetent = original }
+                }
                 guard path != journeyDestinations else { return }
                 switch path.last {
                 case let .trip(id): store.select(trip: store.trips.first { $0.id == id }, focus: path.count > previousPath.count)
@@ -230,7 +252,7 @@ struct HomeView: View {
     @ViewBuilder private func journeyPage(_ destination: JourneyDestination?, sidebar: Bool) -> some View {
         let page = scope(destination)
         Group {
-            if store.addPlaceDay == nil && (store.searching || !store.searchResults.isEmpty) {
+            if !store.placeSearchPresented && (store.searching || !store.searchResults.isEmpty) {
                 List {
                     Section { panelSearch }
                     if store.searching { ProgressView().frame(maxWidth: .infinity) }
@@ -265,6 +287,8 @@ struct HomeView: View {
     @ToolbarContentBuilder private func journeyToolbar(sidebar: Bool, destination: JourneyDestination?) -> some ToolbarContent {
         ToolbarItem(placement: .principal) {
             journeyHeading(destination, sidebar: sidebar).offset(y: !sidebar && sheetDetent == .compact ? 2 : 4)
+                .accessibilityAction(named: "展开旅途") { if !sidebar { sheetDetent = .full } }
+                .accessibilityAction(named: "收起旅途") { if !sidebar { sheetDetent = .compact } }
         }
         journeyLeadingControl(destination: destination, sidebar: sidebar)
         if !sidebar {
@@ -277,11 +301,11 @@ struct HomeView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 if sidebar { togglePanel() }
-                else { sheetDetent = sheetDetent == .compact ? .half : .compact }
+                else { store.beginAddingPlace(to: scope(destination).day) }
             } label: {
-                toolbarActionIcon(sidebar ? "sidebar.left" : sheetDetent == .compact ? "chevron.up" : "chevron.down")
-            }.accessibilityLabel(sidebar ? "收起行程" : sheetDetent == .compact ? "展开旅途" : "收起旅途")
-                .accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-collapse")
+                toolbarActionIcon(sidebar ? "sidebar.left" : "magnifyingglass")
+            }.accessibilityLabel(sidebar ? "收起行程" : "搜索地点")
+                .accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-search")
         }
     }
 
@@ -342,19 +366,19 @@ struct HomeView: View {
                 }.frame(width: layout.width, height: layout.height, alignment: .topLeading)
                 locationButton.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 20).padding(.bottom, 20)
-            } else if UIDevice.current.userInterfaceIdiom != .phone {
-                phonePanel(layout: layout, topInset: topInset, bottomInset: bottomInset)
-                    .overlay(alignment: .topTrailing) {
-                        if UIDevice.current.userInterfaceIdiom != .phone && sheetDetent != .full {
-                            locationButton.padding(.trailing, 20).offset(y: -60)
-                        }
-                    }
-                    .frame(height: layout.height, alignment: .bottom).offset(y: bottomInset)
             }
-            if layout.usesSidebar || sheetDetent != .full {
-                navigationCapsules.padding(.horizontal, 16).padding(.top, 8)
-                    .frame(maxWidth: .infinity, alignment: .center)
+            let capsulesVisible = !store.placeSearchPresented && (layout.usesSidebar || sheetDetent != .full)
+            ZStack {
+                navigationCapsules
+                    .transition(.opacity)
             }
+            .padding(.horizontal, 16).padding(.top, 8)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .opacity(capsulesVisible ? 1 : 0)
+            .allowsHitTesting(capsulesVisible)
+            .accessibilityHidden(!capsulesVisible)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: capsulesVisible)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: store.tripID != nil)
 
         }
         .onChange(of: store.tripID) { _, _ in showDates = false }
@@ -512,7 +536,7 @@ struct HomeView: View {
     }
     // One editing surface on iPad: navigation, search, dates, content and route settings.
     private func workspacePanel(topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat) -> some View {
-        journeyNavigation(sidebar: true)
+        panelWorkspace(sidebar: true)
         .padding(.top, topInset)
         .padding(.bottom, bottomInset)
         .padding(.leading, leftInset)
@@ -539,7 +563,7 @@ struct HomeView: View {
     }
     private var itineraryList: some View {
         Group {
-            if store.addPlaceDay == nil && (store.searching || !store.searchResults.isEmpty) {
+            if !store.placeSearchPresented && (store.searching || !store.searchResults.isEmpty) {
                 List {
                     Section { panelSearch }
                     if store.searching { ProgressView().frame(maxWidth: .infinity) }
@@ -569,6 +593,7 @@ struct HomeView: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("search-result-\(place.id)")
                 Divider()
             }
+            SearchPaginationFooter(store: store)
         }
     }
     private var locationButton: some View {

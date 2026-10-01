@@ -25,6 +25,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
     static func dismantleUIView(_ map: MAMapView, coordinator: Coordinator) {
         coordinator.stopSelectionAnimation()
         coordinator.cancelRouteUpdates()
+        coordinator.cancelPOIRefresh()
         map.delegate = nil; map.showsUserLocation = false
     }
     final class Pin: MAPointAnnotation {
@@ -67,6 +68,12 @@ struct AMapNativeRenderer: UIViewRepresentable {
         var lastStyledCompact: Bool?
         var lastStyledSelection: String?
         var pinImages: [String: UIImage] = [:]
+        private var routeHitIndexes: [String: RouteSpatialIndex] = [:]
+        private var motionProjection: [Coordinate: CGPoint] = [:]
+        private var poiRefreshTask: Task<Void, Never>?
+        private var poiCoverage: RouteGeoBounds?
+        private var mapIsMoving = false
+        private var highlightedRouteIDs: Set<String> = []
         private var selectionDay: String?
         private var selectionRequest: UUID?
         private var selectionLink: CADisplayLink?
@@ -77,6 +84,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var renderedCoordinates: [String: [Coordinate]] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
+            updateRouteSelection(map)
             let wanted = Set(store.mapMarkers.map(\.id))
             for id in Array(pins.keys) where !wanted.contains(id) { if let pin = pins.removeValue(forKey: id) { map.removeAnnotation(pin) } }
             for marker in store.mapMarkers {
@@ -110,7 +118,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     let gcj = Coordinates.gcj(p); return CLLocationCoordinate2D(latitude: gcj.latitude, longitude: gcj.longitude)
                 }
                 if coords.count == 1 {
-                    let insets = padding(map)
+                    let insets = padding(map, command: command)
                     let status = map.getMapStatus()!
                     status.centerCoordinate = coords[0]
                     status.zoomLevel = CGFloat(command.zoomLevel ?? 15)
@@ -121,6 +129,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                         from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
                         to: command.points[0], currentZoom: Double(map.zoomLevel), targetZoom: command.zoomLevel,
                         reduceMotion: UIAccessibility.isReduceMotionEnabled)
+                    store.deferDetailWork(for: duration + 0.15)
                     withCameraAnimation(duration: duration) {
                         map.setMapStatus(status, animated: duration > 0, duration: duration)
                     }
@@ -147,9 +156,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 map.setUserTrackingMode(.follow, animated: true)
             }
         }
-        private func padding(_ map: MAMapView) -> UIEdgeInsets {
-            let insets = store.mapViewportInsets
-            return UIEdgeInsets(top: insets.top, left: insets.left, bottom: min(insets.bottom, map.bounds.height * 0.48), right: insets.right)
+        private func padding(_ map: MAMapView, command: CameraCommand? = nil) -> UIEdgeInsets {
+            let insets = (command ?? CameraCommand(points: [])).viewportInsets(base: store.mapViewportInsets,
+                height: map.bounds.height, bottomSafeArea: map.safeAreaInsets.bottom,
+                bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
+            return UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
         }
         func mapView(_ mapView: MAMapView!, viewFor annotation: MAAnnotation!) -> MAAnnotationView! {
             if let pin = annotation as? SearchPin {
@@ -167,22 +178,22 @@ struct AMapNativeRenderer: UIViewRepresentable {
         func stopSelectionAnimation() {
             selectionLink?.invalidate(); selectionLink = nil
             motionDots.forEach { $0.removeFromSuperlayer() }
-            motionDots = []; motion.reset()
+            motionDots = []; motion.reset(); motionProjection.removeAll(keepingCapacity: true)
         }
 
         private func updateRouteSelection(_ map: MAMapView, geometryChanged: Bool = false) {
             let day = store.dayID
+            let changed = day != selectionDay
+            let resumeMotion = routesVisible && selectionLink == nil && !selectionRoutes.isEmpty && !UIAccessibility.isReduceMotionEnabled
+            guard changed || geometryChanged || resumeMotion || selectionRequest != store.routeSelectionRequest else { return }
+            selectionRequest = store.routeSelectionRequest
+            // Repeated taps still reopen the day panel, but need no renderer/animation reset.
+            guard changed || geometryChanged || resumeMotion else { return }
             let selected = store.displayRoutes.filter { $0.dayID == day && lastRoutes[$0.id]?.points == $0.points }
-            let changed = day != selectionDay || selectionRequest != store.routeSelectionRequest
-            guard changed || geometryChanged else { return }
             let newGeometry = selected.map(RouteOverlayGeometry.init) != selectionRoutes.map(RouteOverlayGeometry.init)
             selectionDay = day; selectionRequest = store.routeSelectionRequest
-            for (id, pair) in lines {
-                let active = selected.contains { $0.id == id }
-                (map.renderer(for: pair.0) as? MAPolylineRenderer)?.lineWidth = active ? 9 : 6
-                (map.renderer(for: pair.1) as? MAPolylineRenderer)?.lineWidth = active ? 6 : 3.5
-            }
-            guard changed || newGeometry else { return }
+            highlightRoutes(Set(selected.map(\.id)), map: map)
+            guard changed || newGeometry || resumeMotion else { return }
             stopSelectionAnimation(); selectionRoutes = selected
             guard routesVisible, !selected.isEmpty, !UIAccessibility.isReduceMotionEnabled else { return }
             let converted = selected.map { route -> DisplayRoute in
@@ -207,10 +218,32 @@ struct AMapNativeRenderer: UIViewRepresentable {
             selectionLink = link; link.add(to: .main, forMode: .common)
         }
 
+        private func highlightRoutes(_ selected: Set<String>, map: MAMapView) {
+            let changed = highlightedRouteIDs.symmetricDifference(selected)
+            highlightedRouteIDs = selected
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            for id in changed {
+                guard let pair = lines[id] else { continue }
+                let active = selected.contains(id)
+                if let white = map.renderer(for: pair.0) as? MAPolylineRenderer {
+                    white.lineWidth = active ? 9 : 6; white.setNeedsUpdate()
+                }
+                if let color = map.renderer(for: pair.1) as? MAPolylineRenderer {
+                    color.lineWidth = active ? 6 : 3.5; color.setNeedsUpdate()
+                }
+            }
+            CATransaction.commit()
+        }
+
         @objc private func advanceSelection(_ link: CADisplayLink) {
             guard let map, routesVisible, !UIAccessibility.isReduceMotionEnabled else { stopSelectionAnimation(); return }
+            // A moving camera invalidates only this small endpoint cache, not all route points.
+            if mapIsMoving || motionProjection.count > 256 { motionProjection.removeAll(keepingCapacity: true) }
             let positions = motion.positions(timestamp: link.targetTimestamp) { coordinate in
-                map.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map)
+                if let point = self.motionProjection[coordinate] { return point }
+                let point = map.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map)
+                self.motionProjection[coordinate] = point
+                return point
             }
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for (position, dot) in zip(positions, motionDots) {
@@ -222,15 +255,17 @@ struct AMapNativeRenderer: UIViewRepresentable {
 
         private func withCameraAnimation(duration: TimeInterval, changes: () -> Void) {
             CATransaction.begin()
-            CATransaction.setDisableActions(duration == 0)
-            CATransaction.setAnimationDuration(duration)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+            // The SDK owns interpolation. Don't wrap it in a second layer animation.
+            CATransaction.setDisableActions(true)
             changes()
             CATransaction.commit()
         }
 
         func cancelRouteUpdates() {
             routeRevision = UUID(); coordinateTask?.cancel(); coordinateTask = nil
+        }
+        func cancelPOIRefresh() {
+            poiRefreshTask?.cancel(); poiRefreshTask = nil
         }
 
         private func updateRoutes(_ map: MAMapView) {
@@ -259,6 +294,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                         }
                         self.lastRoutes.removeValue(forKey: id)
                         self.renderedCoordinates.removeValue(forKey: id)
+                        self.routeHitIndexes.removeValue(forKey: id)
                     }
                     if !removed.isEmpty { map.removeOverlays(removed) }
                     var added: [MAPolyline] = []
@@ -298,6 +334,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
             lastRoutes[route.id] = route
             renderedCoordinates[route.id] = prepared.coordinates
+            routeHitIndexes[route.id] = prepared.hitIndex
             return added
         }
         private func applyAnnotationOrder(_ view: MAAnnotationView, selected: Bool, search: Bool) {
@@ -307,29 +344,56 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.layer.zPosition = CGFloat(order)
             if selected { view.superview?.bringSubviewToFront(view) }
         }
+        private var searchPOIsActive: Bool {
+            store.placeSearchPresented || store.searching || !store.searchResults.isEmpty
+        }
         private func updateSearchPOIFilter(_ map: MAMapView) {
-            let active = store.addPlaceDay != nil || store.searching || !store.searchResults.isEmpty
-            guard active else {
+            guard searchPOIsActive else {
+                cancelPOIRefresh(); poiCoverage = nil
                 if filteringSearchPOIs { map.removePoiFilter("search-results"); filteringSearchPOIs = false }
                 return
             }
+            // Normal SwiftUI updates don't mutate the SDK filter. Existing overscan
+            // covers local movement; refresh its geometry once the map has settled.
+            if !filteringSearchPOIs { refreshSearchPOIFilter(map) }
+        }
+        private func schedulePOIRefresh() {
+            cancelPOIRefresh()
+            guard searchPOIsActive else { return }
+            poiRefreshTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                guard let self, !Task.isCancelled, !self.mapIsMoving,
+                      self.searchPOIsActive, let map = self.map else { return }
+                self.refreshSearchPOIFilter(map)
+                self.poiRefreshTask = nil
+            }
+        }
+        private func refreshSearchPOIFilter(_ map: MAMapView) {
             let rect = map.bounds
             guard rect.width > 0, rect.height > 0 else { return }
-            let filter = MAPoiFilter()
-            filter.filterType = .poi
-            filter.keyName = "search-results"
-            filter.position = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+            let coordinates = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
                                CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)].map {
-                NSValue(maCoordinate: map.convert($0, toCoordinateFrom: map))
+                let c = map.convert($0, toCoordinateFrom: map)
+                return Coordinate(latitude: c.latitude, longitude: c.longitude)
+            }
+            guard coordinates.allSatisfy(\.isValid) else { return }
+            let reference = poiCoverage.map { ($0.west + $0.east) / 2 } ?? coordinates[0].longitude
+            let viewport = RouteGeoBounds(points: coordinates, referenceLongitude: reference)
+            guard poiCoverage?.contains(viewport) != true else { return }
+            let coverage = viewport.expanded(factor: 1)
+            let filter = MAPoiFilter()
+            filter.filterType = .poi; filter.keyName = "search-results"
+            filter.position = coverage.corners.map {
+                NSValue(maCoordinate: CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude))
             }
             if filteringSearchPOIs { map.removePoiFilter("search-results") }
-            map.add(filter); filteringSearchPOIs = true
+            map.add(filter); filteringSearchPOIs = true; poiCoverage = coverage
         }
         private func styleSearch(_ view: MAAnnotationView, pin: SearchPin) {
             let selected = store.selectedSearchPlaceID == pin.place.id
             let key = "search-\(selected)"
             if pinImages[key] == nil { pinImages[key] = SearchPinAppearance.image(selected: selected) }
-            view.image = pinImages[key]; view.centerOffset = .zero
+            view.image = pinImages[key]; view.centerOffset = CGPoint(x: 0, y: -14)
             applyAnnotationOrder(view, selected: selected, search: true)
             view.isAccessibilityElement = true; view.accessibilityLabel = "搜索结果\(pin.number)：\(pin.place.name)"
             view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
@@ -413,9 +477,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 selectionRequest = nil; updateRouteSelection(map)
             } else { map.removeOverlays(overlays) }
         }
+        func mapView(_ mapView: MAMapView!, regionWillChangeAnimated animated: Bool) {
+            mapIsMoving = true; cancelPOIRefresh()
+            motionProjection.removeAll(keepingCapacity: true)
+        }
         func mapViewRegionChanged(_ mapView: MAMapView!) {
+            motionProjection.removeAll(keepingCapacity: true)
             updateZoomPresentation(mapView)
-            if filteringSearchPOIs { updateSearchPOIFilter(mapView) }
         }
         private func updatePinStyles(_ map: MAMapView) {
             let compact = MapZoomPresentation.isCompact(Double(map.zoomLevel))
@@ -449,32 +517,61 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
         @objc func routeTapped(_ gesture: UITapGestureRecognizer) {
-            guard gesture.state == .ended, let mapView = map,
-                  !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
+            guard gesture.state == .ended, let mapView = map else { return }
             let tap = gesture.location(in: mapView)
-            // Annotation taps belong to place details, even where a route meets its endpoint.
-            if pins.values.contains(where: { pin in
-                let p = mapView.convert(pin.coordinate, toPointTo: mapView)
-                return hypot(p.x - tap.x, p.y - tap.y) <= 22
-            }) { return }
-            let rendered = store.displayRoutes.filter { lastRoutes[$0.id]?.points == $0.points }
-            // Hit-test the coordinates already converted for rendering; avoid converting every path again on tap.
-            let converted = rendered.map { route -> DisplayRoute in
-                var value = route; value.points = renderedCoordinates[route.id] ?? []
-                return value
+            // Use the visible annotation views: no SDK coordinate projection or delayed
+            // didSelect callback is needed to acknowledge a marker tap.
+            let annotations: [MAAnnotationView] = (Array(searchPins.values).compactMap { mapView.view(for: $0) }
+                + Array(pins.values).compactMap { mapView.view(for: $0) })
+                .filter { !$0.isHidden && $0.alpha > 0 && $0.bounds.insetBy(dx: min(0, ($0.bounds.width-44)/2),
+                    dy: min(0, ($0.bounds.height-44)/2)).contains($0.convert(tap, from: mapView)) }
+                .sorted { $0.zIndex > $1.zIndex }
+            if let view = annotations.first {
+                if let pin = view.annotation as? SearchPin {
+                    store.choose(pin.place, fromMap: true); styleSearch(view, pin: pin)
+                } else if let pin = view.annotation as? Pin {
+                    store.focus(pin.marker); updatePinStyles(mapView)
+                }
+                return
             }
-            let hits = RouteSelection.candidates(at: (tap.x, tap.y), routes: converted) { point in
-                let screen = mapView.convert(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude), toPointTo: mapView)
-                return (screen.x, screen.y)
+            guard !store.placeSearchPresented, !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
+            let radius = RouteSelection.hitRadius
+            let ground = [CGPoint(x: tap.x-radius, y: tap.y-radius), CGPoint(x: tap.x+radius, y: tap.y-radius),
+                          CGPoint(x: tap.x+radius, y: tap.y+radius), CGPoint(x: tap.x-radius, y: tap.y+radius)].map {
+                let c = mapView.convert($0, toCoordinateFrom: mapView)
+                return Coordinate(latitude: c.latitude, longitude: c.longitude)
             }
-            let unique = hits.compactMap { hit in rendered.first { $0.id == hit.id } }
+            guard ground.allSatisfy(\.isValid) else { return }
+            let bounds = RouteGeoBounds(points: ground, referenceLongitude: ground[0].longitude)
+            var projected: [Coordinate: CGPoint] = [:]
+            let hits = store.displayRoutes.compactMap { route -> (DisplayRoute, Double)? in
+                guard let index = routeHitIndexes[route.id] else { return nil }
+                let distance = index.nearestDistance(at: tap, bounds: bounds) { coordinate in
+                    if let cached = projected[coordinate] { return cached }
+                    let point = mapView.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: mapView)
+                    projected[coordinate] = point; return point
+                }
+                return distance <= radius ? (route, distance) : nil
+            }.sorted { $0.1 == $1.1 ? $0.0.id < $1.0.id : $0.1 < $1.1 }
+            let nearest = hits.first?.1 ?? .infinity
+            var days: Set<String> = []
+            let unique = hits.filter { $0.1 <= nearest + 2 }.compactMap {
+                days.insert($0.0.tripID + "|" + $0.0.dayID).inserted ? $0.0 : nil
+            }
             if unique.count > 1 { store.offerRoutes(unique, at: tap) }
-            else if let first = unique.first { store.selectRoute(first) }
+            else if let first = unique.first {
+                // Feedback is committed in the gesture callback, before navigation publishes.
+                highlightRoutes(Set(store.displayRoutes.filter { $0.tripID == first.tripID && $0.dayID == first.dayID }.map(\.id)), map: mapView)
+                store.selectRoute(first)
+            }
             else { store.routeCandidates = [] }
         }
         func mapView(_ mapView: MAMapView!, regionDidChangeAnimated animated: Bool) {
             updateZoomPresentation(mapView)
             updateSearchBounds(mapView)
+            mapIsMoving = false
+            motionProjection.removeAll(keepingCapacity: true)
+            schedulePOIRefresh()
         }
         private func updateSearchBounds(_ mapView: MAMapView) {
             let insets = padding(mapView)
@@ -502,6 +599,12 @@ struct PreviewMap: View {
         let insets = store.mapViewportInsets
         let usableWidth = max(80, size.width - insets.left - insets.right)
         let usableHeight = max(80, size.height - insets.top - insets.bottom)
+        if let command = store.camera, command.detailLayout != nil, let center = command.points.first {
+            let target = command.viewportInsets(base: insets, height: size.height, bottomSafeArea: 0,
+                bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
+            return CGPoint(x: (size.width + target.left - target.right) / 2 + (p.longitude - center.longitude) * usableWidth / 0.018,
+                           y: (size.height + target.top - target.bottom) / 2 - (p.latitude - center.latitude) * usableHeight / 0.029)
+        }
         return CGPoint(x: insets.left + (p.longitude - 121.432) * usableWidth / 0.018,
                        y: insets.top + (31.229 - p.latitude) * usableHeight / 0.029)
     }
@@ -561,6 +664,7 @@ struct PreviewMap: View {
                     }.buttonStyle(.plain)
                         .accessibilityLabel("搜索结果\(index + 1)：\(place.name)")
                         .accessibilityIdentifier("map-search-result-\(place.id)")
+                        .offset(y: -14)
                         .position(point(place.coordinates, size: proxy.size))
                         .zIndex(store.selectedSearchPlaceID == place.id ? 200_000 : 1_000)
                 }
@@ -574,7 +678,7 @@ struct PreviewMap: View {
                 motionActive = true
             }
             .simultaneousGesture(SpatialTapGesture().onEnded { value in
-                guard !MapZoomPresentation.isCompact(zoom) else { return }
+                guard !store.placeSearchPresented, !MapZoomPresentation.isCompact(zoom) else { return }
                 if store.mapMarkers.contains(where: { marker in
                     let p = point(marker.coordinates, size: proxy.size)
                     return hypot(p.x - value.location.x, p.y - value.location.y) <= 22

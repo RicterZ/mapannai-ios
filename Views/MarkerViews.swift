@@ -12,17 +12,20 @@ struct MarkerDetailView: View {
     @State private var noteReady = false
     private var current: Marker { store.markers.first(where: { $0.id == marker.id }) ?? marker }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
-    private var compactDetails: Bool { !hasNote && imageURL(current.content.headerImage ?? "") == nil }
+    private var detailLayout: MarkerDetailLayout {
+        MarkerDetailLayout(marker: current, itineraryCount: itineraries.count, hasSelectedDay: store.day != nil)
+    }
+    private var compactDetails: Bool { detailLayout.compact }
     private var itineraries: [MarkerItinerary] { MarkerPresentation.itineraries(for: current.id, trips: store.trips) }
     private var compactHeight: CGFloat {
-        min(520, 240 + (current.content.address?.isEmpty == false ? 40 : 0) + CGFloat(itineraries.count) * 52 + (store.day == nil ? 0 : 48))
+        detailLayout.compactHeight
     }
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let image = current.content.headerImage, let url = imageURL(image) {
-                        AsyncImage(url: url) { phase in
+                        AsyncImage(url: noteReady ? url : nil) { phase in
                             if let image = phase.image { image.resizable().scaledToFill() }
                             else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
                         }.frame(height: 210).clipped().clipShape(RoundedRectangle(cornerRadius: 20))
@@ -100,8 +103,11 @@ struct MarkerDetailView: View {
                 } message: { Text("会从所有每日行程和路线中移除这个地点。") }
         }.task(id: current.id) { await store.refreshSelectedMarker(current.id) }
             .task(id: marker.id) {
-                // WebKit startup must not compete with the sheet's first presentation frames.
-                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                // Wait for both sheet and native camera animation, not a fixed 300ms.
+                do {
+                    try await Task.sleep(for: .milliseconds(350))
+                    try await store.waitForDetailPresentation()
+                } catch { return }
                 noteReady = true
             }
             .modifier(MarkerDetailPresentation(compactDetails: compactDetails, compactHeight: compactHeight))
@@ -117,6 +123,7 @@ struct MarkerEditorView: View {
     @ObservedObject var store: AppStore
     let initial: MarkerDraft
     var onSaved: () -> Void = {}
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     @State private var draft: MarkerDraft
     @StateObject private var rich = RichEditorController()
@@ -126,8 +133,9 @@ struct MarkerEditorView: View {
     @State private var localError: String?
     @State private var latitude = ""
     @State private var longitude = ""
-    init(store: AppStore, initial: MarkerDraft, onSaved: @escaping () -> Void = {}) {
-        self.store = store; self.initial = initial; self.onSaved = onSaved; _draft = State(initialValue: initial)
+    @State private var confirmDiscard = false
+    init(store: AppStore, initial: MarkerDraft, embedded: Bool = false, onSaved: @escaping () -> Void = {}) {
+        self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; _draft = State(initialValue: initial)
     }
     private var editorFields: some View {
         Group {
@@ -191,8 +199,11 @@ struct MarkerEditorView: View {
             Button { rich.insertBullet() } label: { Image(systemName: "list.bullet").frame(width: 32, height: 32) }.accessibilityLabel("列表")
         }.buttonStyle(.borderless).textCase(nil)
     }
-    var body: some View {
-        NavigationStack {
+    @ViewBuilder var body: some View {
+        if embedded { editorContent }
+        else { NavigationStack { editorContent }.modifier(IPadMarkerDialogPresentation()) }
+    }
+    private var editorContent: some View {
             GeometryReader { geometry in
                 Form {
                     Section { editorFields }
@@ -205,9 +216,12 @@ struct MarkerEditorView: View {
                     if let localError { Section { Text(localError).foregroundStyle(.red) } }
                 }.scrollDismissesKeyboard(.interactively)
             }
-                .navigationTitle(initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle(embedded || initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(store.saving || uploading) }
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") {
+                        if embedded && hasChanges { confirmDiscard = true }
+                        else { closeEditor() }
+                    }.disabled(store.saving || uploading) }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("保存") { Task {
                             if initial.marker == nil {
@@ -215,10 +229,24 @@ struct MarkerEditorView: View {
                                 draft.coordinates = Coordinate(latitude: lat, longitude: lng)
                             }
                             draft.html = rich.exportHTML(original: initial.html)
-                            if await store.saveMarker(draft) { onSaved(); dismiss() } else { localError = store.errorMessage }
+                            if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
+                                if await store.addSearchPlace(place, edited: draft) { onSaved(); closeEditor() }
+                                else { localError = store.addPlaceError }
+                            } else if await store.saveMarker(draft) { onSaved(); dismiss() }
+                            else { localError = store.errorMessage }
                         }}.disabled(store.saving || uploading || draft.title.isEmpty)
                     }
                 }
+        .navigationBarBackButtonHidden(embedded)
+        .confirmationDialog("放弃修改？", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("放弃修改", role: .destructive) { closeEditor() }
+            Button("继续编辑", role: .cancel) {}
+        }
+        .onDisappear {
+            if embedded, store.draft?.id == initial.id {
+                draft.html = rich.exportHTML(original: initial.html)
+                store.draft = draft
+            }
         }
         .onAppear {
             latitude = String(draft.coordinates.latitude); longitude = String(draft.coordinates.longitude)
@@ -254,7 +282,14 @@ struct MarkerEditorView: View {
                 } catch { localError = error.localizedDescription }
             }
         }.interactiveDismissDisabled(store.saving || uploading)
-            .modifier(IPadMarkerDialogPresentation())
+    }
+    private var hasChanges: Bool {
+        draft.title != initial.title || draft.icon != initial.icon || draft.headerImage != initial.headerImage
+            || rich.changed || latitude != String(initial.coordinates.latitude) || longitude != String(initial.coordinates.longitude)
+    }
+    private func closeEditor() {
+        if embedded { store.draft = nil; store.editingSearchPlaceID = nil }
+        else { dismiss() }
     }
 }
 

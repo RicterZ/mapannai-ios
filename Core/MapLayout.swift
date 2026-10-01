@@ -13,7 +13,7 @@ struct MapLayout: Equatable {
     var regularWidth: Bool
     var expanded: Bool
     var sheetHeight: Double? = nil
-    var usesSidebar: Bool { regularWidth && width >= 760 && width > height }
+    var usesSidebar: Bool { regularWidth && width >= 700 }
     var sidebarWidth: Double { min(360, max(320, width * 0.30)) }
     var listHeight: Double { min(240, height * 0.31) }
     var insets: MapViewportInsets {

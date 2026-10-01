@@ -17,6 +17,7 @@ struct NativePlaceSearchBar: UIViewRepresentable {
     var searching: Bool
     var onSearch: () -> Void
     var onClear: () -> Void
+    var onBeginEditing: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> UISearchBar {
@@ -38,6 +39,7 @@ struct NativePlaceSearchBar: UIViewRepresentable {
     final class Coordinator: NSObject, UISearchBarDelegate {
         var parent: NativePlaceSearchBar
         init(_ parent: NativePlaceSearchBar) { self.parent = parent }
+        func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) { parent.onBeginEditing() }
         func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
             parent.text = searchText
             if searchText.isEmpty { parent.onClear() }
@@ -59,11 +61,18 @@ struct JourneyToolbarContainerOffset: UIViewControllerRepresentable {
         DispatchQueue.main.async { [weak controller] in controller?.applyOffset() }
     }
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
-        controller.restoreOffset()
+        controller.dismantle()
     }
 
     final class Controller: UIViewController {
+        private final class Owners {
+            let controllers = NSHashTable<Controller>.weakObjects()
+            let original: CGAffineTransform
+            init(_ original: CGAffineTransform) { self.original = original }
+        }
+        private static let bars = NSMapTable<UINavigationBar, Owners>.weakToStrongObjects()
         private weak var adjustedBar: UINavigationBar?
+        private var dismantled = false
         override func loadView() {
             view = UIView(); view.isUserInteractionEnabled = false
         }
@@ -74,12 +83,27 @@ struct JourneyToolbarContainerOffset: UIViewControllerRepresentable {
             super.viewDidLayoutSubviews(); applyOffset()
         }
         func applyOffset() {
-            guard let bar = navigationController?.navigationBar else { return }
-            if adjustedBar !== bar { restoreOffset(); adjustedBar = bar }
-            bar.transform = CGAffineTransform(translationX: 0, y: -4)
+            guard !dismantled, let bar = navigationController?.navigationBar else { return }
+            if adjustedBar !== bar {
+                restoreOffset(); adjustedBar = bar
+                let owners = Self.bars.object(forKey: bar) ?? Owners(bar.transform)
+                owners.controllers.add(self)
+                Self.bars.setObject(owners, forKey: bar)
+            }
+            UIView.performWithoutAnimation { bar.transform = CGAffineTransform(translationX: 0, y: -4) }
         }
-        func restoreOffset() {
-            adjustedBar?.transform = .identity
+        func dismantle() {
+            dismantled = true
+            restoreOffset()
+        }
+        private func restoreOffset() {
+            if let bar = adjustedBar, let owners = Self.bars.object(forKey: bar) {
+                owners.controllers.remove(self)
+                if owners.controllers.allObjects.isEmpty {
+                    UIView.performWithoutAnimation { bar.transform = owners.original }
+                    Self.bars.removeObject(forKey: bar)
+                }
+            }
             adjustedBar = nil
         }
     }

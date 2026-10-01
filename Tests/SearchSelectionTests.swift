@@ -40,14 +40,108 @@ final class SearchSelectionTests: XCTestCase {
         store.searchText = "静安"
         await store.search()
         let result = try XCTUnwrap(store.searchResults.first)
+        store.choose(result)
+        XCTAssertNil(store.draft)
+        XCTAssertEqual(store.selectedSearchPlace?.name, "静安寺")
+        let camera = store.camera?.id
         store.choose(result, fromMap: true)
+        XCTAssertEqual(store.camera?.id, camera)
         XCTAssertEqual(store.draft?.title, "静安寺")
-        XCTAssertFalse(store.draftExpanded)
+        let draftID = store.draft?.id
+        store.choose(result, fromMap: true)
+        XCTAssertEqual(store.draft?.id, draftID)
         XCTAssertEqual(store.addPlaceDay?.id, day.id)
         XCTAssertEqual(store.searchText, "静安")
         store.endAddingPlace()
         XCTAssertNil(store.addPlaceDay); XCTAssertNil(store.draft)
         XCTAssertTrue(store.searchResults.isEmpty)
+    }
+
+    @MainActor func testPartialSaveRetriesMembershipWithoutCreatingAgainAndKeepsTarget() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let client = APIClient(baseURL: "https://add-flow.invalid", token: "", session: session)
+        let store = AppStore(settings: Settings(), demo: true)
+        let target = try XCTUnwrap(store.day)
+        store.beginAddingPlace(to: target)
+        let place = Place(id: "new-poi", name: "新地点", address: "地址", coordinates: Coordinate(latitude: 30, longitude: 120))
+        store.searchText = "新地点"; store.searchResults = [place]
+        let targetPath = ("/api/" + AppStore.dayPath(target) + "/markers").removingPercentEncoding!
+        var creates = 0, joins = 0
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            if request.url!.path == "/api/markers" {
+                creates += 1
+                let marker = Marker(id: "new-id", coordinates: place.coordinates, content: MarkerContent(id: "new-id", title: place.name, markdownContent: ""))
+                return (200, try JSONEncoder().encode(marker))
+            }
+            XCTAssertEqual(request.url!.path, targetPath)
+            joins += 1
+            return joins == 1 ? (500, Data("{}".utf8)) : (200, Data("{}".utf8))
+        }
+        let first = await store.addSearchPlace(place, using: client)
+        XCTAssertFalse(first); XCTAssertNotNil(store.addPlaceError)
+        store.select(trip: store.trip, day: store.trip?.days.last, focus: false)
+        let second = await store.addSearchPlace(place, using: client)
+        XCTAssertTrue(second)
+        XCTAssertEqual(creates, 1); XCTAssertEqual(joins, 2)
+        XCTAssertEqual(store.addPlaceDay?.id, target.id)
+        XCTAssertEqual(store.searchText, "新地点"); XCTAssertEqual(store.searchResults, [place])
+        XCTAssertTrue(store.isPlaceAdded(place))
+        let third = await store.addSearchPlace(place, using: client)
+        XCTAssertTrue(third); XCTAssertEqual(joins, 2)
+    }
+    @MainActor func testContinuousAddReusesSavedPlaceAndPreservesChainsAndSearch() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let client = APIClient(baseURL: "https://add-flow.invalid", token: "", session: session)
+        let store = AppStore(settings: Settings(), demo: true)
+        let target = try XCTUnwrap(store.day)
+        let existing = try XCTUnwrap(store.markers.first { !target.markerIds.contains($0.id) })
+        let savedPlace = Place(id: "provider-id", name: existing.title, address: "", coordinates: existing.coordinates)
+        let newPlace = Place(id: "another-poi", name: "另一地点", address: "", coordinates: Coordinate(latitude: 30, longitude: 120))
+        store.beginAddingPlace(to: target)
+        store.searchText = "地点"; store.searchResults = [savedPlace, newPlace]
+        var creates = 0, joins = 0
+        MockURLProtocol.handler = { request in
+            if request.url!.path == "/api/markers" {
+                creates += 1
+                let marker = Marker(id: "another-id", coordinates: newPlace.coordinates, content: MarkerContent(id: "another-id", title: newPlace.name, markdownContent: ""))
+                return (200, try JSONEncoder().encode(marker))
+            }
+            joins += 1
+            return (200, Data("{}".utf8))
+        }
+        let first = await store.addSearchPlace(savedPlace, using: client)
+        let second = await store.addSearchPlace(newPlace, using: client)
+        XCTAssertTrue(first); XCTAssertTrue(second)
+        XCTAssertEqual(creates, 1); XCTAssertEqual(joins, 2)
+        XCTAssertTrue(store.isPlaceAdded(savedPlace)); XCTAssertTrue(store.isPlaceAdded(newPlace))
+        XCTAssertEqual(store.searchResults, [savedPlace, newPlace]); XCTAssertEqual(store.searchText, "地点")
+        XCTAssertEqual(store.day?.chains, target.chains)
+        XCTAssertEqual(store.day?.markerIds.count, target.markerIds.count + 2)
+        XCTAssertNotNil(store.addPlaceDay)
+    }
+
+    @MainActor func testGeneralSearchSavesWithoutAddingToSelectedDay() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let client = APIClient(baseURL: "https://search.invalid", token: "", session: session)
+        let store = AppStore(settings: Settings(), demo: true)
+        let trips = store.trips
+        store.beginAddingPlace()
+        XCTAssertTrue(store.placeSearchPresented); XCTAssertNil(store.addPlaceDay)
+        let place = Place(id: "general", name: "独立地点", address: "", coordinates: Coordinate(latitude: 30, longitude: 120))
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url!.path, "/api/markers")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let marker = Marker(id: "general", coordinates: place.coordinates, content: MarkerContent(id: "general", title: place.name, markdownContent: ""))
+            return (200, try JSONEncoder().encode(marker))
+        }
+        let saved = await store.addSearchPlace(place, using: client)
+        XCTAssertTrue(saved); XCTAssertEqual(store.trips, trips)
+        XCTAssertTrue(store.isPlaceAdded(place))
+        store.endAddingPlace(); XCTAssertFalse(store.placeSearchPresented)
     }
 
 }

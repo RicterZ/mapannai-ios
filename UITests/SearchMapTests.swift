@@ -2,111 +2,121 @@ import XCTest
 import UIKit
 
 final class SearchMapTests: XCTestCase {
-    @MainActor func testSearchPinsHalfSheetRepeatTapAndRetainedQuery() {
-        guard UIDevice.current.userInterfaceIdiom != .pad else { return }
+    @MainActor func testSelectionAndEditingStayInOneWorkspace() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
-        let add = app.buttons["day-search-add-place"]
-        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
-        let list = app.collectionViews["itinerary-marker-list"]
-        for _ in 0..<4 where !add.isHittable { list.swipeUp() }
-        add.tap()
+        openSearch(app)
         let search = app.searchFields["map-place-search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        screenshot("Add place search container before typing")
         search.tap(); search.typeText("静安\n")
         let result = app.buttons["add-place-result-demo-3"]
-        XCTAssertTrue(result.waitForExistence(timeout: 5))
-        result.tap()
+        XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
+        XCTAssertFalse(app.textFields["地点名称"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "add-search-place-demo-3").count, 1)
+        XCTAssertFalse(app.buttons["edit-search-place"].exists)
+        let pin = app.buttons["map-search-result-demo-3"]
+        XCTAssertTrue(pin.isHittable); pin.tap()
         let name = app.textFields["地点名称"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         XCTAssertEqual(name.value as? String, "静安寺")
-        XCTAssertGreaterThan(name.frame.minY, app.windows.firstMatch.frame.height * 0.35)
-        let pin = app.buttons["map-search-result-demo-3"]
-        XCTAssertTrue(pin.isHittable)
-        screenshot("Search results and half-height editor")
-        pin.tap()
-        let expanded = NSPredicate { _, _ in name.frame.minY < app.windows.firstMatch.frame.height * 0.35 }
-        expectation(for: expanded, evaluatedWith: name); waitForExpectations(timeout: 5)
-        XCTAssertEqual(name.value as? String, "静安寺")
-        let note = app.textViews["marker-note-editor"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(note.frame.maxY, app.windows.firstMatch.frame.maxY)
-        screenshot("Repeated result tap expands editor")
         app.buttons["取消"].tap()
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertEqual(search.value as? String, "静安")
-        XCTAssertTrue(pin.exists)
-        search.buttons.firstMatch.tap()
-        XCTAssertFalse(pin.exists)
-    }
-    @MainActor func testDayAddSearchCollapsesJourneyAndMapPinOpensEditor() {
-        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
-        let add = app.buttons["day-search-add-place"]
-        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
-        let list = app.collectionViews["itinerary-marker-list"]
-        for _ in 0..<4 where !add.isHittable { list.swipeUp() }
-        XCTAssertTrue(add.isHittable); add.tap()
-        let search = app.searchFields["map-place-search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(search.frame.minY, app.windows.firstMatch.frame.height * 0.4)
-        screenshot("Add place search container before typing")
-        search.tap(); search.typeText("静安\n")
-        let pin = app.buttons["map-search-result-demo-3"]
-        XCTAssertTrue(pin.waitForExistence(timeout: 5)); XCTAssertTrue(pin.isHittable)
-        pin.tap()
-        XCTAssertTrue(app.textFields["地点名称"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.textFields["地点名称"].value as? String, "静安寺")
-        app.buttons["取消"].tap()
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertEqual(search.value as? String, "静安")
-        app.buttons["add-place-result-demo-3"].tap()
-        XCTAssertTrue(app.textFields["地点名称"].waitForExistence(timeout: 5))
-        app.buttons["取消"].tap()
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            let half = NSPredicate { _, _ in search.frame.minY > app.windows.firstMatch.frame.height * 0.4 }
+            expectation(for: half, evaluatedWith: search); waitForExpectations(timeout: 5)
+            XCTAssertTrue(pin.isHittable)
+        }
+        screenshot("Return to half-height search without selection fill")
+        XCTAssertTrue(result.exists)
         app.buttons["close-place-picker"].tap()
         XCTAssertFalse(pin.exists)
+        let dayAdd = app.buttons["day-search-add-place"]
+        let list = app.collectionViews["itinerary-marker-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !dayAdd.isHittable { list.swipeUp() }
+        XCTAssertTrue(dayAdd.isHittable)
     }
 
-    private func screenshot(_ name: String) {
+    @MainActor func testAddOpensDraftAndOnlySaveAttemptsMutation() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        openSearch(app)
+        let search = app.searchFields["map-place-search"]
+        search.tap(); search.typeText("静安\n")
+        let add = app.buttons["add-search-place-demo-3"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()
+        XCTAssertTrue(app.textFields["地点名称"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["当前为只读示例，连接服务后可添加地点。"].exists)
+        app.buttons["保存"].tap()
+        XCTAssertTrue(app.staticTexts["当前为只读示例，连接服务后可添加地点。"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.alerts.count, 0)
+        app.buttons["取消"].tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "静安")
+    }
+
+    @MainActor func testIPadRotationKeepsSearchAndSideBySideMap() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "iPad layout")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        openSearch(app)
+        let search = app.searchFields["map-place-search"]
+        search.tap(); search.typeText("静安\n")
+        let result = app.buttons["add-place-result-demo-3"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
+        let pin = app.buttons["map-search-result-demo-3"]
+        XCTAssertTrue(pin.isHittable)
+        XCTAssertLessThan(search.frame.maxX, app.windows.firstMatch.frame.width * 0.6)
+        screenshot("iPad landscape search sidebar")
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "静安")
+        XCTAssertLessThan(search.frame.maxX, app.windows.firstMatch.frame.width * 0.6)
+        XCTAssertTrue(pin.isHittable)
+        screenshot("iPad portrait search sidebar")
+        app.buttons["add-search-place-demo-3"].tap()
+        let name = app.textFields["地点名称"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertTrue(pin.isHittable)
+        name.tap(); name.typeText("测试")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertTrue((name.value as? String)?.contains("测试") == true)
+        app.buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["放弃修改"].waitForExistence(timeout: 5))
+        app.buttons["放弃修改"].tap()
+        XCTAssertEqual(search.value as? String, "静安")
+    }
+
+    @MainActor func testToolbarSearchUsesPageScope() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "Phone toolbar")
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let search = app.buttons["itinerary-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["itinerary-collapse"].exists)
+        search.tap()
+        XCTAssertTrue(app.staticTexts["添加到第1天"].waitForExistence(timeout: 5))
+        app.buttons["close-place-picker"].tap()
+        app.buttons["journey-back"].tap()
+        search.tap()
+        XCTAssertTrue(app.searchFields["map-place-search"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["添加到第1天"].exists)
+        app.buttons["close-place-picker"].tap()
+        app.buttons["journey-back"].tap()
+        search.tap()
+        XCTAssertTrue(app.searchFields["map-place-search"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["添加到第1天"].exists)
+    }
+
+    @MainActor private func openSearch(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
+        let add = app.buttons["day-search-add-place"]
+        let list = app.collectionViews["itinerary-marker-list"]
+        for _ in 0..<5 where !add.isHittable { list.swipeUp() }
+        XCTAssertTrue(add.isHittable); add.tap()
+        XCTAssertTrue(app.searchFields["map-place-search"].waitForExistence(timeout: 5))
+    }
+    @MainActor private func screenshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
-}
-
-final class IPadMarkerDialogTests: XCTestCase {
-    @MainActor func testSearchPlaceOpensCenteredFixedDialogAndCancelPreservesResults() throws {
-        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Centered dialog requires iPad")
-        let app = XCUIApplication(); app.launchArguments = ["--demo"]
-        XCUIDevice.shared.orientation = .landscapeLeft; app.launch()
-        defer { XCUIDevice.shared.orientation = .portrait }
-        let search = app.searchFields["map-place-search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 10))
-        search.tap(); search.typeText("武康\n")
-        let result = app.buttons["search-result-demo-0"]
-        XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
-        let bar = app.navigationBars["添加地点"]
-        XCTAssertTrue(bar.waitForExistence(timeout: 5))
-        let name = app.textFields["地点名称"]
-        XCTAssertEqual(name.value as? String, "武康大楼")
-        let window = app.windows.firstMatch
-        XCTAssertEqual(bar.frame.midX, window.frame.midX, accuracy: 3)
-        XCTAssertGreaterThan(bar.frame.minX, window.frame.width * 0.15)
-        XCTAssertLessThan(bar.frame.maxX, window.frame.width * 0.85)
-        XCTAssertGreaterThan(bar.frame.minY, 40)
-        XCTAssertLessThan(bar.frame.minY, window.frame.height * 0.3)
-        let initial = bar.frame
-        let note = app.textViews["marker-note-editor"]
-        XCTAssertTrue(note.exists)
-        XCTAssertGreaterThan(note.frame.height, 180)
-        let drag = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: 0, dy: 180)))
-        XCTAssertTrue(bar.exists)
-        XCTAssertEqual(bar.frame, initial)
-        let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        image.name = "iPad centered fixed marker editor"; image.lifetime = .keepAlways; add(image)
-        app.buttons["取消"].tap()
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertEqual(search.value as? String, "武康")
-        XCTAssertTrue(app.buttons["map-search-result-demo-0"].exists)
-    }
-
 }

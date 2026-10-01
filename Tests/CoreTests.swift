@@ -2,6 +2,41 @@ import XCTest
 @testable import MapAnNai
 
 final class CoreTests: XCTestCase {
+    @MainActor func testMarkerFocusAnticipatesDetailWithoutChangingJourneyInsets() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let collapsed = MapLayout(width: 393, height: 852, regularWidth: false, expanded: true, sheetHeight: 68).insets
+        store.mapViewportInsets = collapsed
+        var marker = store.markers[0]
+        marker.content.markdownContent = "<p>正文</p>"
+        store.focus(marker)
+        let command = try XCTUnwrap(store.camera)
+        let insets = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: true)
+        XCTAssertEqual(store.mapViewportInsets, collapsed)
+        XCTAssertEqual(insets.bottom, 451)
+        let centerY = (852 + insets.top - insets.bottom) / 2
+        XCTAssertLessThan(centerY + 22, 852 / 2)
+        store.focus(marker)
+        XCTAssertEqual(store.camera?.id, command.id)
+        store.selectedMarker = nil
+        XCTAssertEqual(store.mapViewportInsets, collapsed)
+        let ipad = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: false)
+        XCTAssertEqual(ipad, collapsed)
+    }
+    @MainActor func testCompactDetailCameraUsesSameHeightAsSheetIncludingSafeArea() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        var marker = store.markers[0]
+        marker.content.markdownContent = "<p><br></p>"
+        marker.content.headerImage = nil
+        let detail = MarkerDetailLayout(marker: marker, itineraryCount: 7, hasSelectedDay: true)
+        XCTAssertTrue(detail.compact)
+        XCTAssertEqual(detail.compactHeight, 520)
+        let command = CameraCommand(points: [marker.coordinates], detailLayout: detail)
+        let insets = command.viewportInsets(base: MapViewportInsets(top: 85, left: 35, bottom: 93, right: 35),
+            height: 852, bottomSafeArea: 34, bottomSheet: true)
+        XCTAssertEqual(insets.bottom, 579)
+        XCTAssertGreaterThan(insets.bottom, 852 * 0.48)
+        XCTAssertLessThan((852 + insets.top - insets.bottom) / 2 + 22, 852 - 554)
+    }
     @MainActor func testMarkerItinerariesIncludeAllMembershipsWithChronologicalDayNumbers() {
         let sample = AppStore(settings: Settings(), demo: true)
         var trip = sample.trips[0]
@@ -115,6 +150,31 @@ final class CoreTests: XCTestCase {
         empty.markers = sample.markers; empty.trips = sample.trips
         empty.applyStartupCamera(now: now.addingTimeInterval(7 * 86400), calendar: calendar)
         XCTAssertNil(empty.camera)
+    }
+    @MainActor func testStartupSelectsTodayInsideOngoingTripOnlyOnce() throws {
+        let store = AppStore(settings: Settings(), demo: false)
+        let sample = AppStore(settings: Settings(), demo: true)
+        store.markers = sample.markers
+        var trip = sample.trips[0]
+        trip.startDate = "2026-09-29"
+        trip.days[0].date = "2026-10-01"
+        store.trips = [trip]
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-01T12:00:00Z"))
+        store.applyStartupCamera(now: now, calendar: calendar)
+        XCTAssertEqual(store.tripID, trip.id); XCTAssertEqual(store.dayID, trip.days[0].id)
+        XCTAssertEqual(store.camera?.zoomLevel, 15)
+        store.select(trip: nil, focus: false)
+        store.applyStartupCamera(now: now, calendar: calendar)
+        XCTAssertNil(store.tripID); XCTAssertNil(store.dayID)
+    }
+    @MainActor func testStartupSelectsEmptyTodayWithoutMovingCamera() throws {
+        let store = AppStore(settings: Settings(), demo: false)
+        let day = TripDay(id: "today", tripId: "trip", date: "2026-10-01", markerIds: [], chains: [])
+        store.trips = [Trip(id: "trip", name: "旅行", startDate: "2026-09-30", endDate: "2026-10-02", days: [day])]
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        store.applyStartupCamera(now: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-01T12:00:00Z")), calendar: calendar)
+        XCTAssertEqual(store.dayID, day.id); XCTAssertNil(store.camera)
     }
     @MainActor func testStartupDoesNotInterruptAnExistingSelection() {
         let store = AppStore(settings: Settings(), demo: false)
@@ -307,7 +367,7 @@ private func requestBody(_ request: URLRequest) -> Data {
     return data
 }
 final class MapLayoutTests: XCTestCase {
-    func testIPadLandscapeReservesLeftWorkspaceAndPortraitUsesBottomPanel() {
+    func testIPadLandscapeAndPortraitReserveLeftWorkspace() {
         let landscape = MapLayout(width: 1133, height: 744, regularWidth: true, expanded: true)
         XCTAssertTrue(landscape.usesSidebar)
         XCTAssertLessThan(landscape.sidebarWidth, landscape.width / 2)
@@ -316,8 +376,9 @@ final class MapLayoutTests: XCTestCase {
         let collapsed = MapLayout(width: 1133, height: 744, regularWidth: true, expanded: false)
         XCTAssertLessThan(collapsed.insets.left, 100)
         let portrait = MapLayout(width: 744, height: 1133, regularWidth: true, expanded: true)
-        XCTAssertFalse(portrait.usesSidebar)
-        XCTAssertGreaterThan(portrait.insets.bottom, 300)
+        XCTAssertTrue(portrait.usesSidebar)
+        XCTAssertGreaterThan(portrait.insets.left, portrait.sidebarWidth)
+        XCTAssertLessThan(portrait.insets.bottom, 100)
     }
     func testPhoneLandscapeAndNarrowMultitaskingAvoidSidebar() {
         XCTAssertFalse(MapLayout(width: 852, height: 393, regularWidth: false, expanded: true).usesSidebar)
@@ -391,6 +452,10 @@ final class LongPressLookupTests: XCTestCase {
         XCTAssertFalse(store.draftExpanded, "Map long press opens at the medium detent")
         let oldID = store.draft?.id
         let chosen = Coordinate(latitude: 32, longitude: 122)
+        store.create(at: chosen)
+        XCTAssertEqual(store.draft?.id, oldID, "An open draft must not be replaced by another map press")
+        // Dismiss and reopen before the first lookup returns to exercise stale-response isolation.
+        store.draft = nil
         store.create(at: chosen)
         XCTAssertNotEqual(store.draft?.id, oldID)
         XCTAssertTrue(store.draft?.resolvingPlace == true)

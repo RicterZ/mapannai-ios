@@ -41,14 +41,9 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
             }
             if store.trips.isEmpty { Text("暂无旅行").font(.subheadline).foregroundStyle(Theme.muted).padding(.vertical, 16) }
             if !independent.isEmpty {
-                ForEach(MarkerIcon.allCases) { icon in
-                    let places = independent.filter { $0.icon == icon }
-                    if !places.isEmpty {
-                        Section("独立地点 · \(icon.label)") {
-                            ForEach(places) { marker in
-                                Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }.buttonStyle(.plain)
-                            }
-                        }
+                Section("未加入行程") {
+                    ForEach(independent) { marker in
+                        Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }.buttonStyle(.plain)
                     }
                 }
             }
@@ -83,6 +78,7 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
 }
 
 struct JourneyDaysContents<SearchContent: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var store: AppStore
     @ViewBuilder var searchContent: () -> SearchContent
     let trip: Trip
@@ -100,8 +96,8 @@ struct JourneyDaysContents<SearchContent: View>: View {
                         Button { store.select(trip: trip, day: day) } label: { dayRow(day, index: index) }.buttonStyle(.plain)
                     }
                 }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
-                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                        Button("删除", systemImage: "trash", role: .destructive) { deletion = day }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("删除", systemImage: "trash") { deletion = day }
                             .buttonStyle(.automatic).tint(.red).disabled(trip.days.count <= 1 || store.saving)
                     }
                     .contextMenu {
@@ -133,7 +129,8 @@ struct JourneyDaysContents<SearchContent: View>: View {
                 Button("取消", role: .cancel) {}
                 Button("删除", role: .destructive) {
                     guard let day = deletion else { return }
-                    Task { _ = await store.perform { try await $0.mutate(AppStore.dayPath(day), method: "DELETE") }; deletion = nil }
+                    deletion = nil
+                    Task { await store.deleteDay(day, animated: !reduceMotion) }
                 }
             } message: { Text("删除当天安排，保留地图地点。") }
     }

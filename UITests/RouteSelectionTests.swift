@@ -5,7 +5,9 @@ final class RouteSelectionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
         app.buttons["journey-back"].tap()
-        app.buttons["itinerary-collapse"].tap()
+        let bar = app.navigationBars.firstMatch
+        let drag = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: 0, dy: 500)))
         let map = app.otherElements["preview-map-surface"]
         let a = app.buttons["map-marker-demo-0"], b = app.buttons["map-marker-demo-1"]
         XCTAssertTrue(a.waitForExistence(timeout: 5))
@@ -17,12 +19,17 @@ final class RouteSelectionTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [medium], timeout: 5), .completed)
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = "Selected day route and half sheet"; attachment.lifetime = .keepAlways; add(attachment)
+        app.buttons["journey-back"].tap()
+        let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in panel.frame.height < 180 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 5), .completed)
     }
     @MainActor func testOverlappingRoutesShowDayChoicesAtTapWithoutMovingMap() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--overlapping-routes-demo"]; app.launch()
         XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
         app.buttons["journey-back"].tap()
-        app.buttons["itinerary-collapse"].tap()
+        let bar = app.navigationBars.firstMatch
+        let drag = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: 0, dy: 500)))
         let map = app.otherElements["preview-map-surface"]
         let a = app.buttons["map-marker-demo-0"], b = app.buttons["map-marker-demo-1"]
         XCTAssertTrue(a.waitForExistence(timeout: 5))

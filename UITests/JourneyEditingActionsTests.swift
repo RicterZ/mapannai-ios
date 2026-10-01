@@ -2,7 +2,7 @@ import XCTest
 import UIKit
 
 final class JourneyEditingActionsTests: XCTestCase {
-    @MainActor func testRouteHalfSheetFullRowActionsEditTripAndRightSwipe() throws {
+    @MainActor func testRouteHalfSheetFullRowActionsEditTripAndLeftSwipe() throws {
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         if isPad { XCUIDevice.shared.orientation = .landscapeLeft }
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -24,15 +24,15 @@ final class JourneyEditingActionsTests: XCTestCase {
         } else { viewRoute.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap() }
         let place = app.buttons["route-0-marker-demo-0"]
         XCTAssertTrue(place.waitForExistence(timeout: 5))
-        capture("Day before right swipe")
+        capture("Day before left swipe")
         let cell = app.cells.containing(.button, identifier: "route-0-marker-demo-0").firstMatch
-        cell.swipeRight()
-        XCTAssertTrue(app.buttons["删除"].waitForExistence(timeout: 5))
-        capture("Route place right swipe delete")
         cell.swipeLeft()
+        XCTAssertTrue(app.buttons["删除"].waitForExistence(timeout: 5))
+        capture("Route place left swipe delete")
+        cell.swipeRight()
         app.buttons["journey-back"].tap()
         let day = app.buttons["journey-day-day-2"]
-        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.swipeRight()
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.swipeLeft()
         let delete = app.buttons["删除"]
         XCTAssertTrue(delete.waitForExistence(timeout: 5)); delete.tap()
         XCTAssertTrue(app.alerts["删除当天？"].waitForExistence(timeout: 5))

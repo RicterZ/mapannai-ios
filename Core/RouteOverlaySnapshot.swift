@@ -14,4 +14,5 @@ struct RouteOverlayGeometry: Equatable {
 struct PreparedRouteOverlay {
     let geometry: RouteOverlayGeometry
     let coordinates: [Coordinate]
+    let hitIndex: RouteSpatialIndex
 }
