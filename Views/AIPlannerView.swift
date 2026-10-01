@@ -1,33 +1,27 @@
 import SwiftUI
 
-struct AIConfigurationView: View {
+struct AIConfigurationSection: View {
     @ObservedObject var planner: AIPlannerStore
-    @Environment(\.dismiss) private var dismiss
     @State private var draft = AIConfiguration()
     @State private var error: String?
+    @State private var saved = false
     var body: some View {
-        Form {
-            Section {
-                TextField("https://api.openai.com/v1", text: $draft.baseUrl)
-                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .accessibilityIdentifier("ai-api-url")
-                SecureField("API Key", text: $draft.apiKey)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-api-key")
-                TextField("模型名称", text: $draft.model)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-model")
-            }
-            if let error { Text(error).foregroundStyle(.red) }
-        }
-        .navigationTitle("AI API 配置").navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("保存") {
-                    do { try planner.saveConfiguration(draft); dismiss() }
-                    catch { self.error = error.localizedDescription }
-                }.disabled(planner.busy).accessibilityIdentifier("ai-save-configuration")
-            }
+        Section("AI 助手") {
+            TextField("https://api.openai.com/v1", text: $draft.baseUrl)
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                .accessibilityIdentifier("ai-api-url")
+            SecureField("API Key", text: $draft.apiKey)
+                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-api-key")
+            TextField("模型名称", text: $draft.model)
+                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-model")
+            Button(saved ? "已保存" : "保存 AI 配置") {
+                do { try planner.saveConfiguration(draft); error = nil; saved = true }
+                catch { self.error = error.localizedDescription }
+            }.disabled(planner.busy).accessibilityIdentifier("ai-save-configuration")
+            if let error { Text(error).foregroundStyle(.red).font(.footnote) }
         }
         .onAppear { draft = planner.configuration }
+        .onChange(of: draft) { _, _ in saved = false }
     }
 }
 
@@ -55,16 +49,23 @@ struct AIPlannerView: View {
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
+                Group {
+                    if !configurationReady {
+                        VStack(spacing: 12) {
+                            Text("请先配置 AI API").font(.headline)
+                            Text("在设置中填写 API 地址和模型后，即可开始规划。")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Button("前往设置", action: onOpenSettings)
+                                .buttonStyle(.bordered).accessibilityIdentifier("ai-open-settings")
+                        }
+                        .multilineTextAlignment(.center)
+                        .padding(24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("ai-configuration-prompt")
+                    } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        if !configurationReady {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("请先配置 AI API").font(.headline)
-                                Text("在设置中填写 API 地址和模型后，即可开始规划。").font(.subheadline).foregroundStyle(.secondary)
-                                Button("前往设置", action: onOpenSettings)
-                                    .buttonStyle(.bordered).accessibilityIdentifier("ai-open-settings")
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
                         if !planner.ready {
                             Text(planner.storageError ?? "正在读取会话…").foregroundStyle(.secondary)
                             if planner.storageError != nil {
@@ -86,8 +87,10 @@ struct AIPlannerView: View {
                         Color.clear.frame(height: 1).id("ai-bottom")
                     }.padding()
                 }
+                    }
+                }
                 .onChange(of: planner.conversation?.messages.count) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
-                .safeAreaInset(edge: .bottom) {
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     HStack(alignment: .bottom, spacing: 4) {
                         TextField("输入消息…", text: $text, axis: .vertical)
                             .lineLimit(1...5).focused($inputFocused).textFieldStyle(.plain)
@@ -112,7 +115,7 @@ struct AIPlannerView: View {
                     .padding(.trailing, 4)
                     .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
                     .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 0.5) }
-                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 2)
                     .background(.regularMaterial)
                 }
             }

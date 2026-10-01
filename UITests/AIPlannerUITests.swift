@@ -14,11 +14,11 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertFalse(app.buttons["close-ai-planner"].exists)
         XCTAssertTrue(app.buttons["ai-open-settings"].exists)
         app.buttons["ai-open-settings"].tap()
-        let config = app.buttons["ai-configuration-link"]
+        let config = app.textFields["ai-api-url"]
         if !config.isHittable { app.collectionViews.firstMatch.swipeUp() }
         XCTAssertTrue(config.waitForExistence(timeout: 5))
-        config.tap()
-        XCTAssertTrue(app.textFields["ai-api-url"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["ai-model"].exists)
+        XCTAssertFalse(app.buttons["ai-configuration-link"].exists)
         app.terminate(); app.launch()
         XCTAssertTrue(entry.waitForExistence(timeout: 10))
         entry.tap()
@@ -35,6 +35,9 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertTrue(app.textFields["ai-message-input"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["close-ai-planner"].exists)
         XCTAssertFalse(app.buttons["AI API 配置"].exists)
+        XCTAssertTrue(app.otherElements["ai-configuration-prompt"].exists)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "AI centered setup and bottom composer"; shot.lifetime = .keepAlways; add(shot)
         let bar = app.navigationBars.firstMatch
         let drag = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
         drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: 0, dy: 600)))

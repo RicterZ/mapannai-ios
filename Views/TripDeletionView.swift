@@ -9,10 +9,11 @@ struct TripDeletionView: View {
     @State private var failure: String?
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("删除「\(trip.name)」及其每日行程？")
-                    .font(.body)
+        VStack(spacing: 12) {
+                Text("删除旅行？").font(.title3.bold())
+                Text("「\(trip.name)」及其每日行程将被删除。")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 List(selection: Binding<Set<String>>(
                     get: { deleteExclusiveMarkers ? ["places"] : [] },
                     set: { deleteExclusiveMarkers = $0.contains("places") }
@@ -28,10 +29,13 @@ struct TripDeletionView: View {
                 .scrollDisabled(true)
                 .scrollContentBackground(.hidden)
                 .frame(height: 52)
-                Text("关联多个旅行或多个日期的地点会保留。不勾选则保留全部地点。")
+                Text("共享地点会保留。不勾选则保留全部地点。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if let failure { Text(failure).foregroundStyle(.red) }
-                Group {
+                HStack(spacing: 12) {
+                    Button { dismiss() } label: {
+                        Text("取消").frame(maxWidth: .infinity)
+                    }.buttonStyle(.bordered)
                     Button(role: .destructive) {
                         deleting = true
                         let includeMarkers = deleteExclusiveMarkers
@@ -44,27 +48,20 @@ struct TripDeletionView: View {
                             else { failure = store.errorMessage; store.errorMessage = nil }
                         }
                     } label: {
-                        HStack {
-                            Text("删除旅行")
-                            Spacer()
+                        HStack(spacing: 8) {
                             if deleting { ProgressView() }
-                        }.contentShape(Rectangle())
+                            Text("删除旅行")
+                        }.frame(maxWidth: .infinity).contentShape(Rectangle())
                     }
                     .buttonStyle(.borderedProminent).tint(.red)
                     .accessibilityIdentifier("confirm-delete-trip")
                 }
-                Spacer(minLength: 0)
             }
-                .padding(20)
-                .disabled(deleting || store.saving)
-                .navigationTitle("删除旅行").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") { dismiss() }.disabled(deleting)
-                    }
-                }
-        }
-        .presentationDetents([.height(320), .medium])
-        .interactiveDismissDisabled(deleting)
+            .controlSize(.large)
+            .padding(24)
+            .disabled(deleting || store.saving)
+            .presentationDetents([.height(280), .medium])
+            .presentationDragIndicator(.hidden)
+            .interactiveDismissDisabled(deleting)
     }
 }
