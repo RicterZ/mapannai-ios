@@ -1,7 +1,65 @@
 import XCTest
+
+final class OptimisticDeletionTests: XCTestCase {
+    @MainActor func testDeletionIsImmediateAndFailureRestoresData() async throws {
+        let defaults = UserDefaults.standard
+        let previousURL = defaults.object(forKey: "baseURL")
+        defaults.set("", forKey: "baseURL")
+        let settings = Settings()
+        if let previousURL { defaults.set(previousURL, forKey: "baseURL") }
+        else { defaults.removeObject(forKey: "baseURL") }
+        let sample = AppStore(settings: settings, demo: true)
+        let store = AppStore(settings: settings, demo: false)
+        store.trips = sample.trips; store.markers = sample.markers
+        let originalTrips = store.trips, originalMarkers = store.markers
+        let trip = try XCTUnwrap(store.trips.first)
+        store.deleteItinerary(tripID: trip.id, deleteExclusiveMarkers: true, animated: false)
+        XCTAssertFalse(store.trips.contains { $0.id == trip.id })
+        XCTAssertTrue(store.saving)
+        for _ in 0..<100 where store.saving { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(store.saving)
+        XCTAssertEqual(store.trips, originalTrips)
+        XCTAssertEqual(store.markers, originalMarkers)
+        XCTAssertNotNil(store.errorMessage)
+    }
+}
 @testable import MapAnNai
 
 final class CoreTests: XCTestCase {
+    func testMotionPoliciesHonorReduceMotionAcrossInteractions() {
+        XCTAssertNil(AppMotion.navigation(reduceMotion: true))
+        XCTAssertNil(AppMotion.presentation(reduceMotion: true))
+        XCTAssertNil(AppMotion.crossfade(reduceMotion: true))
+        XCTAssertNil(AppMotion.disclosure(reduceMotion: true))
+        XCTAssertNil(AppMotion.scroll(reduceMotion: true))
+        XCTAssertNil(AppMotion.listMutation(reduceMotion: true))
+    }
+
+    func testSheetSettlementKeepsContentUntilPresentedContainerShrinks() {
+        // UIKit has committed 80pt, but the released sheet is still 320pt on screen.
+        let released = JourneyPresentation.visibleHeight(layoutHeight: 80, layoutTop: 800, presentedTop: 560)
+        XCTAssertEqual(released, 320)
+        XCTAssertEqual(JourneyPresentation.expandedProgress(height: released, compactHeight: 80), 1)
+        let settling = JourneyPresentation.visibleHeight(layoutHeight: 80, layoutTop: 800, presentedTop: 760)
+        XCTAssertGreaterThan(JourneyPresentation.expandedProgress(height: settling, compactHeight: 80), 0)
+        let arrived = JourneyPresentation.visibleHeight(layoutHeight: 80, layoutTop: 800, presentedTop: 800)
+        XCTAssertEqual(JourneyPresentation.expandedProgress(height: arrived, compactHeight: 80), 0)
+        // Expansion has the opposite model/presentation offset and must not reveal early.
+        XCTAssertEqual(JourneyPresentation.visibleHeight(layoutHeight: 440, layoutTop: 440, presentedTop: 800), 80)
+    }
+
+    func testJourneyHeaderProgressTracksHeightAndReversesWithoutDetentChanges() {
+        for compact: CGFloat in [68, 80] {
+            XCTAssertEqual(JourneyPresentation.expandedProgress(height: compact, compactHeight: compact), 0)
+            XCTAssertEqual(JourneyPresentation.expandedProgress(height: compact * 1.5, compactHeight: compact), 0.5)
+            XCTAssertEqual(JourneyPresentation.expandedProgress(height: compact * 2, compactHeight: compact), 1)
+            XCTAssertEqual(JourneyPresentation.expandedProgress(height: 450, compactHeight: compact), 1)
+            // A reversed drag uses the current height, not a remembered target or elapsed time.
+            XCTAssertEqual(JourneyPresentation.expandedProgress(height: compact * 1.25, compactHeight: compact), 0.25)
+            XCTAssertEqual(JourneyPresentation.expandedProgress(height: compact - 20, compactHeight: compact), 0)
+        }
+    }
+
     @MainActor func testMarkerFocusAnticipatesDetailWithoutChangingJourneyInsets() throws {
         let store = AppStore(settings: Settings(), demo: true)
         let collapsed = MapLayout(width: 393, height: 852, regularWidth: false, expanded: true, sheetHeight: 68).insets
@@ -264,6 +322,34 @@ final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 final class APIClientTests: XCTestCase {
+    func testImageUploadUsesSignedPUTWithoutAPITokenAndReportsCOSCode() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
+        let client = APIClient(baseURL: "https://example.invalid", token: "test-only", session: URLSession(configuration: config))
+        for status in [200, 403] {
+            MockURLProtocol.handler = { request in
+                if request.url?.host == "example.invalid" {
+                    XCTAssertEqual(request.httpMethod, "POST")
+                    XCTAssertEqual(request.url?.path, "/api/upload")
+                    XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-only")
+                    return (200, Data(#"{"success":1,"presignedUrl":"https://storage.invalid/photo.jpg?signature=test-only","publicUrl":"https://storage.invalid/photo.jpg"}"#.utf8))
+                }
+                XCTAssertEqual(request.httpMethod, "PUT")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "image/jpeg")
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+                XCTAssertEqual(request.url?.query, "signature=test-only")
+                return (status, Data("<Error><Code>SignatureDoesNotMatch</Code><Message>private URL must not be shown</Message></Error>".utf8))
+            }
+            do {
+                let url = try await client.uploadImage(Data([0xff, 0xd8, 0xff, 0xd9]))
+                XCTAssertEqual(status, 200)
+                XCTAssertEqual(url, "https://storage.invalid/photo.jpg")
+            } catch {
+                XCTAssertEqual(status, 403)
+                XCTAssertEqual(error.localizedDescription, "图片存储上传失败（HTTP 403，SignatureDoesNotMatch）")
+            }
+        }
+    }
+
     func testDayDeletionOnlyDeletesPlacesWhenOptedIn() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
         let client = APIClient(baseURL: "https://example.invalid", token: "test-only", session: URLSession(configuration: config))
@@ -427,21 +513,6 @@ final class AppConfigurationTests: XCTestCase {
         XCTAssertEqual(AppConfiguration.amapKey(in: ["AMapIOSKey": "$(AMAP_IOS_KEY)"]), "")
     }
 }
-final class ItineraryDetentTests: XCTestCase {
-    func testDragDownClosesAndDragUpOpens() {
-        let h = 780.0
-        XCTAssertEqual(ItineraryDetent.settle(from: .half, translation: 280, projected: 300, availableHeight: h), .compact)
-        XCTAssertEqual(ItineraryDetent.settle(from: .compact, translation: -260, projected: -270, availableHeight: h), .half)
-        XCTAssertEqual(ItineraryDetent.settle(from: .half, translation: -300, projected: -320, availableHeight: h), .full)
-        XCTAssertEqual(ItineraryDetent.settle(from: .full, translation: 270, projected: 280, availableHeight: h), .half)
-    }
-    func testSmallDragAndFlickHavePredictableStops() {
-        XCTAssertEqual(ItineraryDetent.settle(from: .half, translation: 8, projected: 12, availableHeight: 780), .half)
-        XCTAssertEqual(ItineraryDetent.settle(from: .half, translation: 100, projected: 640, availableHeight: 780), .compact)
-        XCTAssertEqual(ItineraryDetent.full.height(in: 780), 780)
-    }
-}
-
 final class RoutePolicyTests: XCTestCase {
     @MainActor func testAutomaticModeAtTwoKilometreBoundaryAndCacheReuse() {
         let start = Coordinate(latitude: 0, longitude: 0)

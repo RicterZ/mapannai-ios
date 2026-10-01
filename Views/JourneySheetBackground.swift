@@ -4,18 +4,16 @@ import SwiftUI
 /// system sheet grows, using its actual height rather than a detent switch.
 struct JourneySheetBackground: View {
     let availableHeight: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        GeometryReader { geometry in
+        NativeSheetHeightReader(enabled: true) { geometry in
             let fullHeight = max(availableHeight, 1)
-            let progress = min(1, max(0, (geometry.size.height / fullHeight - 0.55) / 0.35))
+            let progress = min(1, max(0, (geometry.visibleHeight / fullHeight - 0.55) / 0.35))
             Rectangle().fill(.regularMaterial)
                 .overlay {
                     Color(uiColor: .systemGroupedBackground)
                         .opacity(0.18 + 0.82 * progress)
                 }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: progress)
                 .ignoresSafeArea()
         }
         .allowsHitTesting(false)
@@ -29,6 +27,20 @@ struct JourneyNavigationBackground: ViewModifier {
             content.containerBackground(.clear, for: .navigation)
         } else {
             content.background(Color.clear)
+        }
+    }
+}
+
+/// Only the header crossfades with compact controls. List colors stay opaque
+/// while the native sheet reveals/clips rows at its moving bottom edge.
+struct JourneyContentReveal: View {
+    let headerProgress: Double
+    let headerHeight: CGFloat
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(.black).opacity(headerProgress).frame(height: headerHeight)
+            Rectangle().fill(.black)
         }
     }
 }

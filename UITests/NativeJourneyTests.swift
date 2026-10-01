@@ -2,6 +2,35 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
+    @MainActor func testRepeatedCompactExpansionPreservesAllJourneyScopes() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "Phone native sheet")
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let panel = app.otherElements["phone-itinerary-panel"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 10))
+        for title in ["第1天", "上海 · 秋日散步", "我的旅途"] {
+            let bar = app.navigationBars[title]
+            XCTAssertTrue(bar.waitForExistence(timeout: 5))
+            for _ in 0..<2 {
+                let down = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+                down.press(forDuration: 0.1, thenDragTo: down.withOffset(CGVector(dx: 0, dy: 500)))
+                let controls = app.otherElements["compact-journey-controls"]
+                XCTAssertTrue(controls.waitForExistence(timeout: 5))
+                XCTAssertEqual(app.buttons["itinerary-header-location"].frame.midY, controls.frame.midY, accuracy: 2)
+                let up = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+                up.press(forDuration: 0.1, thenDragTo: up.withOffset(CGVector(dx: 0, dy: -300)))
+                let expanded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    panel.frame.height > 300 && !controls.exists
+                }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 5), .completed)
+                XCTAssertTrue(bar.exists)
+                XCTAssertTrue(app.collectionViews["itinerary-marker-list"].exists)
+                let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                attachment.name = "Expanded \(title)"; attachment.lifetime = .keepAlways; add(attachment)
+            }
+            if title != "我的旅途" { app.buttons["journey-back"].tap() }
+        }
+    }
+
     @MainActor func testSystemJourneySheetNavigationDraggingAndNestedPlaceDetails() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "Phone native sheet")
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()

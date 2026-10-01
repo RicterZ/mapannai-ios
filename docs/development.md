@@ -82,6 +82,12 @@ xcodebuild -project MapAnNai.xcodeproj -scheme MapAnNai \
 
 产品功能见 [中文 README](../README.zh.md) / [English README](../README.md)。
 
+## 界面动画
+
+`Core/AppMotion.swift` 按交互场景维护动画：原生导航使用系统默认过渡，侧栏与工作区展示使用无弹跳的 smooth，标题交接使用淡入淡出，路线展开与自动滚动分别使用内容展开和滚动动画。动画尽量限定在对应视图或状态提交处，避免工作区动画传入整页列表和工具栏布局。
+
+旅途 sheet 的拖动和升降由系统负责。最小档标题与展开导航的顶部区域根据 sheet 屏幕上的呈现高度连续交接，正文保持不透明并由容器边界自然露出或裁剪，避免整页淡入导致文字、图标和分组背景短暂灰白，松手归档时使用 UIKit presentation layer 的位置补偿已提前提交的目标布局高度，观察仅在布局变化及短暂归档期间运行，稳定后停止。退出中的标题保留最小档区域的中心；展开导航实例与滚动身份保持稳定。现有高度、工具栏及搜索栏对齐补偿保留。背景材质直接跟随高度，不叠加延迟缓动。减少动态效果时取消额外位移、旋转与缓动。高德镜头、标点缩放和路线小球保持各自的 SDK / 渲染时序。
+
 ## unsigned IPA 与自动发布
 
 本地已有 `Config/Local.xcconfig` 时运行：
@@ -95,6 +101,12 @@ Scripts/build-unsigned-ipa.sh dist
 GitHub 仓库需设置 Actions Secret `AMAP_IOS_KEY`。推送 main 或手动运行 Build unsigned IPA 工作流可下载 artifact；推送 `v0.0.1` 格式的标签会在构建成功后自动发布 Release，标签版本必须与 project.yml 的 MARKETING_VERSION 一致。发布前更新 docs/release-notes.md。只给发布任务 contents:write，构建任务只读仓库。
 
 AltStore Classic 会以安装者的账号重新签名。它可能改变 Bundle ID，高德 Key 必须绑定最终的 Bundle ID；若遇地图鉴权失败，构建者需要为该标识配置匹配的 iOS Key 后重打包。不要在应用设置中要求使用者输入地图 Key。
+
+## 图片上传排查
+
+地点封面先在后台降采样到最长边1600并编码为82%质量JPEG，再通过带Bearer认证的`POST /api/upload`获取上传许可，使用相同的`image/jpeg`直接PUT到COS，不携带API token。成功后仅更新编辑草稿，保存地点时提交公开图片地址。
+
+上传错误分别标明获取许可、连接图片存储与COS响应阶段。COS非2xx响应只展示HTTP状态与经过限制的XML Code，不展示原始响应、签名URL或凭据；排查签名/权限问题应使用这个错误码，不能凭“图片上传失败”推断具体原因。单元测试通过隔离的URLProtocol验证上传流程与认证边界，不操作生产存储。
 
 ## AI 助手
 

@@ -199,6 +199,68 @@ import SwiftUI
             await refresh(quietly: onSuccess != nil); return true
         } catch { if revision == connectionRevision { report(error) }; return false }
     }
+    func deleteItinerary(tripID targetTripID: String, dayID targetDayID: String? = nil, deleteExclusiveMarkers: Bool, animated: Bool) {
+        guard !demo else { errorMessage = "当前为只读示例，无法删除行程。"; return }
+        guard !saving else { errorMessage = "请等待当前保存完成"; return }
+        guard let ownerIndex = trips.firstIndex(where: { $0.id == targetTripID }) else { return }
+        let owner = trips[ownerIndex]
+        if let targetDayID {
+            guard owner.days.count > 1 else { errorMessage = "行程至少保留一天"; return }
+            guard owner.days.contains(where: { $0.id == targetDayID }) else { return }
+        }
+        let previousTrips = trips, previousMarkers = markers
+        let revision = connectionRevision, client = api
+        let removedDays = owner.days.filter { targetDayID == nil || $0.id == targetDayID }
+        let candidates = Set(removedDays.flatMap { $0.markerIds + $0.chains.flatMap { $0 } })
+        let allDays = trips.flatMap { $0.days }
+        let exclusiveIDs = deleteExclusiveMarkers ? Set(candidates.filter { markerID in
+            allDays.filter { $0.markerIds.contains(markerID) || $0.chains.contains(where: { $0.contains(markerID) }) }.count == 1
+        }) : []
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
+        saving = true
+        withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
+            if let targetDayID {
+                let remaining = owner.days.filter { $0.id != targetDayID }.sorted { $0.date < $1.date }
+                let calendar = Calendar(identifier: .gregorian)
+                trips[ownerIndex].days = remaining.enumerated().map { index, day in
+                    var updated = day
+                    updated.date = calendar.date(byAdding: .day, value: index, to: .fromDay(owner.startDate))!.dayString
+                    return updated
+                }
+                trips[ownerIndex].endDate = trips[ownerIndex].days.last!.date
+                if dayID == targetDayID { dayID = nil }
+            } else {
+                trips.remove(at: ownerIndex)
+                if tripID == targetTripID { tripID = nil; dayID = nil }
+            }
+            markers.removeAll { exclusiveIDs.contains($0.id) }
+            if let selectedMarker, exclusiveIDs.contains(selectedMarker.id) { self.selectedMarker = nil }
+        }
+        rebuildRoutes(preservingPlannedGeometry: true)
+        Task {
+            await markerRepository.invalidate(using: client)
+            do {
+                if let targetDayID {
+                    try await client.deleteDay(tripID: targetTripID, dayID: targetDayID, deleteExclusiveMarkers: deleteExclusiveMarkers)
+                } else {
+                    try await client.deleteTrip(id: targetTripID, deleteExclusiveMarkers: deleteExclusiveMarkers)
+                }
+                guard revision == connectionRevision else { return }
+                await markerRepository.invalidate(using: client)
+                guard revision == connectionRevision else { return }
+                saving = false
+                await refresh(quietly: true)
+            } catch {
+                guard revision == connectionRevision else { return }
+                withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
+                    trips = previousTrips; markers = previousMarkers
+                }
+                saving = false
+                rebuildRoutes(preservingPlannedGeometry: true)
+                report(error)
+            }
+        }
+    }
     func saveMarker(_ draft: MarkerDraft) async -> Bool {
         guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
         let targetDay = draft.marker == nil ? (addPlaceDay ?? day) : nil
@@ -224,16 +286,51 @@ import SwiftUI
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
         return await perform { try await $0.mutate(Self.dayPath(day) + "/markers", method: "POST", body: ["markerId": marker.id]) }
     }
+    @discardableResult
+    func saveDayInBackground(_ day: TripDay, animated: Bool = true) -> Bool {
+        persistDayInBackground(day, animated: animated) { client in
+            try await client.mutate(Self.dayPath(day), method: "PUT", body: ["title": day.title ?? "", "emoji": day.emoji ?? "", "markerIds": day.markerIds, "chains": day.chains])
+        }
+    }
+    private func persistDayInBackground(_ day: TripDay, animated: Bool, operation: @escaping (APIClient) async throws -> Void) -> Bool {
+        guard !demo else { errorMessage = "当前为只读示例，无法保存。"; return false }
+        guard !saving else { errorMessage = "请等待当前保存完成"; return false }
+        guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
+              let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return false }
+        let previous = trips[ti].days[di], revision = connectionRevision, client = api
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
+        saving = true
+        withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) { trips[ti].days[di] = day }
+        rebuildRoutes(preservingPlannedGeometry: true)
+        Task {
+            await markerRepository.invalidate(using: client)
+            do {
+                try await operation(client)
+                guard revision == connectionRevision else { return }
+                await markerRepository.invalidate(using: client)
+                guard revision == connectionRevision else { return }
+                saving = false
+                await refresh(quietly: true)
+            } catch {
+                guard revision == connectionRevision else { return }
+                if let ti = trips.firstIndex(where: { $0.id == day.tripId }),
+                   let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) {
+                    withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) { trips[ti].days[di] = previous }
+                }
+                saving = false
+                rebuildRoutes(preservingPlannedGeometry: true)
+                report(error)
+            }
+        }
+        return true
+    }
     func removeMarker(_ markerID: String, from day: TripDay, animated: Bool = true) async {
-        _ = await perform(onSuccess: { [self] in
-            guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
-                  let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
-            var updated = trips
-            updated[ti].days[di].markerIds.removeAll { $0 == markerID }
-            updated[ti].days[di].chains = updated[ti].days[di].chains.map { $0.filter { $0 != markerID } }
-            withAnimation(animated ? .easeInOut(duration: 0.22) : nil) { trips = updated }
-            rebuildRoutes(preservingPlannedGeometry: true)
-        }) { try await $0.mutate(Self.dayPath(day) + "/markers", method: "DELETE", body: ["markerId": markerID]) }
+        guard var latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return }
+        latest.markerIds.removeAll { $0 == markerID }
+        latest.chains = latest.chains.map { $0.filter { $0 != markerID } }.filter { !$0.isEmpty }
+        _ = persistDayInBackground(latest, animated: animated) {
+            try await $0.mutate(Self.dayPath(day) + "/markers", method: "DELETE", body: ["markerId": markerID])
+        }
     }
     @discardableResult
     func deleteDay(_ day: TripDay, deleteExclusiveMarkers: Bool = false, animated: Bool = true) async -> Bool {
@@ -242,7 +339,7 @@ import SwiftUI
         }
         return await perform(onSuccess: { [self] in
             guard let index = trips.firstIndex(where: { $0.id == day.tripId }) else { return }
-            withAnimation(animated ? .easeInOut(duration: 0.22) : nil) {
+            withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
                 trips[index].days.removeAll { $0.id == day.id }
                 if dayID == day.id { dayID = nil }
             }
@@ -336,7 +433,7 @@ import SwiftUI
         endAddingPlace()
         routeCandidates = []; selectedMarker = nil
         addPlaceDay = day
-        withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.28)) { placeSearchPresented = true }
+        placeSearchPresented = true
     }
     func endAddingPlace() {
         addSession = UUID(); addedPlaceIDs = []; createdSearchMarkers = [:]

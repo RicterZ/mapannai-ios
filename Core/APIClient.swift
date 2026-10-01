@@ -39,14 +39,36 @@ struct APIClient {
     }
     static func id(_ id: String) -> String { id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id }
     nonisolated func uploadImage(_ data: Data) async throws -> String {
-        struct SignedUpload: Decodable { var presignedUrl: String; var publicUrl: String }
-        let signed: SignedUpload = try await request("upload", method: "POST", body: ["fileName": "photo.jpg", "fileType": "image/jpeg"])
-        guard let url = URL(string: signed.presignedUrl), url.scheme == "https" else { throw AppError.message("上传地址无效") }
+        struct SignedUpload: Decodable { var success: Int; var presignedUrl: String?; var publicUrl: String? }
+        let signed: SignedUpload
+        do {
+            signed = try await request("upload", method: "POST", body: ["fileName": "photo.jpg", "fileType": "image/jpeg"])
+        } catch is CancellationError { throw CancellationError() }
+        catch { throw AppError.message("获取图片上传许可失败：\(error.localizedDescription)") }
+        guard signed.success == 1, let uploadURL = signed.presignedUrl, let publicURL = signed.publicUrl else {
+            throw AppError.message("服务未提供图片上传许可")
+        }
+        guard let url = URL(string: uploadURL), url.scheme == "https", url.host != nil else { throw AppError.message("上传地址无效") }
         var req = URLRequest(url: url); req.httpMethod = "PUT"; req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         // The API token must never be sent to COS.
-        let (_, response) = try await session.upload(for: req, from: data)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw AppError.message("图片上传失败") }
-        return signed.publicUrl
+        let responseData: Data
+        let response: URLResponse
+        do { (responseData, response) = try await session.upload(for: req, from: data) }
+        catch is CancellationError { throw CancellationError() }
+        catch { throw AppError.message("连接图片存储失败：\(error.localizedDescription)") }
+        guard let http = response as? HTTPURLResponse else { throw AppError.message("图片存储没有返回 HTTP 响应") }
+        guard (200..<300).contains(http.statusCode) else {
+            // Only expose the short COS error code, never its signed URL or raw XML response.
+            let text = String(decoding: responseData.prefix(65_536), as: UTF8.self)
+            let pattern = #"<Code>\s*([A-Za-z][A-Za-z0-9]{0,63})\s*</Code>"#
+            let regex = try? NSRegularExpression(pattern: pattern)
+            let match = regex?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))
+            let code = match.flatMap { Range($0.range(at: 1), in: text) }.map { String(text[$0]) }
+            throw AppError.message("图片存储上传失败（HTTP \(http.statusCode)\(code.map { "，\($0)" } ?? "")）")
+        }
+        try Task.checkCancellation()
+        return publicURL
     }
 }
 struct IgnoredResponse: Decodable { init(from decoder: Decoder) throws {} }

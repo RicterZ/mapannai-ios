@@ -1,10 +1,8 @@
 import SwiftUI
 
-struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View {
+struct JourneyOverviewContents<SettingsContent: View>: View {
     @ObservedObject var store: AppStore
-    @ViewBuilder var searchContent: () -> SearchContent
     @ViewBuilder var settingsContent: () -> SettingsContent
-    var usesNativeNavigation = false
     @State private var creatingTrip = false
     @State private var editing: Trip?
     @State private var deletion: Trip?
@@ -25,13 +23,7 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
             ForEach(years, id: \.self) { year in
                 Section {
                 ForEach(store.trips.filter { $0.startDate.hasPrefix(year) }.sorted { $0.startDate > $1.startDate }) { trip in
-                    Group {
-                        if usesNativeNavigation {
-                            NavigationLink(value: JourneyDestination.trip(trip.id)) { tripRow(trip) }
-                        } else {
-                            Button { store.select(trip: trip) } label: { tripRow(trip) }.buttonStyle(.plain)
-                        }
-                    }.accessibilityIdentifier("journey-\(trip.id)")
+                    NavigationLink(value: JourneyDestination.trip(trip.id)) { tripRow(trip) }.accessibilityIdentifier("journey-\(trip.id)")
                         .contextMenu {
                             Button("编辑旅行", systemImage: "pencil") { editing = trip }
                             DestructiveMenuButton(title: "删除旅行", systemImage: "trash") { deletion = trip }
@@ -81,25 +73,16 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
 
 }
 
-struct JourneyDaysContents<SearchContent: View>: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+struct JourneyDaysContents: View {
     @ObservedObject var store: AppStore
-    @ViewBuilder var searchContent: () -> SearchContent
     let trip: Trip
-    var usesNativeNavigation = false
     @State private var editing = false
     @State private var deletion: TripDay?
     var body: some View {
         List {
 
             ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, day in
-                Group {
-                    if usesNativeNavigation {
-                        NavigationLink(value: JourneyDestination.day(trip.id, day.id)) { dayRow(day, index: index) }
-                    } else {
-                        Button { store.select(trip: trip, day: day) } label: { dayRow(day, index: index) }.buttonStyle(.plain)
-                    }
-                }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
+                NavigationLink(value: JourneyDestination.day(trip.id, day.id)) { dayRow(day, index: index) }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { deletion = day } label: { Image(systemName: "trash") }
                             .accessibilityLabel("删除")

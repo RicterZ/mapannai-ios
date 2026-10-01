@@ -1,47 +1,5 @@
 import SwiftUI
 
-struct TripLibraryView: View {
-    @ObservedObject var store: AppStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var creating = false
-    @State private var editing: Trip?
-    @State private var deletion: Trip?
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Button { store.select(trip: nil); dismiss() } label: { Label("所有地点 · \(store.markers.count)", systemImage: "mappin.and.ellipse") }
-                }
-                Section("我的旅行") {
-                    ForEach(store.trips) { trip in
-                        HStack(spacing: 12) {
-                            Text(trip.emoji ?? "✈️").font(.title).frame(width: 42)
-                            Button {
-                                store.select(trip: trip); dismiss()
-                            } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(trip.name).font(.headline).foregroundStyle(Theme.ink)
-                                    Text("\(trip.startDate) — \(trip.endDate) · \(trip.days.count)天").font(.caption).foregroundStyle(.secondary)
-                                }.frame(maxWidth: .infinity, alignment: .leading)
-                            }.buttonStyle(.plain)
-
-                        }.padding(.vertical, 6).contentShape(Rectangle())
-                    }
-                    if store.trips.isEmpty { Text("创建旅行，然后为每一天安排地点与路线。").foregroundStyle(.secondary) }
-                    Button { creating = true } label: { Label("创建旅行", systemImage: "plus") }
-                }
-
-            }.navigationTitle("旅行")
-                .toolbar { PanelCloseToolbarItem(identifier: "close-trip-library", placement: .confirmationAction) { dismiss() } }
-                .refreshable { await store.refresh() }
-                .sheet(isPresented: $creating) { TripEditorView(store: store, trip: nil) }
-                .sheet(item: $editing) { TripEditorView(store: store, trip: $0) }
-            .sheet(item: $deletion) { trip in
-                TripDeletionView(store: store, trip: trip)
-            }
-        }
-    }
-}
 struct TripEditorView: View {
     @ObservedObject var store: AppStore
     let trip: Trip?
@@ -111,11 +69,10 @@ struct TripEditorView: View {
         }.interactiveDismissDisabled(store.saving)
     }
 }
-struct DayContentsView<SearchContent: View>: View {
+struct DayContentsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var store: AppStore
     let day: TripDay
-    @ViewBuilder var searchContent: () -> SearchContent
     var onViewRoute: () -> Void = {}
     @Environment(\.colorScheme) private var colorScheme
     @State private var chainEditor: ChainEditRequest?
@@ -151,7 +108,7 @@ struct DayContentsView<SearchContent: View>: View {
                         .accessibilityIdentifier("route-view-\(index)")
                         .accessibilityHint("在地图上查看路线")
                         Button {
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            withAnimation(AppMotion.disclosure(reduceMotion: reduceMotion)) {
                                 if collapsedRoutes.contains(index) { collapsedRoutes.remove(index) }
                                 else { collapsedRoutes.insert(index) }
                             }
@@ -168,6 +125,10 @@ struct DayContentsView<SearchContent: View>: View {
                         .accessibilityLabel("\(collapsedRoutes.contains(index) ? "展开" : "收起")路线 \(index + 1)")
                         .accessibilityValue(collapsedRoutes.contains(index) ? "已收起" : "已展开")
                         .accessibilityIdentifier("route-toggle-\(index)")
+                    }
+                    .contextMenu {
+                        Button("编辑顺序", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
+                        DestructiveMenuButton(title: "删除路线", systemImage: "trash") { deletingChain = index }
                     }
                     .font(.body)
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 8))
@@ -188,15 +149,13 @@ struct DayContentsView<SearchContent: View>: View {
                                         .accessibilityLabel("删除").buttonStyle(.automatic).tint(.red).disabled(store.saving)
                                     }
                                     .contextMenu {
+                                        Button("编辑顺序", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
                                         DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day, animated: !reduceMotion) } }
                                     }
                             }
                         }
                     }
 
-                }.contextMenu {
-                    Button("编辑顺序", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
-                    DestructiveMenuButton(title: "删除路线", systemImage: "trash") { deletingChain = index }
                 }
             }
             let linked = Set(day.chains.flatMap { $0 })
@@ -241,7 +200,7 @@ struct DayContentsView<SearchContent: View>: View {
         .alert("删除路线？", isPresented: Binding(get: { deletingChain != nil }, set: { if !$0 { deletingChain = nil } })) {
             Button("取消", role: .cancel) { deletingChain = nil }
             Button("删除", role: .destructive) { Task {
-                if let index = deletingChain, day.chains.indices.contains(index) { var copy = day; copy.chains.remove(at: index); _ = await store.updateDay(copy) }
+                if let index = deletingChain, day.chains.indices.contains(index) { var copy = day; copy.chains.remove(at: index); _ = store.saveDayInBackground(copy) }
                 deletingChain = nil
             } }
         } message: { Text("保留当天的地点，只删除这条访问顺序。") }
@@ -295,7 +254,7 @@ struct ChainEditorView: View {
                                 }
                                 let updated = try latest.replacingChain(at: request.index, with: ids)
                                 guard ids.allSatisfy({ id in store.markers.contains(where: { $0.id == id }) }) else { throw AppError.message("部分地点已被删除，请重新选择") }
-                                if await store.updateDay(updated) { dismiss() } else { error = store.errorMessage }
+                                if store.saveDayInBackground(updated) { dismiss() } else { error = store.errorMessage }
                             } catch { self.error = error.localizedDescription }
                         }}.disabled(store.saving || ids.count < 2)
                     }
@@ -332,6 +291,7 @@ struct DayMarkerPicker: View {
         return "添加到第\(number)天"
     }
     var body: some View {
+        ZStack(alignment: .top) {
         NavigationStack {
             VStack(spacing: 0) {
                 NativePlaceSearchBar(text: $store.searchText, searching: store.searching, onSearch: {
@@ -373,7 +333,7 @@ struct DayMarkerPicker: View {
                     .scrollDismissesKeyboard(.interactively)
                     .accessibilityIdentifier("add-place-results")
                     .onChange(of: store.selectedSearchPlaceID) { _, id in
-                        if let id { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { reader.scrollTo(id) } }
+                        if let id { withAnimation(AppMotion.scroll(reduceMotion: reduceMotion)) { reader.scrollTo(id) } }
                     }
                 }
             }
@@ -386,7 +346,7 @@ struct DayMarkerPicker: View {
                 }
             }
             .modifier(JourneyNavigationBackground())
-            .background(JourneyToolbarContainerOffset(offset: compact ? -3 : 0))
+            .background(JourneyToolbarContainerOffset())
             .navigationTitle(targetTitle).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -396,7 +356,7 @@ struct DayMarkerPicker: View {
                     }.accessibilityElement(children: .combine)
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) { store.endAddingPlace() } } label: {
+                    Button { store.endAddingPlace() } label: {
                         Image(systemName: "chevron.left")
                     }.disabled(store.saving)
                         .accessibilityLabel("返回旅途")
@@ -415,6 +375,38 @@ struct DayMarkerPicker: View {
                     MarkerEditorView(store: store, initial: draft, embedded: true, onSaved: onSearch)
                         .id(draft.id)
                 }
+            }
+        }
+        .opacity(compact ? 0 : 1)
+        .allowsHitTesting(!compact)
+        .accessibilityHidden(compact)
+            if compact {
+                HStack(spacing: 4) {
+                    Button { store.endAddingPlace() } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 20))
+                            .frame(width: 30, height: 30)
+                    }.modifier(JourneyCircleButtonStyle())
+                        .frame(width: 44, height: 44)
+                        .accessibilityLabel("返回旅途").accessibilityIdentifier("close-place-picker")
+                        .frame(width: 88, alignment: .leading)
+                    VStack(spacing: 3) {
+                        Text(targetTitle).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: .label)).lineLimit(1)
+                        if let day { Text(day.date).font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel)) }
+                    }.frame(maxWidth: .infinity)
+                    Button {
+                        searched = true; onSearch(); Task { await store.search() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 20))
+                            .frame(width: 44, height: 44)
+                    }.accessibilityLabel("搜索此区域")
+                        .disabled(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.searching)
+                        .frame(width: 88, alignment: .trailing)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .frame(height: JourneyPresentation.compactHeight)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("compact-search-controls")
             }
         }
         .onChange(of: store.draft?.id) { old, new in

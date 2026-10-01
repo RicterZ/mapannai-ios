@@ -31,8 +31,13 @@ final class JourneyBackgroundTests: XCTestCase {
         trip.tap()
         XCTAssertTrue(app.buttons["journey-day-day-1"].waitForExistence(timeout: 5))
         XCTAssertFalse(settings.exists)
-        app.buttons["itinerary-collapse"].tap()
-        app.buttons["itinerary-collapse"].tap()
+        let tripBar = app.navigationBars["上海 · 秋日散步"]
+        let down = tripBar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        down.press(forDuration: 0.1, thenDragTo: down.withOffset(CGVector(dx: 0, dy: 550)))
+        let panel = app.otherElements["phone-itinerary-panel"]
+        XCTAssertTrue(app.otherElements["compact-journey-controls"].waitForExistence(timeout: 5))
+        let up = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+        up.press(forDuration: 0.1, thenDragTo: up.withOffset(CGVector(dx: 0, dy: -300)))
         capture("Medium pushed trip shared translucent background")
         app.buttons["journey-day-day-1"].tap()
         XCTAssertTrue(app.navigationBars["第1天"].waitForExistence(timeout: 5))

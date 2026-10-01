@@ -61,6 +61,7 @@
 		B13C16980AC0CF8CF7E227EB /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DC8A3EBC540A61F7259026E /* TripsView.swift */; };
 		B25AC42552BB34D2312B4B7B /* AIPlannerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A017E8694F055DAB5D395B /* AIPlannerUITests.swift */; };
 		B353F2DDCDACD295F7761889 /* MapAnNaiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880735812DDF2FA55D3DF5DF /* MapAnNaiApp.swift */; };
+		B3727CE9B79519F6341AE5B6 /* NativeSheetHeightReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8BC6B0004E2261EB109B84 /* NativeSheetHeightReader.swift */; };
 		B55668A6A18E3B01AE4916BF /* NoteContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114754DBBCAFABDDCB8097D /* NoteContent.swift */; };
 		BD107C091E8E4C753CB7D72E /* AMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1D7BACAED41D3AB875D71B /* AMapView.swift */; };
 		C4D5DDD576313DAB75D72D1E /* JourneyEditingActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */; };
@@ -68,6 +69,7 @@
 		D34B30E8151C3DFF8428D7E3 /* NativeMapControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DE00593E8084F5D51D56A4 /* NativeMapControls.swift */; };
 		D35081C38CB650DFA49D2085 /* JourneyBackgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */; };
 		D61C89014A16E20523662687 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1579B0865582F6FFBD7E34E0 /* APIClient.swift */; };
+		D69B2CB94D1270DA835B774D /* AppMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDE47B8C60F714C73753A59B /* AppMotion.swift */; };
 		DA349CCCD8C4953A7B89C9E2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA0DB7FCE4B26BA1A253D3F /* Models.swift */; };
 		DA9CD0CDD537652D05E8EE9E /* AIPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD8D5E25A1C9E0E2FACB862 /* AIPlannerTests.swift */; };
 		DC1D46E954FB9A2F0D7C464E /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B1BBFF8F1D29583F6C7FF1 /* Settings.swift */; };
@@ -155,6 +157,7 @@
 		880735812DDF2FA55D3DF5DF /* MapAnNaiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapAnNaiApp.swift; sourceTree = "<group>"; };
 		8A3978F19A26A8C390918515 /* StartupCamera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupCamera.swift; sourceTree = "<group>"; };
 		8D1D7BACAED41D3AB875D71B /* AMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AMapView.swift; sourceTree = "<group>"; };
+		8E8BC6B0004E2261EB109B84 /* NativeSheetHeightReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSheetHeightReader.swift; sourceTree = "<group>"; };
 		8ED85B293D18534AAB521985 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCameraTests.swift; sourceTree = "<group>"; };
 		98A6A81018435A3992E39030 /* TripDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDeletionTests.swift; sourceTree = "<group>"; };
@@ -181,6 +184,7 @@
 		F96C9DF6A9CD060EB8FC5BF9 /* InteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionTests.swift; sourceTree = "<group>"; };
 		FB8D50F9FB8E05601301E564 /* TripDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDeletionView.swift; sourceTree = "<group>"; };
 		FDB69B65CFD0B0604D5476A1 /* RouteRedrawTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRedrawTests.swift; sourceTree = "<group>"; };
+		FDE47B8C60F714C73753A59B /* AppMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMotion.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -206,6 +210,7 @@
 				1EE4DC6DD0A68391E9F7832E /* JourneyViews.swift */,
 				425DF5BCBE1273228F07E613 /* MarkerViews.swift */,
 				50DE00593E8084F5D51D56A4 /* NativeMapControls.swift */,
+				8E8BC6B0004E2261EB109B84 /* NativeSheetHeightReader.swift */,
 				CD30B40DC569CCDF2AE7528C /* RichText.swift */,
 				EAC64C383639F21EED9F37FC /* SearchPaginationFooter.swift */,
 				233C57940FA2593E0DCB67CA /* SettingsView.swift */,
@@ -222,6 +227,7 @@
 				5543717B3FBF113B9D8669E9 /* AIPlanner.swift */,
 				1579B0865582F6FFBD7E34E0 /* APIClient.swift */,
 				0E1101856C18590877C951E1 /* AppConfiguration.swift */,
+				FDE47B8C60F714C73753A59B /* AppMotion.swift */,
 				5F1DE90E8066F7692BEC6055 /* AppStore.swift */,
 				52A5131C016B257343D4A0CD /* CameraMotion.swift */,
 				F72771F1E2B151FC279B7446 /* Geometry.swift */,
@@ -458,6 +464,7 @@
 				BD107C091E8E4C753CB7D72E /* AMapView.swift in Sources */,
 				D61C89014A16E20523662687 /* APIClient.swift in Sources */,
 				68FF0B51308420440E8B1B0B /* AppConfiguration.swift in Sources */,
+				D69B2CB94D1270DA835B774D /* AppMotion.swift in Sources */,
 				CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */,
 				5E5B7F87B301257F05899C5B /* CameraMotion.swift in Sources */,
 				94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */,
@@ -476,6 +483,7 @@
 				1090057AE077861B9DFB1180 /* MarkerViews.swift in Sources */,
 				DA349CCCD8C4953A7B89C9E2 /* Models.swift in Sources */,
 				D34B30E8151C3DFF8428D7E3 /* NativeMapControls.swift in Sources */,
+				B3727CE9B79519F6341AE5B6 /* NativeSheetHeightReader.swift in Sources */,
 				B55668A6A18E3B01AE4916BF /* NoteContent.swift in Sources */,
 				77664758EF9744C20B041766 /* RichText.swift in Sources */,
 				0A3C38A375DBE8FF853161E1 /* RouteCache.swift in Sources */,
@@ -609,7 +617,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 95;
+				CURRENT_PROJECT_VERSION = 105;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -749,7 +757,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 95;
+				CURRENT_PROJECT_VERSION = 105;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

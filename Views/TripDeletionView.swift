@@ -3,9 +3,10 @@ import SwiftUI
 struct TripDeletionView: View {
     @ObservedObject var store: AppStore
     let trip: Trip
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         DeletionConfirmationView(store: store, title: "删除旅行", message: "“\(trip.name)”及其每日行程将被删除。", kind: "trip") { includeMarkers in
-            await store.perform { try await $0.deleteTrip(id: trip.id, deleteExclusiveMarkers: includeMarkers) }
+            store.deleteItinerary(tripID: trip.id, deleteExclusiveMarkers: includeMarkers, animated: !reduceMotion)
         }
     }
 }
@@ -16,7 +17,7 @@ struct DayDeletionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         DeletionConfirmationView(store: store, title: "删除当天", message: "\(day.date) 的安排将被删除，后续日期依次前移。", kind: "day") { includeMarkers in
-            await store.deleteDay(day, deleteExclusiveMarkers: includeMarkers, animated: !reduceMotion)
+            store.deleteItinerary(tripID: day.tripId, dayID: day.id, deleteExclusiveMarkers: includeMarkers, animated: !reduceMotion)
         }
     }
 }
@@ -26,63 +27,62 @@ private struct DeletionConfirmationView: View {
     let title: String
     let message: String
     let kind: String
-    let action: (Bool) async -> Bool
-    @State private var contentHeight: CGFloat = 250
+    let action: (Bool) -> Void
+    @State private var contentHeight: CGFloat = 220
     @State private var bottomSafeArea: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
     @State private var deleteExclusiveMarkers = false
     @State private var deleting = false
-    @State private var failure: String?
+    @ScaledMetric(relativeTo: .title2) private var titleHeight = 26
 
     var body: some View {
-        VStack(spacing: 12) {
-                Text(title).font(.title2.bold())
+            VStack(spacing: 8) {
+                Text(title).font(.title2.bold()).frame(height: titleHeight)
+                VStack(spacing: 0) {
                 Text(message)
-                    .font(.body).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    .font(.body).foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                 List(selection: Binding<Set<String>>(
                     get: { deleteExclusiveMarkers ? ["places"] : [] },
                     set: { deleteExclusiveMarkers = $0.contains("places") }
                 )) {
                     Text("同时删除行程内所有标记").font(.body)
+                        .foregroundStyle(.secondary)
                         .tag("places")
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 0))
                         .accessibilityIdentifier("delete-\(kind)-markers")
                 }
                 .environment(\.editMode, .constant(.active))
                 .listStyle(.plain)
                 .scrollDisabled(true)
                 .scrollContentBackground(.hidden)
-                .frame(height: 52)
-                if let failure { Text(failure).foregroundStyle(.red) }
+                .frame(height: 44)
+                }
+                .offset(y: 3)
                 HStack(spacing: 12) {
                     Button { dismiss() } label: {
-                        Text("取消").frame(maxWidth: .infinity)
-                    }.buttonStyle(.bordered)
+                        Text("取消").foregroundStyle(Color(uiColor: .systemBlue))
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(.bordered).tint(Color(uiColor: .systemGray))
                     Button(role: .destructive) {
                         deleting = true
                         let includeMarkers = deleteExclusiveMarkers
-                        Task {
-                            let success = await action(includeMarkers)
-                            deleting = false
-                            if success { dismiss() }
-                            else { failure = store.errorMessage; store.errorMessage = nil }
-                        }
+                        dismiss()
+                        action(includeMarkers)
                     } label: {
-                        HStack(spacing: 8) {
-                            if deleting { ProgressView() }
-                            Text(title)
-                        }.frame(maxWidth: .infinity).contentShape(Rectangle())
+                        Text(title).frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent).tint(.red)
+                    .buttonStyle(.bordered).tint(.red)
                     .accessibilityIdentifier("confirm-delete-\(kind)")
                 }
+                .controlSize(.large)
             }
-            .controlSize(.large)
             .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 8)
+            .padding(.top, 16)
+            .padding(.bottom, 16)
             .disabled(deleting || store.saving)
             .fixedSize(horizontal: false, vertical: true)
             .background {
@@ -101,8 +101,8 @@ private struct DeletionConfirmationView: View {
                         .onChange(of: proxy.safeAreaInsets.bottom) { _, inset in bottomSafeArea = inset }
                 }
             }
-            .presentationDetents([.height(max(160, contentHeight - bottomSafeArea))])
-            .presentationDragIndicator(.hidden)
-            .interactiveDismissDisabled(deleting)
+        .presentationDetents([.height(max(160, contentHeight - bottomSafeArea))])
+        .presentationDragIndicator(.hidden)
+        .interactiveDismissDisabled(deleting)
     }
 }

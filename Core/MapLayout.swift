@@ -24,18 +24,7 @@ struct MapLayout: Equatable {
     }
 }
 
-// Three stable stops; settle using projected drag so quick flicks work in both directions.
-enum ItineraryDetent: Int, CaseIterable {
+// Selection and settling belong to the native sheet presentation controller.
+enum ItineraryDetent: Equatable {
     case compact, half, full
-    func height(in availableHeight: Double) -> Double {
-        switch self {
-        case .compact: 60
-        case .half: max(260, min(380, availableHeight * 0.48))
-        case .full: max(300, availableHeight)
-        }
-    }
-    static func settle(from current: ItineraryDetent, translation: Double, projected: Double, availableHeight: Double) -> ItineraryDetent {
-        let target = current.height(in: availableHeight) - translation - (projected-translation)*0.35
-        return allCases.min { abs($0.height(in: availableHeight)-target) < abs($1.height(in: availableHeight)-target) } ?? current
-    }
 }

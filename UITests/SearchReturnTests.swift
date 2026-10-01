@@ -8,12 +8,21 @@ final class SearchReturnTests: XCTestCase {
         let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02))
         start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 550)))
         XCTAssertTrue(app.buttons["date-selector"].waitForExistence(timeout: 5))
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            panel.frame.height < 150
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 5), .completed)
+        let detailHeight = panel.frame.height
         app.buttons["journey-back"].tap()
         XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 5))
         app.buttons["journey-back"].tap()
         XCTAssertTrue(app.buttons["compact-create-journey"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["itinerary-panel-title"].label, "我的旅途")
         XCTAssertTrue(app.staticTexts["journey-overview-subtitle"].exists)
+        let sameHeight = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            abs(panel.frame.height - detailHeight) <= 1
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [sameHeight], timeout: 5), .completed)
         XCTAssertLessThan(panel.frame.height, 200)
     }
 

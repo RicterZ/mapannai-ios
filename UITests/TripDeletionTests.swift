@@ -4,7 +4,11 @@ final class TripDeletionTests: XCTestCase {
     @MainActor func testNativeDeletionChoiceDefaultsOffAndCancelIsSafe() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
-        app.buttons["journey-back"].tap(); app.buttons["journey-back"].tap()
+        for _ in 0..<2 {
+            let back = app.buttons.matching(identifier: "journey-back").allElementsBoundByIndex.first { $0.isHittable }
+            XCTAssertNotNil(back)
+            back?.tap()
+        }
         let trip = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journey-demo")).firstMatch
         let row = trip.exists ? trip : app.buttons["journey-trip-1"]
         if !row.isHittable { app.collectionViews.firstMatch.swipeUp() }

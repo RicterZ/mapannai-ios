@@ -177,16 +177,20 @@ struct MarkerEditorView: View {
             if uploading {
                 HStack { ProgressView(); Text("上传中…") }.frame(maxWidth: .infinity, minHeight: 44)
             } else if let uploadedPreview {
-                Image(uiImage: uploadedPreview).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 110)
+                Image(uiImage: uploadedPreview).resizable().scaledToFit().frame(maxWidth: .infinity)
             } else if let url = imageURL(draft.headerImage) {
                 AsyncImage(url: url) { phase in
                     if let image = phase.image { image.resizable().scaledToFit() }
                     else { Label("更换封面图", systemImage: "photo") }
-                }.frame(maxWidth: .infinity).frame(height: 110)
+                }.frame(maxWidth: .infinity)
             } else {
                 Label("添加封面图", systemImage: "photo").frame(minHeight: 44)
             }
-        }.disabled(uploading || store.saving)
+        }.buttonStyle(.plain)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .disabled(uploading || store.saving)
             .accessibilityLabel(draft.headerImage.isEmpty && uploadedPreview == nil ? "上传封面图" : "重新上传封面图")
             .accessibilityIdentifier("marker-cover-upload")
     }
