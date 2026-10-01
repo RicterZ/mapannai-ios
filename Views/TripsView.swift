@@ -165,9 +165,10 @@ struct DayContentsView<SearchContent: View>: View {
                                     }.contentShape(Rectangle())
                                 }.buttonStyle(.automatic).foregroundStyle(.primary).accessibilityIdentifier("route-\(index)-marker-\(id)")
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button("删除", systemImage: "trash") {
+                                        Button {
                                             Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
-                                        }.buttonStyle(.automatic).tint(.red).disabled(store.saving)
+                                        } label: { Image(systemName: "trash") }
+                                        .accessibilityLabel("删除").buttonStyle(.automatic).tint(.red).disabled(store.saving)
                                     }
                                     .contextMenu {
                                         DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day, animated: !reduceMotion) } }
@@ -190,9 +191,10 @@ struct DayContentsView<SearchContent: View>: View {
                             Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }
                                 .buttonStyle(.plain).accessibilityIdentifier("day-marker-\(id)")
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button("删除", systemImage: "trash") {
+                                    Button {
                                         Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
-                                    }.tint(.red).disabled(store.saving)
+                                    } label: { Image(systemName: "trash") }
+                                    .accessibilityLabel("删除").tint(.red).disabled(store.saving)
                                 }
                                 .contextMenu {
                                     DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day, animated: !reduceMotion) } }

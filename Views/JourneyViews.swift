@@ -97,7 +97,8 @@ struct JourneyDaysContents<SearchContent: View>: View {
                     }
                 }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("删除", systemImage: "trash") { deletion = day }
+                        Button { deletion = day } label: { Image(systemName: "trash") }
+                            .accessibilityLabel("删除")
                             .buttonStyle(.automatic).tint(.red).disabled(trip.days.count <= 1 || store.saving)
                     }
                     .contextMenu {
