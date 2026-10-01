@@ -35,6 +35,7 @@ import SwiftUI
     @Published private(set) var searchPageRevision = UUID()
     @Published var searching = false
     @Published var loading = false
+    @Published var routeEdit: RouteEditSession?
     @Published var saving = false
     @Published var errorMessage: String?
     @Published var routeError: String?
@@ -93,6 +94,7 @@ import SwiftUI
     func connect() async {
         connectionRevision = UUID(); refreshGeneration = UUID(); loading = false; refreshing = false
         endAddingPlace()
+        routeEdit = nil
         tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
         camera = nil; startupCameraPending = true
         resetSearchSession(); rebuildRoutes()
@@ -129,6 +131,7 @@ import SwiftUI
         if changedTrips { trips = snapshot.trips }
         if let tripID, !trips.contains(where: { $0.id == tripID }) { self.tripID = nil; dayID = nil }
         if let dayID, !(trip?.days.contains(where: { $0.id == dayID }) ?? false) { self.dayID = nil }
+        if let routeEdit, !trips.contains(where: { $0.id == routeEdit.day.tripId && $0.days.contains(where: { $0.id == routeEdit.day.id }) }) { self.routeEdit = nil }
         if let selection = selectedMarker, let updated = markers.first(where: { $0.id == selection.id }) {
             if selection != updated { selectedMarker = updated }
         } else if selectedMarker != nil { selectedMarker = nil }
@@ -286,6 +289,26 @@ import SwiftUI
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
         return await perform { try await $0.mutate(Self.dayPath(day) + "/markers", method: "POST", body: ["markerId": marker.id]) }
     }
+    func beginRouteEditing(_ day: TripDay, index: Int?) {
+        guard !saving, routeEdit == nil else { return }
+        if let index, !day.chains.indices.contains(index) { return }
+        routeEdit = RouteEditSession(day: day, index: index, ids: index.map { day.chains[$0] } ?? [])
+    }
+    func cancelRouteEditing() { routeEdit = nil }
+    @discardableResult func saveRouteEditing() -> Bool {
+        guard let edit = routeEdit,
+              let latest = trips.first(where: { $0.id == edit.day.tripId })?.days.first(where: { $0.id == edit.day.id }) else { return false }
+        do {
+            guard edit.ids.allSatisfy({ id in markers.contains(where: { $0.id == id }) }) else {
+                throw AppError.message("部分地点已被删除，请取消编辑后重试")
+            }
+            let updated = try edit.applying(to: latest)
+            if updated == latest { routeEdit = nil; return true }
+            guard saveDayInBackground(updated) else { return false }
+            routeEdit = nil
+            return true
+        } catch { report(error); return false }
+    }
     @discardableResult
     func saveDayInBackground(_ day: TripDay, animated: Bool = true) -> Bool {
         persistDayInBackground(day, animated: animated) { client in
@@ -348,6 +371,7 @@ import SwiftUI
     }
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
         let changedDay = tripID != trip?.id || dayID != day?.id
+        if changedDay { routeEdit = nil }
         tripID = trip?.id; dayID = day?.id; selectedMarker = nil
         rebuildRoutes(preservingPlannedGeometry: true)
         guard focus else { return }

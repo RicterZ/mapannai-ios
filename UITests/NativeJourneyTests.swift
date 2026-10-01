@@ -2,6 +2,46 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
+    @MainActor func testLongPressDragsInPlaceAndRetainsEditModeUntilCancel() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let first = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        let second = app.buttons["route-0-marker-demo-2"]
+        XCTAssertTrue(second.exists)
+        first.press(forDuration: 0.5, thenDragTo: second)
+        let save = app.buttons["route-save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["route-remove-demo-1"].exists)
+        XCTAssertFalse(app.buttons["itinerary-search"].exists)
+        XCTAssertFalse(app.buttons["itinerary-header-location"].exists)
+        XCTAssertFalse(app.alerts["删除路线？"].exists)
+        XCTAssertGreaterThan(first.frame.midY, second.frame.midY)
+        app.buttons["route-remove-demo-2"].tap()
+        XCTAssertFalse(second.exists)
+        XCTAssertTrue(save.exists)
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "Inline route edit after dragging"; attachment.lifetime = .keepAlways; add(attachment)
+        app.buttons["route-cancel"].tap()
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["itinerary-search"].exists)
+        XCTAssertTrue(app.buttons["itinerary-header-location"].exists)
+        XCTAssertFalse(save.exists)
+        XCTAssertLessThan(first.frame.midY, second.frame.midY)
+    }
+    @MainActor func testUnchangedInlineSaveRestoresToolsAndPlaceTap() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.press(forDuration: 0.5)
+        let save = app.buttons["route-save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+        XCTAssertTrue(app.buttons["itinerary-search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["itinerary-header-location"].exists)
+        XCTAssertFalse(save.exists)
+        row.tap()
+        XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
+    }
     @MainActor func testRepeatedCompactExpansionPreservesAllJourneyScopes() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "Phone native sheet")
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()

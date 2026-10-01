@@ -580,3 +580,44 @@ final class LongPressLookupTests: XCTestCase {
         XCTAssertNotNil(store.draft)
     }
 }
+
+final class InlineRouteEditingTests: XCTestCase {
+    func testDraftReordersOnlySelectedRouteAndRetainsDayMembership() throws {
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-02", markerIds: ["a", "b", "c", "d"], chains: [["a", "b", "c"], ["a", "d"]])
+        var edit = RouteEditSession(day: day, index: 0, ids: day.chains[0])
+        edit.move("a", to: "c")
+        XCTAssertEqual(edit.ids, ["b", "c", "a"])
+        edit.ids.removeAll { $0 == "b" }
+        let updated = try edit.applying(to: day)
+        XCTAssertEqual(updated.chains, [["c", "a"], ["a", "d"]])
+        XCTAssertEqual(updated.markerIds, day.markerIds)
+        var newer = day; newer.chains[1].reverse()
+        XCTAssertThrowsError(try edit.applying(to: newer))
+    }
+    func testRemovingAllStopsDeletesOnlyRouteAndNewRouteRequiresTwoStops() throws {
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-02", markerIds: ["a", "b"], chains: [["a", "b"]])
+        let empty = RouteEditSession(day: day, index: 0, ids: [])
+        XCTAssertEqual(try empty.applying(to: day).chains, [])
+        XCTAssertEqual(try empty.applying(to: day).markerIds, day.markerIds)
+        XCTAssertThrowsError(try RouteEditSession(day: day, index: nil, ids: ["a"]).applying(to: day))
+    }
+    @MainActor func testSaveClosesDraftImmediatelyAndFailedAPIRestoresDay() async throws {
+        let defaults = UserDefaults.standard, previousURL = defaults.object(forKey: "baseURL")
+        defaults.set("", forKey: "baseURL")
+        let settings = Settings()
+        if let previousURL { defaults.set(previousURL, forKey: "baseURL") } else { defaults.removeObject(forKey: "baseURL") }
+        let sample = AppStore(settings: settings, demo: true), store = AppStore(settings: settings, demo: false)
+        store.trips = sample.trips; store.markers = sample.markers
+        let day = try XCTUnwrap(store.trips.first?.days.first)
+        store.beginRouteEditing(day, index: 0)
+        store.routeEdit?.ids.reverse()
+        XCTAssertEqual(store.trips.first?.days.first, day)
+        XCTAssertTrue(store.saveRouteEditing())
+        XCTAssertNil(store.routeEdit)
+        XCTAssertEqual(store.trips.first?.days.first?.chains[0], Array(day.chains[0].reversed()))
+        for _ in 0..<100 where store.saving { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(store.saving)
+        XCTAssertEqual(store.trips.first?.days.first, day)
+        XCTAssertNotNil(store.errorMessage)
+    }
+}

@@ -93,6 +93,31 @@ struct TripDay: Codable, Identifiable, Hashable {
         return copy
     }
 }
+/// A local route draft; day membership and other routes remain untouched until save.
+struct RouteEditSession: Equatable {
+    let day: TripDay
+    let index: Int?
+    var ids: [String]
+    var slot: Int { index ?? day.chains.count }
+    mutating func move(_ id: String, to target: String) {
+        guard let from = ids.firstIndex(of: id), let to = ids.firstIndex(of: target), from != to else { return }
+        ids.remove(at: from); ids.insert(id, at: to)
+    }
+    func applying(to latest: TripDay) throws -> TripDay {
+        guard latest.id == day.id, latest.tripId == day.tripId, latest.chains == day.chains else {
+            throw AppError.message("路线已更新，请取消编辑后重试")
+        }
+        if let index, !latest.chains.indices.contains(index) { throw AppError.message("路线已发生变化，请取消编辑后重试") }
+        if let index, ids.isEmpty {
+            var updated = latest; updated.chains.remove(at: index); return updated
+        }
+        // Existing single-stop routes are valid; new routes still need two stops.
+        if let index, ids.count == 1 {
+            var updated = latest; updated.chains[index] = ids; return updated
+        }
+        return try latest.replacingChain(at: index, with: ids)
+    }
+}
 struct RoutePoint: Codable, Hashable {
     var lat: Double
     var lng: Double

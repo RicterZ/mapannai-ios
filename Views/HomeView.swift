@@ -346,22 +346,36 @@ struct HomeView: View {
                 .accessibilityAction(named: "收起旅途") { if !sidebar { setJourneyDetent(.compact) } }
         }
         journeyLeadingControl(destination: destination, sidebar: sidebar)
-        if !sidebar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { location.request { store.locating = UUID() } } label: {
-                    toolbarActionIcon("location")
-                }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
-            }
-        }
         ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                if sidebar { togglePanel() }
-                else { store.beginAddingPlace(to: scope(destination).day) }
-            } label: {
-                toolbarActionIcon(sidebar ? "sidebar.left" : "magnifyingglass")
-            }.accessibilityLabel(sidebar ? "收起行程" : "搜索地点")
-                .accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-search")
+            ZStack {
+                if store.routeEdit != nil {
+                    routeSaveButton.transition(.scale(scale: 0.8).combined(with: .opacity))
+                } else {
+                    HStack(spacing: 0) {
+                        if !sidebar {
+                            Button { location.request { store.locating = UUID() } } label: { toolbarActionIcon("location") }
+                                .accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
+                        }
+                        Button {
+                            if sidebar { togglePanel() }
+                            else { store.beginAddingPlace(to: scope(destination).day) }
+                        } label: { toolbarActionIcon(sidebar ? "sidebar.left" : "magnifyingglass") }
+                            .accessibilityLabel(sidebar ? "收起行程" : "搜索地点")
+                            .accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-search")
+                    }.transition(.opacity)
+                }
+            }.animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.routeEdit != nil)
         }
+    }
+    private var routeSaveButton: some View {
+        Button {
+            withAnimation(AppMotion.crossfade(reduceMotion: reduceMotion)) { _ = store.saveRouteEditing() }
+        } label: {
+            Image(systemName: "checkmark").font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white).frame(width: 44, height: 44)
+                .background(Color.blue, in: Circle())
+        }.buttonStyle(.plain).disabled(store.saving)
+            .accessibilityLabel("保存路线").accessibilityIdentifier("route-save")
     }
 
     @ToolbarContentBuilder private func journeyLeadingControl(destination: JourneyDestination?, sidebar: Bool) -> some ToolbarContent {
@@ -374,7 +388,11 @@ struct HomeView: View {
     private func journeyLeadingItem(destination: JourneyDestination?, sidebar: Bool) -> some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             HStack(spacing: 0) {
-                if scope(destination).trip != nil {
+                if store.routeEdit != nil {
+                    Button { withAnimation(AppMotion.crossfade(reduceMotion: reduceMotion)) { store.cancelRouteEditing() } } label: {
+                        toolbarActionIcon("xmark").frame(width: 44, height: 44)
+                    }.accessibilityLabel("取消路线编辑").accessibilityIdentifier("route-cancel")
+                } else if scope(destination).trip != nil {
                     Button {
                         guard !journeyPath.isEmpty else { return }
                         withAnimation(AppMotion.navigation(reduceMotion: reduceMotion)) { _ = journeyPath.removeLast() }
@@ -478,7 +496,10 @@ struct HomeView: View {
     private var compactJourneyControls: some View {
         HStack(spacing: 4) {
             Group {
-            if store.trip != nil {
+            if store.routeEdit != nil {
+                Button { store.cancelRouteEditing() } label: { toolbarActionIcon("xmark").frame(width: 44, height: 44) }
+                    .accessibilityLabel("取消路线编辑").accessibilityIdentifier("route-cancel")
+            } else if store.trip != nil {
             Button {
                 guard !journeyPath.isEmpty else { return }
                 withAnimation(AppMotion.navigation(reduceMotion: reduceMotion)) { _ = journeyPath.removeLast() }
@@ -512,14 +533,21 @@ struct HomeView: View {
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.tripID)
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.dayID)
             .frame(maxWidth: .infinity)
-            HStack(spacing: 0) {
-                Button { location.request { store.locating = UUID() } } label: {
-                    toolbarActionIcon("location").frame(width: 44, height: 44)
-                }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
-                Button { store.beginAddingPlace(to: store.day) } label: {
-                    toolbarActionIcon("magnifyingglass").frame(width: 44, height: 44)
-                }.accessibilityLabel("搜索地点").accessibilityIdentifier("itinerary-search")
-            }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+            ZStack {
+                if store.routeEdit != nil {
+                    routeSaveButton.transition(.scale(scale: 0.8).combined(with: .opacity))
+                } else {
+                    HStack(spacing: 0) {
+                        Button { location.request { store.locating = UUID() } } label: {
+                            toolbarActionIcon("location").frame(width: 44, height: 44)
+                        }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
+                        Button { store.beginAddingPlace(to: store.day) } label: {
+                            toolbarActionIcon("magnifyingglass").frame(width: 44, height: 44)
+                        }.accessibilityLabel("搜索地点").accessibilityIdentifier("itinerary-search")
+                    }.transition(.opacity)
+                }
+            }.frame(width: 88).buttonStyle(.plain).foregroundStyle(Theme.accent)
+                .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.routeEdit != nil)
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
