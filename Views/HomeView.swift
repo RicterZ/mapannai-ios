@@ -262,13 +262,13 @@ struct HomeView: View {
         if let trip = page.trip, let day = page.day {
             return "第\((trip.days.sorted { $0.date < $1.date }.firstIndex { $0.id == day.id } ?? 0) + 1)天"
         }
-        return page.trip?.name ?? "旅途"
+        return page.trip?.name ?? "我的旅途"
     }
     private func journeyHeading(_ destination: JourneyDestination?, sidebar: Bool) -> some View {
         let page = scope(destination)
         return VStack(alignment: .center, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(!sidebar && sheetDetent == .compact ? (page.trip?.name ?? "旅途") : journeyTitle(destination)).font(.headline).lineLimit(1).minimumScaleFactor(0.75)
+                Text(!sidebar && sheetDetent == .compact ? (page.trip?.name ?? "我的旅途") : journeyTitle(destination)).font(.headline).lineLimit(1).minimumScaleFactor(0.75)
                     .accessibilityIdentifier("itinerary-panel-title")
                 if let day = page.day, sidebar || sheetDetent != .compact { Text(shortDate(day.date)).font(.caption).foregroundStyle(.secondary) }
             }
@@ -376,22 +376,35 @@ struct HomeView: View {
                         .modifier(JourneyCircleButtonStyle())
                         .frame(width: 44, height: 44).contentShape(Rectangle())
                         .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
-                } else if sidebar || sheetDetent != .compact {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
-                            if sidebar { expanded = false } else { sheetDetent = .compact }
-                        }
-                    } label: {
-                        toolbarActionIcon("xmark").frame(width: 30, height: 30)
-                    }.modifier(JourneyCircleButtonStyle())
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
-                        .accessibilityLabel("收起旅途").accessibilityIdentifier("close-journey")
+                } else {
+                    overviewToggleButton(sidebar: sidebar)
+
                 }
             }
             // Match the native trailing toolbar reservation so principal stays at the bar center.
             .frame(width: sidebar ? 44 : 88, alignment: .leading)
         }
     }
+    private func overviewToggleButton(sidebar: Bool) -> some View {
+        let isCollapsed = !sidebar && sheetDetent == .compact
+        return Button {
+            if isCollapsed { creatingTrip = true }
+            else {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+                    if sidebar { expanded = false } else { sheetDetent = .compact }
+                }
+            }
+        } label: {
+            toolbarActionIcon("plus")
+                .rotationEffect(.degrees(isCollapsed ? 0 : 45))
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isCollapsed)
+                .frame(width: 30, height: 30)
+        }.modifier(JourneyCircleButtonStyle())
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+            .accessibilityLabel(isCollapsed ? "添加旅途" : "收起旅途")
+            .accessibilityIdentifier(isCollapsed ? "compact-create-journey" : "close-journey")
+    }
+
     private func mapContent(layout: MapLayout, topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             MapSurface(store: store, settings: settings, onOpenSettings: { showSettings = true })
@@ -469,12 +482,12 @@ struct HomeView: View {
                 .frame(width: 44, height: 44)
                 .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
             } else {
-                Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
+                overviewToggleButton(sidebar: false)
             }
             }.frame(width: 88, alignment: .leading)
             VStack(spacing: 0) {
                 compactDateNavigation
-                Text(store.trip?.name ?? "旅途")
+                Text(store.trip?.name ?? "我的旅途")
                     .font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
                     .accessibilityIdentifier("itinerary-panel-title")
             }.frame(maxWidth: .infinity)
@@ -574,7 +587,7 @@ struct HomeView: View {
     }
     private var panelTitle: String {
         if let day = store.day { return "第\(dayNumber(day))天" }
-        return store.trip?.name ?? "旅途"
+        return store.trip?.name ?? "我的旅途"
     }
     private var panelInfo: String {
         if let day = store.day {

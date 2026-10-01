@@ -39,6 +39,8 @@ final class SearchReturnTests: XCTestCase {
         app.buttons["close-journey"].tap()
         let controls = app.otherElements["compact-journey-controls"]
         XCTAssertTrue(controls.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["itinerary-panel-title"].label, "我的旅途")
+        XCTAssertTrue(app.buttons["compact-create-journey"].exists)
         XCTAssertEqual(app.buttons["itinerary-header-location"].frame.midY, controls.frame.midY, accuracy: 2)
         XCTAssertEqual(app.staticTexts["itinerary-panel-title"].frame.midX, app.frame.midX, accuracy: 2)
         app.buttons["itinerary-search"].tap()
@@ -46,5 +48,8 @@ final class SearchReturnTests: XCTestCase {
         app.buttons["close-place-picker"].tap()
         XCTAssertTrue(controls.waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["itinerary-header-location"].frame.midY, controls.frame.midY, accuracy: 2)
+        app.buttons["compact-create-journey"].tap()
+        XCTAssertTrue(app.navigationBars["创建旅行"].waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
     }
 }
