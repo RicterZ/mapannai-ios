@@ -83,7 +83,7 @@ struct HomeView: View {
                 }
                 journeyNavigation(sidebar: sidebar)
                     .padding(.top, !sidebar && compactNavigationVisible ? -12 : 0)
-                    .offset(y: !sidebar && sheetDetent == .compact ? -3 : 0)
+                    .offset(y: !sidebar && sheetDetent == .compact ? -11 : 0)
             }
                 .opacity(!store.placeSearchPresented && !aiPresented ? 1 : 0)
                 .allowsHitTesting(!store.placeSearchPresented && !aiPresented)
