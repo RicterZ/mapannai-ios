@@ -36,7 +36,7 @@ struct HomeView: View {
             }
                 .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0 })) {
                     modalContent(panelWorkspace(sidebar: false))
-                        .offset(y: sheetDetent == .compact && !store.placeSearchPresented && !aiPresented ? -3 : 0)
+                        .offset(y: sheetDetent == .compact && !store.placeSearchPresented && !aiPresented ? -6 : 0)
                         .presentationDetents(!store.placeSearchPresented && !aiPresented ? [.height(compactJourneyHeight), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
                         .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
