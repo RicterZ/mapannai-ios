@@ -488,7 +488,9 @@ struct HomeView: View {
             VStack(spacing: 0) {
                 compactDateNavigation
                 Text(store.trip?.name ?? "我的旅途")
-                    .font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
+                    .font(store.trip == nil ? .headline : .subheadline.weight(.semibold))
+                    .lineLimit(1).minimumScaleFactor(store.trip == nil ? 1 : 0.75)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("itinerary-panel-title")
                 if store.trip == nil {
                     Text("旅の目的地は、まだ見ぬ地平線の向こうに")
