@@ -46,6 +46,7 @@
 		90547715CCA2328EA998204F /* NativeJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45FECFBB8C13A6617DE0148 /* NativeJourneyTests.swift */; };
 		94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72771F1E2B151FC279B7446 /* Geometry.swift */; };
 		97F611E5D8A6E49BAE5F2958 /* RouteOverlaySnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFC9E44BED6AF2ED557266F /* RouteOverlaySnapshot.swift */; };
+		9AA3D451340B9A78DBD31C91 /* RouteDayPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */; };
 		9B10601417C914FADA9A378B /* IPadBackButtonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */; };
 		A292D855F2E570ABB25B79F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1C4EE1D4A3CFED767F0CC73D /* Assets.xcassets */; };
 		A84AB72A4DDDDCE73C8F9F47 /* MapZoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 401E2D25019885A304E0676C /* MapZoomTests.swift */; };
@@ -105,6 +106,7 @@
 		233C57940FA2593E0DCB67CA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2BB74C6B3AD95B8AF3911377 /* AMap.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = AMap.bundle; sourceTree = "<group>"; };
 		2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMotionTests.swift; sourceTree = "<group>"; };
+		2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteDayPicker.swift; sourceTree = "<group>"; };
 		300E21D1B221F08F4F3037F8 /* RouteSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSelection.swift; sourceTree = "<group>"; };
 		3F55A919B31EC92357E58F47 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		401E2D25019885A304E0676C /* MapZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapZoomTests.swift; sourceTree = "<group>"; };
@@ -236,6 +238,7 @@
 			children = (
 				8D1D7BACAED41D3AB875D71B /* AMapView.swift */,
 				538108F21D71668426EA9A48 /* MapRenderer.swift */,
+				2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */,
 			);
 			path = Map;
 			sourceTree = "<group>";
@@ -441,6 +444,7 @@
 				B55668A6A18E3B01AE4916BF /* NoteContent.swift in Sources */,
 				77664758EF9744C20B041766 /* RichText.swift in Sources */,
 				0A3C38A375DBE8FF853161E1 /* RouteCache.swift in Sources */,
+				9AA3D451340B9A78DBD31C91 /* RouteDayPicker.swift in Sources */,
 				97F611E5D8A6E49BAE5F2958 /* RouteOverlaySnapshot.swift in Sources */,
 				E59A20A4E04ECD9CFFF72589 /* RouteProcessing.swift in Sources */,
 				3335E79C4269BBF248ACA7E6 /* RouteSelection.swift in Sources */,
@@ -561,7 +565,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -701,7 +705,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

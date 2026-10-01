@@ -33,6 +33,7 @@ struct MapSurface: View {
     var body: some View {
         if let renderer = MapRendererRegistry.renderer(for: store.mapConfiguration.renderer) {
             renderer.makeMap(store: store, settings: settings, onOpenSettings: onOpenSettings)
+                .overlay { RouteDayPicker(store: store).ignoresSafeArea() }
         } else {
             ZStack {
                 Theme.paper

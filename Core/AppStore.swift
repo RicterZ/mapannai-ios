@@ -25,6 +25,7 @@ import SwiftUI
     @Published var routeError: String?
     @Published var routeSelectionRequest = UUID()
     @Published var routeCandidates: [DisplayRoute] = []
+    @Published var routeCandidatePoint = CGPoint.zero
     @Published var displayRoutes: [DisplayRoute] = []
     @Published var routeProgress = ""
     @Published var camera: CameraCommand?
@@ -198,9 +199,23 @@ import SwiftUI
             fly(visibleMarkers.filter { $0.coordinates.isValid }.map(\.coordinates))
         }
     }
+    func routeDayLabel(_ route: DisplayRoute) -> String {
+        guard let trip = trips.first(where: { $0.id == route.tripID }),
+              let index = trip.days.sorted(by: { $0.date < $1.date }).firstIndex(where: { $0.id == route.dayID }) else { return "当天" }
+        return "第\(index + 1)天"
+    }
+    func offerRoutes(_ routes: [DisplayRoute], at point: CGPoint) {
+        routeCandidatePoint = point
+        routeCandidates = routes.sorted { a, b in
+            if a.tripID != b.tripID { return a.tripID < b.tripID }
+            let days = trips.first(where: { $0.id == a.tripID })?.days ?? []
+            return (days.first { $0.id == a.dayID }?.date ?? "") < (days.first { $0.id == b.dayID }?.date ?? "")
+        }
+    }
     func selectRoute(_ route: DisplayRoute) {
         guard let trip = trips.first(where: { $0.id == route.tripID }), let day = trip.days.first(where: { $0.id == route.dayID }) else { return }
         if tripID != trip.id || dayID != day.id { select(trip: trip, day: day, focus: false) }
+        routeCandidates = []
         routeSelectionRequest = UUID()
     }
     func focus(_ marker: Marker) {
@@ -328,6 +343,10 @@ import SwiftUI
         let days = [TripDay(id: "day-1", tripId: "demo-trip", date: "2026-10-01", title: "梧桐街区漫步", colorIndex: 0, markerIds: ["demo-0","demo-1","demo-2"], chains: [["demo-0","demo-1","demo-2"]]),
                     TripDay(id: "day-2", tripId: "demo-trip", date: "2026-10-02", title: "城市与旧时光", colorIndex: 1, markerIds: ["demo-2","demo-3","demo-4"], chains: [["demo-2","demo-3","demo-4"]])]
         trips = [Trip(id: "demo-trip", name: "上海 · 秋日散步", description: "示例行程", startDate: "2026-10-01", endDate: "2026-10-02", emoji: "🍂", days: days)]
+        if ProcessInfo.processInfo.arguments.contains("--overlapping-routes-demo") {
+            trips[0].days[1].markerIds = ["demo-0", "demo-1", "demo-2"]
+            trips[0].days[1].chains = [["demo-0", "demo-1", "demo-2"]]
+        }
         if ProcessInfo.processInfo.arguments.contains("--long-title-demo") {
             trips[0].name = "呼和浩特·大同美食行"
         }

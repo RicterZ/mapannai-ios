@@ -112,13 +112,6 @@ struct HomeView: View {
         .alert("无法完成操作", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .confirmationDialog("选择路线所属日期", isPresented: Binding(get: { !store.routeCandidates.isEmpty }, set: { if !$0 { store.routeCandidates = [] } }), titleVisibility: .visible) {
-            ForEach(store.routeCandidates) { route in
-                Button(store.trips.first(where: { $0.id == route.tripID })?.days.first(where: { $0.id == route.dayID })?.label ?? "日期") {
-                    store.selectRoute(route); store.routeCandidates = []
-                }
-            }
-        }
         .onChange(of: settings.planning) { _, _ in store.rebuildRoutes() }
         .onChange(of: settings.mode) { _, _ in store.rebuildRoutes() }
     }

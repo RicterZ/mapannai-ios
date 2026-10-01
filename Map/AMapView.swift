@@ -13,6 +13,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
         map.delegate = context.coordinator; map.zoomLevel = 13; map.isShowsIndoorMap = false
         map.showsCompass = false; map.showsScale = true
         map.centerCoordinate = CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737)
+        let routeTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.routeTapped(_:)))
+        routeTap.cancelsTouchesInView = false
+        routeTap.delaysTouchesEnded = false
+        routeTap.delegate = context.coordinator
+        map.addGestureRecognizer(routeTap)
         context.coordinator.map = map
         return map
     }
@@ -44,7 +49,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             title = place.name
         }
     }
-    @MainActor final class Coordinator: NSObject, @preconcurrency MAMapViewDelegate {
+    @MainActor final class Coordinator: NSObject, @preconcurrency MAMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         weak var map: MAMapView?
         var pins: [String: Pin] = [:]
@@ -195,13 +200,14 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
             selectionStarted = CACurrentMediaTime()
             let link = CADisplayLink(target: self, selector: #selector(advanceSelection(_:)))
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 60, preferred: 30)
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: Float(map.window?.screen.maximumFramesPerSecond ?? 60),
+                                                         preferred: Float(map.window?.screen.maximumFramesPerSecond ?? 60))
             selectionLink = link; link.add(to: .main, forMode: .common)
         }
 
         @objc private func advanceSelection(_ link: CADisplayLink) {
             guard let map, routesVisible, !UIAccessibility.isReduceMotionEnabled else { stopSelectionAnimation(); return }
-            let progress = RouteMotionPath.phase(elapsed: link.timestamp - selectionStarted)
+            let progress = RouteMotionPath.phase(elapsed: link.targetTimestamp - selectionStarted)
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for (path, dot) in zip(motionPaths, motionDots) {
                 guard let coordinate = path.position(progress: progress) else { dot.isHidden = true; continue }
@@ -410,22 +416,30 @@ struct AMapNativeRenderer: UIViewRepresentable {
         func mapView(_ mapView: MAMapView!, didLongPressedAt coordinate: CLLocationCoordinate2D) {
             store.create(at: Coordinates.wgs(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)))
         }
-        func mapView(_ mapView: MAMapView!, didSingleTappedAt coordinate: CLLocationCoordinate2D) {
-            guard !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
-            let tap = mapView.convert(coordinate, toPointTo: mapView)
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+        @objc func routeTapped(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended, let mapView = map,
+                  !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
+            let tap = gesture.location(in: mapView)
             // Annotation taps belong to place details, even where a route meets its endpoint.
             if pins.values.contains(where: { pin in
                 let p = mapView.convert(pin.coordinate, toPointTo: mapView)
                 return hypot(p.x - tap.x, p.y - tap.y) <= 22
             }) { return }
             let rendered = store.displayRoutes.filter { lastRoutes[$0.id]?.points == $0.points }
-            let unique = RouteSelection.candidates(at: (tap.x, tap.y), routes: rendered) { point in
-                let p = Coordinates.gcj(point)
-                let screen = mapView.convert(CLLocationCoordinate2D(latitude: p.latitude, longitude: p.longitude), toPointTo: mapView)
+            // Hit-test the coordinates already converted for rendering; avoid converting every path again on tap.
+            let converted = rendered.map { route -> DisplayRoute in
+                var value = route; value.points = renderedCoordinates[route.id] ?? []
+                return value
+            }
+            let hits = RouteSelection.candidates(at: (tap.x, tap.y), routes: converted) { point in
+                let screen = mapView.convert(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude), toPointTo: mapView)
                 return (screen.x, screen.y)
             }
-            if unique.count > 1 { store.routeCandidates = unique }
+            let unique = hits.compactMap { hit in rendered.first { $0.id == hit.id } }
+            if unique.count > 1 { store.offerRoutes(unique, at: tap) }
             else if let first = unique.first { store.selectRoute(first) }
+            else { store.routeCandidates = [] }
         }
         func mapView(_ mapView: MAMapView!, regionDidChangeAnimated animated: Bool) {
             updateZoomPresentation(mapView)
@@ -447,6 +461,7 @@ struct PreviewMap: View {
     @GestureState private var magnification = 1.0
     @State private var motionStarted = Date()
     @State private var motionActive = false
+    @State private var motionPaths: [RouteMotionPath] = []
     private var zoom: Double { previewZoom + log2(max(0.01, magnification)) }
     func point(_ p: Coordinate, size: CGSize) -> CGPoint {
         let insets = store.mapViewportInsets
@@ -478,12 +493,12 @@ struct PreviewMap: View {
                         context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: store.dayID == route.dayID ? 6 : 3.5, lineCap: .round))
                     }
                 }
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !motionActive)) { timeline in
+                TimelineView(.animation(paused: !motionActive)) { timeline in
                     Canvas { context, size in
                         guard motionActive, !MapZoomPresentation.isCompact(zoom) else { return }
                         let routes = store.displayRoutes.filter { $0.dayID == store.dayID }
                         let progress = RouteMotionPath.phase(elapsed: timeline.date.timeIntervalSince(motionStarted))
-                        for path in RouteSelection.paths(routes) {
+                        for path in motionPaths {
                             guard let coordinate = path.position(progress: progress) else { continue }
                             let p = point(coordinate, size: size)
                             let circle = Path(ellipseIn: CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12))
@@ -518,6 +533,7 @@ struct PreviewMap: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("preview-map-surface")
             .task(id: "\(store.dayID ?? "")|\(store.routeSelectionRequest)|\(store.displayRoutes.count)") {
                 guard store.dayID != nil, !reduceMotion else { motionActive = false; return }
+                motionPaths = RouteSelection.paths(store.displayRoutes.filter { $0.dayID == store.dayID })
                 motionStarted = Date(); motionActive = true
             }
             .simultaneousGesture(SpatialTapGesture().onEnded { value in
@@ -529,8 +545,9 @@ struct PreviewMap: View {
                 let candidates = RouteSelection.candidates(at: (value.location.x, value.location.y), routes: store.displayRoutes) {
                     let p = point($0, size: proxy.size); return (p.x, p.y)
                 }
-                if candidates.count > 1 { store.routeCandidates = candidates }
+                if candidates.count > 1 { store.offerRoutes(candidates, at: value.location) }
                 else if let route = candidates.first { store.selectRoute(route) }
+                else { store.routeCandidates = [] }
             })
             .simultaneousGesture(MagnifyGesture().updating($magnification) { value, state, _ in
                 state = value.magnification

@@ -41,4 +41,21 @@ final class RouteSelectionTests: XCTestCase {
         XCTAssertNotEqual(store.routeSelectionRequest, second)
         XCTAssertEqual(store.camera?.id, camera)
     }
+    @MainActor func testDayChoicesUseChronologicalNumbersAndKeepTapAnchor() async throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        await store.awaitRouteUpdates()
+        store.select(trip: try XCTUnwrap(store.trip), focus: false)
+        await store.awaitRouteUpdates()
+        let first = try XCTUnwrap(store.displayRoutes.first { $0.dayID == "day-1" })
+        let second = try XCTUnwrap(store.displayRoutes.first { $0.dayID == "day-2" })
+        store.trips[0].days.reverse()
+        XCTAssertEqual(store.routeDayLabel(first), "第1天")
+        XCTAssertEqual(store.routeDayLabel(second), "第2天")
+        store.offerRoutes([second, first], at: CGPoint(x: 80, y: 120))
+        XCTAssertEqual(store.routeCandidatePoint, CGPoint(x: 80, y: 120))
+        XCTAssertEqual(store.routeCandidates.map(\.dayID), ["day-1", "day-2"])
+        store.selectRoute(second)
+        XCTAssertTrue(store.routeCandidates.isEmpty)
+    }
+
 }
