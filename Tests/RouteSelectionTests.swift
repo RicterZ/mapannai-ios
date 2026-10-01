@@ -12,18 +12,47 @@ final class RouteSelectionTests: XCTestCase {
         XCTAssertEqual(Set(candidates.map(\.dayID)), ["day", "other"])
         XCTAssertTrue(RouteSelection.candidates(at: (50, 19), routes: [routes[0]]) { ($0.longitude, $0.latitude) }.isEmpty)
     }
-    func testMovingCircleUsesPathDistanceAndLoopsContinuously() throws {
-        let points = [Coordinate(latitude: 0, longitude: 0), Coordinate(latitude: 0, longitude: 1),
-                      Coordinate(latitude: 0, longitude: 3)]
-        let path = RouteMotionPath(points: points)
-        XCTAssertEqual(path.position(progress: 0), points.first)
-        XCTAssertEqual(path.position(progress: 1), points.last)
-        XCTAssertEqual(try XCTUnwrap(path.position(progress: 0.5)).longitude, 1.5, accuracy: 0.001)
-        XCTAssertEqual(RouteMotionPath.phase(elapsed: 1.2), 0.5, accuracy: 0.001)
-        XCTAssertEqual(RouteMotionPath.phase(elapsed: 3.6), 0.5, accuracy: 0.001)
-        XCTAssertEqual(RouteMotionPath.phase(elapsed: 24), 0, accuracy: 0.001)
+    func testMovingCircleMaintainsScreenSpeedAcrossZoomAndFrameRates() throws {
+        let path = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 0),
+            Coordinate(latitude: 0, longitude: 20), Coordinate(latitude: 0, longitude: 500)])
+        let animation = RouteMotionAnimation(); animation.reset(paths: [path])
+        var scale = 1.0
+        let project: (Coordinate) -> CGPoint = { CGPoint(x: $0.longitude * scale, y: 0) }
+        _ = animation.positions(timestamp: 0, project: project)
+        var position = CGPoint.zero
+        for frame in 1...60 {
+            position = try XCTUnwrap(animation.positions(timestamp: Double(frame) / 60, project: project).first ?? nil)
+        }
+        XCTAssertEqual(position.x, 60, accuracy: 0.001)
+        // Zoom retains the same segment/fraction; only the next frame's travel is added.
+        scale = 2
+        position = try XCTUnwrap(animation.positions(timestamp: 1 + 1.0 / 60, project: project).first ?? nil)
+        XCTAssertEqual(position.x, 121, accuracy: 0.001)
+        scale = 0.5
+        position = try XCTUnwrap(animation.positions(timestamp: 1 + 2.0 / 60, project: project).first ?? nil)
+        XCTAssertEqual(position.x, 31.25, accuracy: 0.001)
+        for frame in 1...120 {
+            position = try XCTUnwrap(animation.positions(timestamp: 1 + 2.0 / 60 + Double(frame) / 120, project: project).first ?? nil)
+        }
+        XCTAssertEqual(position.x, 91.25, accuracy: 0.001, "60Hz and 120Hz must cover the same distance per second")
+    }
+    func testMovingCircleLoopsAndIndependentPathsHaveSameScreenSpeed() throws {
         let routes = [route("day|0|1"), route("day|1|1")]
-        XCTAssertEqual(RouteSelection.paths(routes).count, 2, "Separate chains must not animate across an invented link")
+        XCTAssertEqual(RouteSelection.paths(routes).count, 2)
+        let short = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 0), Coordinate(latitude: 0, longitude: 10)])
+        let long = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 0), Coordinate(latitude: 0, longitude: 1000)])
+        var cursor = RouteMotionCursor()
+        let project: (Coordinate) -> CGPoint = { CGPoint(x: $0.longitude, y: $0.latitude) }
+        XCTAssertEqual(try XCTUnwrap(cursor.advance(on: short, distance: 26, project: project)).x, 6, accuracy: 0.001)
+        let animation = RouteMotionAnimation(); animation.reset(paths: [short, long])
+        _ = animation.positions(timestamp: 0, project: project)
+        let positions = animation.positions(timestamp: 0.1, project: project)
+        XCTAssertEqual(try XCTUnwrap(positions[0]).x, 6, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(positions[1]).x, 6, accuracy: 0.001)
+        let resumed = animation.positions(timestamp: 20, project: project)
+        XCTAssertEqual(try XCTUnwrap(resumed[1]).x, 12, accuracy: 0.001, "Don't catch up with a huge jump after suspension")
+        var zeroCursor = RouteMotionCursor()
+        XCTAssertEqual(zeroCursor.advance(on: RouteMotionPath(points: [short.points[0], short.points[0]]), distance: 6, project: project), .zero)
     }
     @MainActor func testRouteClickSelectsDayPreservesCameraAndCanBeRepeated() async throws {
         let store = AppStore(settings: Settings(), demo: true)

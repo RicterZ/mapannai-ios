@@ -27,32 +27,59 @@ enum RouteSelection {
 
 struct RouteMotionPath {
     let points: [Coordinate]
-    private let cumulative: [Double]
-    private let total: Double
-    init(points: [Coordinate]) {
-        self.points = points
-        var cumulative: [Double] = points.isEmpty ? [] : [0]
-        for (a, b) in zip(points, points.dropFirst()) {
-            cumulative.append((cumulative.last ?? 0) + Coordinates.distance(a, b))
+}
+
+/// Progress is a segment and a fraction, not an elapsed-time percentage of the whole route.
+/// Reprojecting that segment preserves the location on zoom while keeping travel at 60pt/s.
+struct RouteMotionCursor {
+    private var segment = 0
+    private var fraction = 0.0
+    mutating func advance(on path: RouteMotionPath, distance: Double,
+                          project: (Coordinate) -> CGPoint) -> CGPoint? {
+        guard let first = path.points.first else { return nil }
+        guard path.points.count > 1 else { return project(first) }
+        var remaining = max(0, distance)
+        for _ in 0...(path.points.count * 2) {
+            let a = project(path.points[segment]), b = project(path.points[segment + 1])
+            let length = hypot(b.x - a.x, b.y - a.y)
+            let available = Double(length) * (1 - fraction)
+            if length > 0, remaining < available {
+                fraction += remaining / Double(length)
+                return CGPoint(x: a.x + (b.x - a.x) * fraction, y: a.y + (b.y - a.y) * fraction)
+            }
+            remaining = max(0, remaining - available)
+            segment += 1; fraction = 0
+            if segment == path.points.count - 1 {
+                segment = 0
+                // A tiny route may loop several times in one frame. Avoid repeatedly walking it.
+                let total = zip(path.points, path.points.dropFirst()).reduce(0.0) { result, pair in
+                    let a = project(pair.0), b = project(pair.1)
+                    return result + Double(hypot(b.x - a.x, b.y - a.y))
+                }
+                guard total > 0 else { return project(first) }
+                remaining = remaining.truncatingRemainder(dividingBy: total)
+            }
         }
-        self.cumulative = cumulative; total = cumulative.last ?? 0
+        return project(first)
     }
-    func position(progress: Double) -> Coordinate? {
-        guard let first = points.first else { return nil }
-        guard total > 0 else { return first }
-        let target = min(1, max(0, progress)) * total
-        var lo = 1, hi = cumulative.count - 1
-        while lo < hi {
-            let mid = (lo + hi) / 2
-            if cumulative[mid] < target { lo = mid + 1 } else { hi = mid }
+}
+
+final class RouteMotionAnimation {
+    static let pointsPerSecond = 60.0
+    private var paths: [RouteMotionPath] = []
+    private var cursors: [RouteMotionCursor] = []
+    private var lastTimestamp: Double?
+    func reset(paths: [RouteMotionPath] = []) {
+        self.paths = paths
+        cursors = paths.map { _ in RouteMotionCursor() }
+        lastTimestamp = nil
+    }
+    func positions(timestamp: Double, project: (Coordinate) -> CGPoint) -> [CGPoint?] {
+        // Don't catch up after suspension or a long UI stall with a sudden jump.
+        let delta = min(0.1, max(0, timestamp - (lastTimestamp ?? timestamp)))
+        lastTimestamp = timestamp
+        return paths.indices.map { index in
+            cursors[index].advance(on: paths[index], distance: Self.pointsPerSecond * delta, project: project)
         }
-        let length = cumulative[lo] - cumulative[lo - 1]
-        let t = length > 0 ? (target - cumulative[lo - 1]) / length : 0
-        let a = points[lo - 1], b = points[lo]
-        return Coordinate(latitude: a.latitude + (b.latitude - a.latitude) * t,
-                          longitude: a.longitude + (b.longitude - a.longitude) * t)
-    }
-    static func phase(elapsed: Double) -> Double {
-        max(0, elapsed).truncatingRemainder(dividingBy: 2.4) / 2.4
     }
 }

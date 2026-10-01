@@ -70,9 +70,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var selectionDay: String?
         private var selectionRequest: UUID?
         private var selectionLink: CADisplayLink?
-        private var selectionStarted: CFTimeInterval = 0
         private var selectionRoutes: [DisplayRoute] = []
-        private var motionPaths: [RouteMotionPath] = []
+        private let motion = RouteMotionAnimation()
         private var motionDots: [CAShapeLayer] = []
         private var renderedCoordinates: [String: [Coordinate]] = [:]
         init(_ store: AppStore) { self.store = store }
@@ -165,7 +164,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         func stopSelectionAnimation() {
             selectionLink?.invalidate(); selectionLink = nil
             motionDots.forEach { $0.removeFromSuperlayer() }
-            motionDots = []; motionPaths = []
+            motionDots = []; motion.reset()
         }
 
         private func updateRouteSelection(_ map: MAMapView, geometryChanged: Bool = false) {
@@ -187,8 +186,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 var value = route; value.points = renderedCoordinates[route.id] ?? []
                 return value
             }
-            motionPaths = RouteSelection.paths(converted)
-            for _ in motionPaths {
+            let paths = RouteSelection.paths(converted)
+            motion.reset(paths: paths)
+            for _ in paths {
                 let dot = CAShapeLayer()
                 dot.bounds = CGRect(x: 0, y: 0, width: 12, height: 12)
                 dot.path = UIBezierPath(ovalIn: dot.bounds.insetBy(dx: 1, dy: 1)).cgPath
@@ -198,7 +198,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 dot.zPosition = 1000; dot.isHidden = true
                 map.layer.addSublayer(dot); motionDots.append(dot)
             }
-            selectionStarted = CACurrentMediaTime()
             let link = CADisplayLink(target: self, selector: #selector(advanceSelection(_:)))
             link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: Float(map.window?.screen.maximumFramesPerSecond ?? 60),
                                                          preferred: Float(map.window?.screen.maximumFramesPerSecond ?? 60))
@@ -207,12 +206,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
 
         @objc private func advanceSelection(_ link: CADisplayLink) {
             guard let map, routesVisible, !UIAccessibility.isReduceMotionEnabled else { stopSelectionAnimation(); return }
-            let progress = RouteMotionPath.phase(elapsed: link.targetTimestamp - selectionStarted)
+            let positions = motion.positions(timestamp: link.targetTimestamp) { coordinate in
+                map.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map)
+            }
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            for (path, dot) in zip(motionPaths, motionDots) {
-                guard let coordinate = path.position(progress: progress) else { dot.isHidden = true; continue }
-                dot.position = map.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map)
-                dot.isHidden = false
+            for (position, dot) in zip(positions, motionDots) {
+                guard let position else { dot.isHidden = true; continue }
+                dot.position = position; dot.isHidden = false
             }
             CATransaction.commit()
         }
@@ -459,9 +459,8 @@ struct PreviewMap: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var previewZoom = ProcessInfo.processInfo.arguments.contains("--compact-map-demo") ? 9.0 : 13.0
     @GestureState private var magnification = 1.0
-    @State private var motionStarted = Date()
     @State private var motionActive = false
-    @State private var motionPaths: [RouteMotionPath] = []
+    @State private var motion = RouteMotionAnimation()
     private var zoom: Double { previewZoom + log2(max(0.01, magnification)) }
     func point(_ p: Coordinate, size: CGSize) -> CGPoint {
         let insets = store.mapViewportInsets
@@ -497,10 +496,11 @@ struct PreviewMap: View {
                     Canvas { context, size in
                         guard motionActive, !MapZoomPresentation.isCompact(zoom) else { return }
                         let routes = store.displayRoutes.filter { $0.dayID == store.dayID }
-                        let progress = RouteMotionPath.phase(elapsed: timeline.date.timeIntervalSince(motionStarted))
-                        for path in motionPaths {
-                            guard let coordinate = path.position(progress: progress) else { continue }
-                            let p = point(coordinate, size: size)
+                        let positions = motion.positions(timestamp: timeline.date.timeIntervalSinceReferenceDate) {
+                            point($0, size: size)
+                        }
+                        for position in positions {
+                            guard let p = position else { continue }
                             let circle = Path(ellipseIn: CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12))
                             context.fill(circle, with: .color(Theme.color(routes.first?.colorIndex ?? 0)))
                             context.stroke(circle, with: .color(.white), lineWidth: 2)
@@ -533,8 +533,8 @@ struct PreviewMap: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("preview-map-surface")
             .task(id: "\(store.dayID ?? "")|\(store.routeSelectionRequest)|\(store.displayRoutes.count)") {
                 guard store.dayID != nil, !reduceMotion else { motionActive = false; return }
-                motionPaths = RouteSelection.paths(store.displayRoutes.filter { $0.dayID == store.dayID })
-                motionStarted = Date(); motionActive = true
+                motion.reset(paths: RouteSelection.paths(store.displayRoutes.filter { $0.dayID == store.dayID }))
+                motionActive = true
             }
             .simultaneousGesture(SpatialTapGesture().onEnded { value in
                 guard !MapZoomPresentation.isCompact(zoom) else { return }
