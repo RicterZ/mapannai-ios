@@ -55,8 +55,12 @@ struct NativePlaceSearchBar: UIViewRepresentable {
 /// Move the native bar (including its system glass groups), not its button labels.
 /// The principal title compensates for this translation to retain its position.
 struct JourneyToolbarContainerOffset: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> Controller { Controller() }
+    var offset: CGFloat = -4
+    func makeUIViewController(context: Context) -> Controller {
+        let controller = Controller(); controller.offset = offset; return controller
+    }
     func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.offset = offset
         controller.applyOffset()
         DispatchQueue.main.async { [weak controller] in controller?.applyOffset() }
     }
@@ -73,6 +77,7 @@ struct JourneyToolbarContainerOffset: UIViewControllerRepresentable {
         private static let bars = NSMapTable<UINavigationBar, Owners>.weakToStrongObjects()
         private weak var adjustedBar: UINavigationBar?
         private var dismantled = false
+        var offset: CGFloat = -4
         override func loadView() {
             view = UIView(); view.isUserInteractionEnabled = false
         }
@@ -90,7 +95,7 @@ struct JourneyToolbarContainerOffset: UIViewControllerRepresentable {
                 owners.controllers.add(self)
                 Self.bars.setObject(owners, forKey: bar)
             }
-            UIView.performWithoutAnimation { bar.transform = CGAffineTransform(translationX: 0, y: -4) }
+            UIView.performWithoutAnimation { bar.transform = CGAffineTransform(translationX: 0, y: offset) }
         }
         func dismantle() {
             dismantled = true

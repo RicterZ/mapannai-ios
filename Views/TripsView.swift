@@ -336,6 +336,7 @@ struct DayMarkerPicker: View {
                     } else if searched && !store.searching && store.searchResults.isEmpty {
                         ContentUnavailableView.search(text: store.searchText)
                     }
+                    Section {
                     ForEach(store.searchResults) { place in
                         VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 12) {
@@ -350,9 +351,10 @@ struct DayMarkerPicker: View {
                             addButton(place)
                         }
                         }.id(place.id)
-                        .listRowBackground(Color.clear)
+                        .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
                     }
                     SearchPaginationFooter(store: store)
+                    }
                 }.listStyle(.insetGrouped).scrollContentBackground(.hidden).contentMargins(.top, 8, for: .scrollContent)
                     .scrollDismissesKeyboard(.interactively)
                     .accessibilityIdentifier("add-place-results")
@@ -370,6 +372,7 @@ struct DayMarkerPicker: View {
                 }
             }
             .modifier(JourneyNavigationBackground())
+            .background(JourneyToolbarContainerOffset(offset: compact ? -3 : 0))
             .navigationTitle(targetTitle).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {

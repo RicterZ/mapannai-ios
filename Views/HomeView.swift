@@ -501,7 +501,6 @@ struct HomeView: View {
             }.buttonStyle(.plain).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("compact-journey-controls")
