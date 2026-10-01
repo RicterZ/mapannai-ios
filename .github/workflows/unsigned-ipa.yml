@@ -14,7 +14,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  map-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache pinned map SDK
+        id: map-sdk
+        uses: actions/cache@v4
+        with:
+          path: Vendor
+          key: amap-sdk-${{ runner.os }}-${{ hashFiles('Scripts/fetch-sdk.py') }}
+      - name: Download official map SDK
+        if: steps.map-sdk.outputs.cache-hit != 'true'
+        run: python3 Scripts/fetch-sdk.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: official-map-sdk
+          path: Vendor
+          if-no-files-found: error
+          retention-days: 1
+
   build:
+    needs: map-sdk
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -28,15 +50,10 @@ jobs:
           xcrun swift --version
       - name: Install XcodeGen
         run: brew list xcodegen || brew install xcodegen
-      - name: Cache pinned map SDK
-        id: map-sdk
-        uses: actions/cache@v4
+      - uses: actions/download-artifact@v4
         with:
+          name: official-map-sdk
           path: Vendor
-          key: amap-sdk-${{ runner.os }}-${{ hashFiles('Scripts/fetch-sdk.py') }}
-      - name: Download official map SDK
-        if: steps.map-sdk.outputs.cache-hit != 'true'
-        run: python3 Scripts/fetch-sdk.py
       - name: Configure native map key
         env:
           AMAP_IOS_KEY: ${{ secrets.AMAP_IOS_KEY }}
