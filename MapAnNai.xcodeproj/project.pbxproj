@@ -13,6 +13,7 @@
 		0A3C38A375DBE8FF853161E1 /* RouteCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4960F0B624456BC80191B2F2 /* RouteCache.swift */; };
 		0D8DA2E591B528E9625BE0C1 /* TripEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5405CAA1777E9322D0EC643D /* TripEditorTests.swift */; };
 		0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */; };
+		0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */; };
 		1090057AE077861B9DFB1180 /* MarkerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425DF5BCBE1273228F07E613 /* MarkerViews.swift */; };
 		18DC608C17CAC7B4854B1504 /* MapLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */; };
 		22412999EF9F454257D4C2AA /* MapServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE1B1BE0D10CFCEBB91BDC15 /* MapServices.swift */; };
@@ -26,6 +27,7 @@
 		49854BE16EBA83ACCBB42D5E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5AAA4D8D79DFD1AE6A2DFD48 /* PrivacyInfo.xcprivacy */; };
 		4ACB817D344D263D4236929F /* MarkerEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */; };
 		5DF08649B912E7DCD153DAF9 /* SearchMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B62253EAC3829164040323C /* SearchMapTests.swift */; };
+		5E5B7F87B301257F05899C5B /* CameraMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A5131C016B257343D4A0CD /* CameraMotion.swift */; };
 		600AA5D63A9848C91732D1B2 /* MapZoomPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E638F7BC16C1CF3639093C55 /* MapZoomPresentation.swift */; };
 		68FF0B51308420440E8B1B0B /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1101856C18590877C951E1 /* AppConfiguration.swift */; };
 		6A7D2165452F483DB01241F3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233C57940FA2593E0DCB67CA /* SettingsView.swift */; };
@@ -97,6 +99,7 @@
 		20FE4064B67BA89D296FCAFB /* RouteProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteProcessing.swift; sourceTree = "<group>"; };
 		233C57940FA2593E0DCB67CA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		2BB74C6B3AD95B8AF3911377 /* AMap.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = AMap.bundle; sourceTree = "<group>"; };
+		2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMotionTests.swift; sourceTree = "<group>"; };
 		3F55A919B31EC92357E58F47 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		401E2D25019885A304E0676C /* MapZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapZoomTests.swift; sourceTree = "<group>"; };
 		425DF5BCBE1273228F07E613 /* MarkerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerViews.swift; sourceTree = "<group>"; };
@@ -109,6 +112,7 @@
 		4FDDA121FFD3C16E1FD7287B /* JourneyCircleButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyCircleButtonStyle.swift; sourceTree = "<group>"; };
 		50DE00593E8084F5D51D56A4 /* NativeMapControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapControls.swift; sourceTree = "<group>"; };
 		5114754DBBCAFABDDCB8097D /* NoteContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteContent.swift; sourceTree = "<group>"; };
+		52A5131C016B257343D4A0CD /* CameraMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMotion.swift; sourceTree = "<group>"; };
 		538108F21D71668426EA9A48 /* MapRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapRenderer.swift; sourceTree = "<group>"; };
 		5405CAA1777E9322D0EC643D /* TripEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripEditorTests.swift; sourceTree = "<group>"; };
 		56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyEditingActionsTests.swift; sourceTree = "<group>"; };
@@ -185,6 +189,7 @@
 				1579B0865582F6FFBD7E34E0 /* APIClient.swift */,
 				0E1101856C18590877C951E1 /* AppConfiguration.swift */,
 				5F1DE90E8066F7692BEC6055 /* AppStore.swift */,
+				52A5131C016B257343D4A0CD /* CameraMotion.swift */,
 				F72771F1E2B151FC279B7446 /* Geometry.swift */,
 				A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */,
 				DE1B1BE0D10CFCEBB91BDC15 /* MapServices.swift */,
@@ -206,6 +211,7 @@
 		51A720AC2B203A3394D9A050 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */,
 				CEB25B1C797DC9C67FC988C2 /* ConcurrencyTests.swift */,
 				8ED85B293D18534AAB521985 /* CoreTests.swift */,
 				908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */,
@@ -406,6 +412,7 @@
 				D61C89014A16E20523662687 /* APIClient.swift in Sources */,
 				68FF0B51308420440E8B1B0B /* AppConfiguration.swift in Sources */,
 				CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */,
+				5E5B7F87B301257F05899C5B /* CameraMotion.swift in Sources */,
 				94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */,
 				23CC06614DFD047642FEFB5F /* HomeView.swift in Sources */,
 				88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */,
@@ -439,6 +446,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */,
 				094AD351688781CAF39E4064 /* ConcurrencyTests.swift in Sources */,
 				F454FB7809C094724227F0B8 /* CoreTests.swift in Sources */,
 				39485F3DE95106F278FE9E42 /* DayCameraTests.swift in Sources */,
@@ -541,7 +549,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -681,7 +689,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

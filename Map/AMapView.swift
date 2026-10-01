@@ -101,12 +101,26 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     status.screenAnchor = CGPoint(
                         x: (map.bounds.width + insets.left - insets.right) / (2 * max(1, map.bounds.width)),
                         y: (map.bounds.height + insets.top - insets.bottom) / (2 * max(1, map.bounds.height)))
-                    map.setMapStatus(status, animated: true)
+                    let duration = CameraMotion.duration(
+                        from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
+                        to: command.points[0], currentZoom: Double(map.zoomLevel), targetZoom: command.zoomLevel,
+                        reduceMotion: UIAccessibility.isReduceMotionEnabled)
+                    withCameraAnimation(duration: duration) {
+                        map.setMapStatus(status, animated: duration > 0, duration: duration)
+                    }
                 } else if let first = coords.first {
                     map.screenAnchor = CGPoint(x: 0.5, y: 0.5)
                     var rect = MAMapRectMake(MAMapPointForCoordinate(first).x, MAMapPointForCoordinate(first).y, 1, 1)
                     for p in coords { let point = MAMapPointForCoordinate(p); rect = MAMapRectUnion(rect, MAMapRectMake(point.x, point.y, 1, 1)) }
-                    map.setVisibleMapRect(rect, edgePadding: padding(map), animated: true)
+                    let center = MACoordinateForMapPoint(MAMapPointMake(rect.origin.x + rect.size.width / 2, rect.origin.y + rect.size.height / 2))
+                    let duration = CameraMotion.duration(
+                        from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
+                        to: Coordinates.wgs(Coordinate(latitude: center.latitude, longitude: center.longitude)),
+                        currentZoom: Double(map.zoomLevel), targetZoom: nil, fitting: true,
+                        reduceMotion: UIAccessibility.isReduceMotionEnabled)
+                    withCameraAnimation(duration: duration) {
+                        map.setVisibleMapRect(rect, edgePadding: padding(map), animated: duration > 0, duration: duration)
+                    }
                 }
             }
             updatePinStyles(map)
@@ -133,6 +147,15 @@ struct AMapNativeRenderer: UIViewRepresentable {
             style(view, pin: pin, map: mapView)
             return view
         }
+        private func withCameraAnimation(duration: TimeInterval, changes: () -> Void) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(duration == 0)
+            CATransaction.setAnimationDuration(duration)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+            changes()
+            CATransaction.commit()
+        }
+
         func cancelRouteUpdates() {
             routeRevision = UUID(); coordinateTask?.cancel(); coordinateTask = nil
         }
