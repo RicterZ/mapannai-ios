@@ -15,12 +15,6 @@ struct AIConfigurationView: View {
                     .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-api-key")
                 TextField("模型名称", text: $draft.model)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-model")
-            } header: { Text("兼容 OpenAI 的 API") } footer: {
-                Text("Key 保存在系统钥匙串。发送消息时，配置会交给你连接的 MapAnNai 服务，由服务器组装提示词、调用模型和规划工具。模型需支持工具调用。")
-            }
-            Section {
-                Text("默认使用公共 HTTPS API。私有网络或 HTTP 模型服务需要在 MapAnNai 服务端启用 AI_ALLOW_PRIVATE_ENDPOINTS。")
-                    .font(.footnote).foregroundStyle(.secondary)
             }
             if let error { Text(error).foregroundStyle(.red) }
         }
@@ -126,14 +120,7 @@ struct AIPlannerView: View {
                     } label: { Image(systemName: "bubble.left.and.bubble.right") }
                         .disabled(planner.busy).accessibilityLabel("会话记录")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { AIConfigurationView(planner: planner) } label: { Image(systemName: "gearshape") }
-                        .accessibilityLabel("AI API 配置")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { planner.close() } label: { Image(systemName: "xmark") }
-                        .accessibilityLabel("关闭AI助手").accessibilityIdentifier("close-ai-planner")
-                }
+
             }
             .alert("清空本地会话？", isPresented: $resetConfirmation) {
                 Button("取消", role: .cancel) {}

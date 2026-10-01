@@ -34,14 +34,14 @@ struct HomeView: View {
                 if sidebar { modalContent(mapPage) }
                 else { mapPage }
             }
-                .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0 })) {
+                .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0; if !$0 && aiPresented { aiPlanner.close() } }), onDismiss: { nativeJourneyPresented = true }) {
                     modalContent(panelWorkspace(sidebar: false))
                         .presentationDetents(!store.placeSearchPresented && !aiPresented ? [.height(compactJourneyHeight), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
                         .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
                         .presentationBackgroundInteraction(.enabled)
                         .presentationContentInteraction(.resizes)
-                        .interactiveDismissDisabled()
+                        .interactiveDismissDisabled(!aiPresented)
                 }
                 .onAppear { nativeJourneyPresented = true }
                 .task(id: settings.revision) {
@@ -379,6 +379,13 @@ struct HomeView: View {
                 .ignoresSafeArea()
             if aiPresented && layout.usesSidebar {
                 AIPlannerView(planner: aiPlanner, store: store)
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        Capsule().fill(.secondary).frame(width: 36, height: 5)
+                            .frame(maxWidth: .infinity).frame(height: 24).contentShape(Rectangle())
+                            .gesture(DragGesture().onEnded { if $0.translation.height > 50 { aiPlanner.close() } })
+                            .accessibilityLabel("关闭AI助手").accessibilityAddTraits(.isButton)
+                            .accessibilityAction { aiPlanner.close() }
+                    }
                     .frame(width: min(420, layout.width * 0.46), height: layout.height)
                     .background(.regularMaterial)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -439,6 +446,7 @@ struct HomeView: View {
             }.modifier(JourneyCircleButtonStyle())
                 .frame(width: 44, height: 44)
                 .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
+                .frame(width: 88, alignment: .leading)
             VStack(spacing: 0) {
                 compactDateNavigation
                 Text(store.trip?.name ?? "旅途")
@@ -455,6 +463,7 @@ struct HomeView: View {
             }.buttonStyle(.plain).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 16)
+        .padding(.top, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("compact-journey-controls")
@@ -480,7 +489,7 @@ struct HomeView: View {
                         Text(shortDate(day.date)).font(.subheadline).foregroundStyle(.secondary)
                     }
                     Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-                }.frame(maxWidth: .infinity).frame(height: 44).contentShape(Rectangle())
+                }.frame(maxWidth: .infinity).frame(height: 28).contentShape(Rectangle())
             }.buttonStyle(.plain).tint(Theme.accent)
                 .accessibilityLabel("选择日期").accessibilityIdentifier("date-selector")
         }
