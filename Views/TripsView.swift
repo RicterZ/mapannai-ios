@@ -122,7 +122,6 @@ struct DayContentsView<SearchContent: View>: View {
     var onViewRoute: () -> Void = {}
     @Environment(\.colorScheme) private var colorScheme
     @State private var chainEditor: ChainEditRequest?
-    @State private var addingMarkers = false
     @State private var editingTitle = false
     @State private var title = ""
     @State private var deletingDay = false
@@ -200,15 +199,14 @@ struct DayContentsView<SearchContent: View>: View {
                 Button { chainEditor = ChainEditRequest(day: day, index: nil, ids: []) } label: {
                     Label("新建路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath").fullRowActionLabel()
                 }.buttonStyle(.plain).foregroundStyle(Theme.accent)
-                Button { addingMarkers = true } label: { Label("添加地点", systemImage: "plus").fullRowActionLabel() }
-                    .buttonStyle(.plain).foregroundStyle(Theme.accent)
+                Button { store.beginAddingPlace(to: day) } label: { Label("添加地点", systemImage: "plus").fullRowActionLabel() }
+                    .buttonStyle(.plain).foregroundStyle(Theme.accent).accessibilityIdentifier("day-search-add-place")
             } header: {
                 Color.clear.frame(height: 16).accessibilityHidden(true)
             }.font(.body)
 
         }
         .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
-        .sheet(isPresented: $addingMarkers) { DayMarkerPicker(store: store, day: day) }
         .alert("日期标题", isPresented: $editingTitle) {
             TextField("例如：梧桐街区漫步", text: $title)
             Button("取消", role: .cancel) {}
@@ -301,65 +299,51 @@ struct DayMarkerPicker: View {
     @ObservedObject var store: AppStore
     let day: TripDay
     @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var results: [Place] = []
-    @State private var failure: String?
-    @State private var searching = false
-    @State private var generation = UUID()
     @State private var searched = false
-    @State private var editingPlace: MarkerDraft?
     @State private var completed = false
-    @State private var searchBounds: SearchBounds?
     var body: some View {
         NavigationStack {
             List {
-                if searching { ProgressView().frame(maxWidth: .infinity) }
-                ForEach(results) { place in
-                    Button {
-                        store.fly([place.coordinates])
-                        editingPlace = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(place.name).foregroundStyle(.primary)
-                            if !place.address.isEmpty { Text(place.address).font(.caption).foregroundStyle(.secondary) }
-                        }.padding(.vertical, 4)
-                    }.accessibilityIdentifier("add-place-result-\(place.id)")
+                Section {
+                    NativePlaceSearchBar(text: $store.searchText, searching: store.searching, onSearch: {
+                        searched = true
+                        Task { await store.search() }
+                    }, onClear: { store.clearSearch(); searched = false })
+                    .frame(height: 40).listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                 }
-                if searched && !searching && results.isEmpty && failure == nil {
+                if store.searching { ProgressView().frame(maxWidth: .infinity) }
+                ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
+                    Button { store.choose(place) } label: {
+                        HStack(spacing: 12) {
+                            Image(uiImage: SearchPinAppearance.image(number: index + 1, selected: store.selectedSearchPlaceID == place.id))
+                                .frame(width: 32, height: 40)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(place.name).font(.body).foregroundStyle(.primary)
+                                if !place.address.isEmpty { Text(place.address).font(.footnote).foregroundStyle(.secondary) }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("add-place-result-\(place.id)")
+                }
+                if searched && !store.searching && store.searchResults.isEmpty {
                     Text("没有找到地点").foregroundStyle(.secondary)
                 }
-                if let failure { Text(failure).foregroundStyle(.red) }
-            }.navigationTitle("添加地点").navigationBarTitleDisplayMode(.inline)
-                .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索地图地点")
-                .onSubmit(of: .search) { Task { await search() } }
-                .onChange(of: query) { _, text in
-                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        generation = UUID(); results = []; searched = false; searching = false; failure = nil
-                    }
-                }
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.accessibilityIdentifier("close-place-picker") } }
-                .sheet(item: $editingPlace, onDismiss: { if completed { dismiss() } }) { draft in
+            }.listStyle(.insetGrouped).scrollDismissesKeyboard(.interactively)
+                .navigationTitle("添加地点").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }.accessibilityIdentifier("close-place-picker")
+                } }
+                .sheet(item: $store.draft, onDismiss: { if completed { dismiss() } }) { draft in
                     MarkerEditorView(store: store, initial: draft, onSaved: { completed = true })
+                        .presentationDetents([.medium, .large], selection: Binding(
+                            get: { store.draftExpanded ? .large : .medium },
+                            set: { store.draftExpanded = $0 == .large }))
+                        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                        .presentationDragIndicator(.visible)
                 }
-        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
-            .onAppear { searchBounds = store.bounds }
-    }
-    private func search() async {
-        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !term.isEmpty else { return }
-        let request = UUID(); generation = request; searching = true; searched = true; failure = nil
-        defer { if generation == request { searching = false } }
-        do {
-            let places: [Place]
-            if store.demo {
-                places = store.markers.filter { $0.title.localizedCaseInsensitiveContains(term) }.map {
-                    Place(id: $0.id, name: $0.title, address: $0.content.address ?? "", coordinates: $0.coordinates)
-                }
-            } else {
-                places = try await store.mapServices.search(term, bounds: searchBounds?.expanded(factor: 2))
-            }
-            guard generation == request else { return }
-            results = places
-        } catch { if generation == request { failure = error.localizedDescription } }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .presentationDragIndicator(.visible)
+        .accessibilityIdentifier("add-place-search-panel")
     }
 }

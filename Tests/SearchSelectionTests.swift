@@ -32,4 +32,22 @@ final class SearchSelectionTests: XCTestCase {
         XCTAssertEqual(store.camera?.points.count, 2)
         XCTAssertEqual(store.searchText, "武康")
     }
+    @MainActor func testDayAddSearchSharesMapResultsAndKeepsTargetDay() async throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let day = try XCTUnwrap(store.day)
+        store.beginAddingPlace(to: day)
+        XCTAssertEqual(store.addPlaceDay?.id, day.id)
+        store.searchText = "静安"
+        await store.search()
+        let result = try XCTUnwrap(store.searchResults.first)
+        store.choose(result, fromMap: true)
+        XCTAssertEqual(store.draft?.title, "静安寺")
+        XCTAssertFalse(store.draftExpanded)
+        XCTAssertEqual(store.addPlaceDay?.id, day.id)
+        XCTAssertEqual(store.searchText, "静安")
+        store.endAddingPlace()
+        XCTAssertNil(store.addPlaceDay); XCTAssertNil(store.draft)
+        XCTAssertTrue(store.searchResults.isEmpty)
+    }
+
 }

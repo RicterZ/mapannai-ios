@@ -46,7 +46,7 @@ struct HomeView: View {
         GeometryReader { proxy in
             let layout = MapLayout(width: proxy.size.width, height: proxy.size.height,
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
-                                   sheetHeight: UIDevice.current.userInterfaceIdiom != .pad && store.draft != nil && !store.draftExpanded ? proxy.size.height * 0.5 : UIDevice.current.userInterfaceIdiom == .phone && sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
+                                   sheetHeight: UIDevice.current.userInterfaceIdiom != .pad && (store.addPlaceDay != nil || store.draft != nil) && !store.draftExpanded ? proxy.size.height * 0.5 : UIDevice.current.userInterfaceIdiom == .phone && sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
                     store.mapViewportInsets = layout.insets
@@ -92,7 +92,7 @@ struct HomeView: View {
                 expanded = true
                 if sheetDetent == .compact { sheetDetent = .half }
             }) }
-        .sheet(item: $store.draft) { draft in
+        .sheet(item: Binding(get: { store.addPlaceDay == nil ? store.draft : nil }, set: { store.draft = $0 })) { draft in
             if UIDevice.current.userInterfaceIdiom == .pad {
                 MarkerEditorView(store: store, initial: draft).id(draft.id)
                     .onAppear { store.draftExpanded = true }
@@ -105,9 +105,16 @@ struct HomeView: View {
                     .presentationDragIndicator(.visible)
             }
         }
+        .sheet(item: $store.addPlaceDay, onDismiss: { store.endAddingPlace() }) { day in
+            DayMarkerPicker(store: store, day: day)
+        }
+        .onChange(of: store.addPlaceDay?.id) { _, dayID in
+            guard dayID != nil else { return }
+            sheetDrag = 0; sheetDetent = .compact
+        }
         .onChange(of: store.draft?.id) { old, new in
             if new != nil, UIDevice.current.userInterfaceIdiom != .pad, store.selectedSearchPlaceID != nil { sheetDetent = .compact }
-            else if old != nil, new == nil, !store.searchResults.isEmpty { sheetDetent = .half }
+            else if old != nil, new == nil, !store.searchResults.isEmpty, store.addPlaceDay == nil { sheetDetent = .half }
         }
         .alert("无法完成操作", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
@@ -223,7 +230,7 @@ struct HomeView: View {
     @ViewBuilder private func journeyPage(_ destination: JourneyDestination?, sidebar: Bool) -> some View {
         let page = scope(destination)
         Group {
-            if store.searching || !store.searchResults.isEmpty {
+            if store.addPlaceDay == nil && (store.searching || !store.searchResults.isEmpty) {
                 List {
                     Section { panelSearch }
                     if store.searching { ProgressView().frame(maxWidth: .infinity) }
@@ -532,7 +539,7 @@ struct HomeView: View {
     }
     private var itineraryList: some View {
         Group {
-            if store.searching || !store.searchResults.isEmpty {
+            if store.addPlaceDay == nil && (store.searching || !store.searchResults.isEmpty) {
                 List {
                     Section { panelSearch }
                     if store.searching { ProgressView().frame(maxWidth: .infinity) }

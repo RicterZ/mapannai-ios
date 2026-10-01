@@ -32,7 +32,8 @@ struct NativePlaceSearchBar: UIViewRepresentable {
     }
     func updateUIView(_ bar: UISearchBar, context: Context) {
         context.coordinator.parent = self
-        if bar.text != text { bar.text = text }
+        // Publishing results/layout while typing must not overwrite newer native keystrokes.
+        if !bar.searchTextField.isFirstResponder, bar.text != text { bar.text = text }
     }
     final class Coordinator: NSObject, UISearchBarDelegate {
         var parent: NativePlaceSearchBar
@@ -42,6 +43,7 @@ struct NativePlaceSearchBar: UIViewRepresentable {
             if searchText.isEmpty { parent.onClear() }
         }
         func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+            parent.text = searchBar.text ?? ""
             searchBar.resignFirstResponder()
             parent.onSearch()
         }

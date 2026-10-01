@@ -16,6 +16,7 @@ import SwiftUI
     @Published var draft: MarkerDraft?
     @Published var draftExpanded = true
     @Published var selectedSearchPlaceID: String?
+    @Published var addPlaceDay: TripDay?
     @Published var searchResults: [Place] = []
     @Published var searchText = ""
     @Published var searching = false
@@ -63,7 +64,7 @@ import SwiftUI
     }
     func connect() async {
         connectionRevision = UUID(); refreshGeneration = UUID(); loading = false; refreshing = false
-        tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; searchResults = []; markers = []; trips = []
+        tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
         camera = nil; startupCameraPending = true
         searchGeneration = UUID(); searching = false; rebuildRoutes()
         if demo { loadDemo(); rebuildRoutes(); return }
@@ -152,7 +153,7 @@ import SwiftUI
     }
     func saveMarker(_ draft: MarkerDraft) async -> Bool {
         guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
-        let targetDay = draft.marker == nil ? day : nil
+        let targetDay = draft.marker == nil ? (addPlaceDay ?? day) : nil
         let ok = await perform { client in
             if let marker = draft.marker {
                 try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": draft.html, "headerImage": draft.headerImage])
@@ -243,6 +244,16 @@ import SwiftUI
                 self.draft?.placeLookupFailed = true
             }
         }
+    }
+    func beginAddingPlace(to day: TripDay) {
+        clearSearch()
+        routeCandidates = []
+        addPlaceDay = day
+    }
+    func endAddingPlace() {
+        draft = nil
+        addPlaceDay = nil
+        clearSearch()
     }
     func search() async {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
