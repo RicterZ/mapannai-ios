@@ -5,7 +5,7 @@
 - 原生 SwiftUI / UIKit 应用，最低 iOS 17，当前地图为官方高德 iOS SDK。复用 MapAnNai Plus 的地点、旅行、每日行程和链路 API；本地相关源码在 `../mapannai-public`。
 - 修改前阅读 README.md、docs/development.md、env.example 与相关源码，保留用户未提交修改。不输出 API token、Key 或预签名 URL。
 - 不修改或部署 Web 项目，不操作生产数据，除非用户明确要求。真实读写验证使用独立测试后端。
-- README 面向产品使用者，介绍功能及上手流程，不堆积版本日志、测试流水账或代理指令。构建说明放 docs/development.md，env.example 仅说明配置；本文件只供代理使用，不在面向用户的文档中引用。
+- README.md 使用英文，README.zh.md 使用中文，顶部互链，功能及安装说明同步维护。README 面向产品使用者，介绍功能及上手流程，不堆积版本日志、测试流水账或代理指令。构建说明放 docs/development.md，env.example 仅说明配置；本文件只供代理使用，不在面向用户的文档中引用。
 - 功能或约定变化时修改相应文档的现行描述，不追加互相矛盾的历史规则。修改 project.yml 后运行 xcodegen generate。
 - 用户已授权将本轮 UI 安装到 Hibiki / Hikari，直接进行真机体验测试。适当运行单元/交互测试、真机目标无签名编译、git diff --check；流畅度结论需要真机体验或 Instruments 证据。
 

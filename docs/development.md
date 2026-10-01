@@ -80,7 +80,7 @@ xcodebuild -project MapAnNai.xcodeproj -scheme MapAnNai \
 
 服务请求测试使用 mock；真实读写验证使用独立测试后端。地图性能需通过设备体验或 Instruments 采样确认，不能用编译和模拟器测试结果代替。
 
-产品功能见 [README](../README.md)。
+产品功能见 [中文 README](../README.zh.md) / [English README](../README.md)。
 
 ## unsigned IPA 与自动发布
 
