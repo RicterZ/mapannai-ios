@@ -64,30 +64,13 @@ struct HomeView: View {
             if aiPresented && !sidebar {
                 AIPlannerView(planner: aiPlanner, store: store)
             }
-            VStack(spacing: 0) {
-                if !sidebar {
-                    ZStack {
-                        if compactNavigationVisible {
-                            compactDateNavigation.transition(.opacity)
-                        }
-                    }
-                        .padding(.horizontal, 16)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, compactNavigationVisible ? 4 : 0)
-                        .frame(height: compactNavigationVisible ? 48 : 0)
-                        .opacity(compactNavigationVisible ? 1 : 0)
-                        .clipped()
-                        .allowsHitTesting(compactNavigationVisible)
-                        .accessibilityHidden(!compactNavigationVisible)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: compactNavigationVisible)
-                }
-                journeyNavigation(sidebar: sidebar)
-                    .padding(.top, !sidebar && compactNavigationVisible ? -12 : 0)
-                    .offset(y: !sidebar && sheetDetent == .compact ? -11 : 0)
+            journeyNavigation(sidebar: sidebar)
+                .opacity(!store.placeSearchPresented && !aiPresented && (sidebar || !compactNavigationVisible) ? 1 : 0)
+                .allowsHitTesting(!store.placeSearchPresented && !aiPresented && (sidebar || !compactNavigationVisible))
+                .accessibilityHidden(store.placeSearchPresented || aiPresented || (!sidebar && compactNavigationVisible))
+            if !sidebar && compactNavigationVisible {
+                compactJourneyControls
             }
-                .opacity(!store.placeSearchPresented && !aiPresented ? 1 : 0)
-                .allowsHitTesting(!store.placeSearchPresented && !aiPresented)
-                .accessibilityHidden(store.placeSearchPresented || aiPresented)
             if store.placeSearchPresented && !aiPresented {
                 DayMarkerPicker(store: store, day: store.addPlaceDay,
                     onInput: { if !sidebar { sheetDetent = .full } },
@@ -182,7 +165,7 @@ struct HomeView: View {
         .onChange(of: settings.mode) { _, _ in store.rebuildRoutes() }
     }
 
-    private var compactJourneyHeight: CGFloat { store.trip == nil ? 68 : 96 }
+    private var compactJourneyHeight: CGFloat { store.trip == nil ? 68 : 80 }
     private var compactNavigationVisible: Bool {
         sheetDetent == .compact && store.trip != nil && !store.placeSearchPresented && !aiPresented
     }
@@ -444,6 +427,37 @@ struct HomeView: View {
 
         }
         .onChange(of: store.tripID) { _, _ in showDates = false }
+    }
+
+    private var compactJourneyControls: some View {
+        HStack(spacing: 4) {
+            Button {
+                guard !journeyPath.isEmpty else { return }
+                withAnimation(reduceMotion ? nil : .default) { journeyPath.removeLast() }
+            } label: {
+                toolbarActionIcon("chevron.left").frame(width: 30, height: 30)
+            }.modifier(JourneyCircleButtonStyle())
+                .frame(width: 44, height: 44)
+                .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
+            VStack(spacing: 0) {
+                compactDateNavigation
+                Text(store.trip?.name ?? "旅途")
+                    .font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
+                    .accessibilityIdentifier("itinerary-panel-title")
+            }.frame(maxWidth: .infinity)
+            HStack(spacing: 0) {
+                Button { location.request { store.locating = UUID() } } label: {
+                    toolbarActionIcon("location").frame(width: 44, height: 44)
+                }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
+                Button { store.beginAddingPlace(to: store.day) } label: {
+                    toolbarActionIcon("magnifyingglass").frame(width: 44, height: 44)
+                }.accessibilityLabel("搜索地点").accessibilityIdentifier("itinerary-search")
+            }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("compact-journey-controls")
     }
 
     @ViewBuilder private var compactDateNavigation: some View {
