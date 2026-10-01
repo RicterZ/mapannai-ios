@@ -130,14 +130,9 @@ struct JourneyDaysContents<SearchContent: View>: View {
             }
         }
             .sheet(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
-            .alert("删除当天？", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
-                Button("取消", role: .cancel) {}
-                Button("删除", role: .destructive) {
-                    guard let day = deletion else { return }
-                    deletion = nil
-                    Task { await store.deleteDay(day, animated: !reduceMotion) }
-                }
-            } message: { Text("删除当天安排，保留地图地点。") }
+            .sheet(item: $deletion) { day in
+                DayDeletionView(store: store, day: day)
+            }
     }
     private func dayRow(_ day: TripDay, index: Int) -> some View {
         HStack(spacing: 12) {

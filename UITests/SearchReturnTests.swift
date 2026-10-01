@@ -1,6 +1,22 @@
 import XCTest
 
 final class SearchReturnTests: XCTestCase {
+    @MainActor func testCompactBackKeepsCapsuleAndReturnsToOverview() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
+        let panel = app.otherElements["phone-itinerary-panel"]
+        let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 550)))
+        XCTAssertTrue(app.buttons["date-selector"].waitForExistence(timeout: 5))
+        app.buttons["journey-back"].tap()
+        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 5))
+        app.buttons["journey-back"].tap()
+        XCTAssertTrue(app.buttons["compact-create-journey"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["itinerary-panel-title"].label, "我的旅途")
+        XCTAssertTrue(app.staticTexts["journey-overview-subtitle"].exists)
+        XCTAssertLessThan(panel.frame.height, 200)
+    }
+
     @MainActor func testOverviewCapsuleSubtitle() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))

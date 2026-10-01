@@ -49,8 +49,12 @@ final class JourneyEditingActionsTests: XCTestCase {
         XCTAssertTrue(day.waitForExistence(timeout: 5)); day.swipeLeft()
         let delete = app.buttons["删除"]
         XCTAssertTrue(delete.waitForExistence(timeout: 5)); delete.tap()
-        XCTAssertTrue(app.alerts["删除当天？"].waitForExistence(timeout: 5))
-        app.alerts["删除当天？"].buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["confirm-delete-day"].waitForExistence(timeout: 5))
+        let choice = app.cells.containing(.staticText, identifier: "delete-day-markers").firstMatch
+        XCTAssertFalse(choice.isSelected)
+        choice.tap()
+        XCTAssertTrue(choice.isSelected)
+        app.buttons["取消"].tap()
         let edit = app.buttons["journey-edit-trip"]
         let list = app.collectionViews["itinerary-marker-list"]
         if !edit.isHittable { list.swipeUp() }

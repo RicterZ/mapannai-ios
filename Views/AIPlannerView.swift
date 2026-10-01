@@ -115,7 +115,7 @@ struct AIPlannerView: View {
                     .padding(.trailing, 4)
                     .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
                     .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 0.5) }
-                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 2)
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 12)
                     .background(.regularMaterial)
                 }
             }

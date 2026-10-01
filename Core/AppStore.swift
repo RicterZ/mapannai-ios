@@ -235,16 +235,19 @@ import SwiftUI
             rebuildRoutes(preservingPlannedGeometry: true)
         }) { try await $0.mutate(Self.dayPath(day) + "/markers", method: "DELETE", body: ["markerId": markerID]) }
     }
-    func deleteDay(_ day: TripDay, animated: Bool = true) async {
-        guard let owner = trips.first(where: { $0.id == day.tripId }), owner.days.count > 1 else { return }
-        _ = await perform(onSuccess: { [self] in
+    @discardableResult
+    func deleteDay(_ day: TripDay, deleteExclusiveMarkers: Bool = false, animated: Bool = true) async -> Bool {
+        guard let owner = trips.first(where: { $0.id == day.tripId }), owner.days.count > 1 else {
+            errorMessage = "行程至少保留一天"; return false
+        }
+        return await perform(onSuccess: { [self] in
             guard let index = trips.firstIndex(where: { $0.id == day.tripId }) else { return }
             withAnimation(animated ? .easeInOut(duration: 0.22) : nil) {
                 trips[index].days.removeAll { $0.id == day.id }
                 if dayID == day.id { dayID = nil }
             }
             rebuildRoutes(preservingPlannedGeometry: true)
-        }) { try await $0.mutate(Self.dayPath(day), method: "DELETE") }
+        }) { try await $0.deleteDay(tripID: day.tripId, dayID: day.id, deleteExclusiveMarkers: deleteExclusiveMarkers) }
     }
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
         let changedDay = tripID != trip?.id || dayID != day?.id

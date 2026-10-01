@@ -237,10 +237,7 @@ struct DayContentsView<SearchContent: View>: View {
             Button("取消", role: .cancel) {}
             Button("保存") { Task { var copy = day; copy.title = title; _ = await store.updateDay(copy) } }
         }
-        .alert("删除当天？", isPresented: $deletingDay) {
-            Button("取消", role: .cancel) {}
-            Button("删除", role: .destructive) { Task { _ = await store.perform { try await $0.mutate(AppStore.dayPath(day), method: "DELETE") } } }
-        } message: { Text("将移除当天安排并整理剩余日期，地点仍保留在地图上。") }
+        .sheet(isPresented: $deletingDay) { DayDeletionView(store: store, day: day) }
         .alert("删除路线？", isPresented: Binding(get: { deletingChain != nil }, set: { if !$0 { deletingChain = nil } })) {
             Button("取消", role: .cancel) { deletingChain = nil }
             Button("删除", role: .destructive) { Task {

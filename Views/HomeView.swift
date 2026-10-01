@@ -75,6 +75,7 @@ struct HomeView: View {
                 .accessibilityHidden(store.placeSearchPresented || aiPresented || (!sidebar && compactNavigationVisible))
             if !sidebar && compactNavigationVisible {
                 compactJourneyControls
+                    .transition(.opacity)
             }
             if store.placeSearchPresented && !aiPresented {
                 DayMarkerPicker(store: store, day: store.addPlaceDay, compact: !sidebar && sheetDetent == .compact,
@@ -85,6 +86,8 @@ struct HomeView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: store.placeSearchPresented)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: compactNavigationVisible)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: compactJourneyHeight)
         .accessibilityElement(children: .contain)
             .accessibilityIdentifier(sidebar ? "sidebar-workspace" : "phone-itinerary-panel")
     }
@@ -126,12 +129,9 @@ struct HomeView: View {
         content
         .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
         .sheet(item: $editingTrip) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
-        .alert("删除当天？", isPresented: $deletingPanelDay) {
-            Button("取消", role: .cancel) {}
-            Button("删除", role: .destructive) {
-                Task { if let day = store.day { _ = await store.perform { try await $0.mutate(AppStore.dayPath(day), method: "DELETE") } } }
-            }
-        } message: { Text("删除当天安排，保留地图地点。") }
+        .sheet(isPresented: $deletingPanelDay) {
+            if let day = store.day { DayDeletionView(store: store, day: day) }
+        }
         .alert("日期标题", isPresented: $editingDayTitle) {
             TextField("标题", text: $dayTitle)
             Button("取消", role: .cancel) {}
@@ -485,6 +485,7 @@ struct HomeView: View {
                 overviewToggleButton(sidebar: false)
             }
             }.frame(width: 88, alignment: .leading)
+            ZStack {
             VStack(spacing: 0) {
                 compactDateNavigation
                 Text(store.trip?.name ?? "我的旅途")
@@ -498,6 +499,9 @@ struct HomeView: View {
                         .lineLimit(1).minimumScaleFactor(0.65).multilineTextAlignment(.center)
                         .padding(.top, 3).accessibilityIdentifier("journey-overview-subtitle")
                 }
+            }
+            .id("\(store.tripID ?? "overview")/\(store.dayID ?? "trip")")
+            .transition(.opacity)
             }.frame(maxWidth: .infinity)
             HStack(spacing: 0) {
                 Button { location.request { store.locating = UUID() } } label: {
@@ -508,6 +512,8 @@ struct HomeView: View {
                 }.accessibilityLabel("搜索地点").accessibilityIdentifier("itinerary-search")
             }.buttonStyle(.plain).foregroundStyle(Theme.accent)
         }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: store.tripID)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: store.dayID)
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
