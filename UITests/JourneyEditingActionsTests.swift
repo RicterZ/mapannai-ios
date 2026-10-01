@@ -9,6 +9,20 @@ final class JourneyEditingActionsTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let viewRoute = app.buttons["route-view-0"]
         XCTAssertTrue(viewRoute.waitForExistence(timeout: 10))
+        let toggle = app.buttons["route-toggle-0"]
+        let firstPlace = app.buttons["route-0-marker-demo-0"]
+        XCTAssertTrue(firstPlace.exists)
+        let headerSettled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            toggle.frame.width >= 43.9
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [headerSettled], timeout: 5), .completed)
+        XCTAssertLessThanOrEqual(viewRoute.frame.maxX, toggle.frame.minX + 1)
+        toggle.tap()
+        XCTAssertTrue(firstPlace.waitForNonExistence(timeout: 3))
+        viewRoute.tap()
+        XCTAssertFalse(firstPlace.exists, "Viewing a collapsed route must not expand it")
+        toggle.tap()
+        XCTAssertTrue(firstPlace.waitForExistence(timeout: 3))
         if !isPad {
             let bar = app.navigationBars["第1天"]
             let handle = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))

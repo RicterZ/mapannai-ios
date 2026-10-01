@@ -129,28 +129,49 @@ struct DayContentsView<SearchContent: View>: View {
 
             ForEach(Array(day.chains.enumerated()), id: \.offset) { index, chain in
                 Section {
-                    DisclosureGroup(isExpanded: Binding(
-                        get: { !collapsedRoutes.contains(index) },
-                        set: { if $0 { collapsedRoutes.remove(index) } else { collapsedRoutes.insert(index) } }
-                    )) {} label: {
-                        HStack {
-                            Label {
-                                Text("路线 \(index + 1)").foregroundStyle(.primary)
-                            } icon: {
-                                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
-                                    .foregroundStyle(Theme.color(day.colorIndex ?? 0))
-                            }
-                            Spacer(minLength: 8)
-                            Text("\(chain.count)个地点").font(.subheadline).foregroundStyle(.secondary)
-                        }.font(.body).accessibilityIdentifier("route-toggle-\(index)")
-                    }
-                    if !collapsedRoutes.contains(index) {
+                    HStack(spacing: 0) {
                         Button {
                             onViewRoute()
                             store.fly(chain.compactMap { id in store.markers.first(where: { $0.id == id })?.coordinates })
-                        } label: { Label("查看路线", systemImage: "map").fullRowActionLabel() }
-                            .buttonStyle(.plain).foregroundStyle(Theme.accent)
-                            .accessibilityIdentifier("route-view-\(index)")
+                        } label: {
+                            HStack {
+                                Label {
+                                    Text("路线 \(index + 1)").foregroundStyle(.primary)
+                                } icon: {
+                                    Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                                        .foregroundStyle(Theme.color(day.colorIndex ?? 0))
+                                }
+                                Spacer(minLength: 8)
+                                Text("\(chain.count)个地点").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("route-view-\(index)")
+                        .accessibilityHint("在地图上查看路线")
+                        Button {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                if collapsedRoutes.contains(index) { collapsedRoutes.remove(index) }
+                                else { collapsedRoutes.insert(index) }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.right")
+                                .font(.subheadline.weight(.semibold))
+                                .rotationEffect(.degrees(collapsedRoutes.contains(index) ? 0 : 90))
+                                .frame(width: 48, height: 48)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize(horizontal: true, vertical: true)
+                        .foregroundStyle(Theme.accent)
+                        .accessibilityLabel("\(collapsedRoutes.contains(index) ? "展开" : "收起")路线 \(index + 1)")
+                        .accessibilityValue(collapsedRoutes.contains(index) ? "已收起" : "已展开")
+                        .accessibilityIdentifier("route-toggle-\(index)")
+                    }
+                    .font(.body)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 8))
+                    if !collapsedRoutes.contains(index) {
                         ForEach(Array(chain.enumerated()), id: \.element) { position, id in
                             if let marker = store.markers.first(where: { $0.id == id }) {
                                 Button { store.focus(marker) } label: {

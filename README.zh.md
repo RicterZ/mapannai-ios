@@ -27,6 +27,8 @@ MapAnNai iOS 是 MapAnNai Plus 的原生 iPhone 和 iPad 客户端。你可以�
 
 点击地图右上角的对话图标可使用 AI 助手规划行程，先在设置中配置模型 API。
 
+点击每日行程中的路线标题可在地图查看整条路线，右侧箭头独立展开或收起地点列表。
+
 ## 安装到 iPhone / iPad
 
 需要 **iOS / iPadOS 17 或更新版本**。Release 提供未签名的 `.ipa`，可通过 **AltStore Classic** 签名安装。
