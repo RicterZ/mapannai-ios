@@ -5,7 +5,7 @@ import SwiftUI
     let configurationSource: any MapConfigurationSource
     private let servicesOverride: (any MapServices)?
     @Published private(set) var mapConfiguration: MapConfiguration = .current
-    let routeCache = RouteCache()
+    let routeCache: RouteCache
     private let routeProcessing = RouteProcessing()
     let markerRepository: MarkerRepository
     @Published var markers: [Marker] = []
@@ -53,7 +53,8 @@ import SwiftUI
         guard tripID != nil else { return markers }
         let ids = Set(visibleDays.flatMap(\.markerIds)); return markers.filter { ids.contains($0.id) }
     }
-    init(settings: Settings, demo: Bool = ProcessInfo.processInfo.arguments.contains("--demo"), configurationSource: (any MapConfigurationSource)? = nil, services: (any MapServices)? = nil, markerRepository: MarkerRepository = MarkerRepository()) {
+    init(settings: Settings, demo: Bool = ProcessInfo.processInfo.arguments.contains("--demo"), configurationSource: (any MapConfigurationSource)? = nil, services: (any MapServices)? = nil, markerRepository: MarkerRepository = MarkerRepository(), routeCache: RouteCache = RouteCache()) {
+        self.routeCache = routeCache
         self.markerRepository = markerRepository
         self.settings = settings; self.demo = demo; self.servicesOverride = services; self.configurationSource = configurationSource ?? FixedMapConfigurationSource()
         if demo { loadDemo() }
@@ -266,10 +267,16 @@ import SwiftUI
         routeError = nil; routeProgress = ""
         routeTask = Task {
             defer { if self.routeGeneration == generation { routeProgress = "" } }
-            guard let segments = try? await routeProcessing.build(days: days, markers: snapshotMarkers,
+            guard var segments = try? await routeProcessing.build(days: days, markers: snapshotMarkers,
                                                                   selectedTrip: selectedTrip, previous: previous,
                                                                   preserve: preservingPlannedGeometry),
                   !Task.isCancelled, self.routeGeneration == generation else { return }
+            if planning {
+                guard let restored = try? await routeProcessing.restoringCachedGeometry(segments, cache: routeCache,
+                            mode: mode, provider: provider, server: server),
+                      !Task.isCancelled, self.routeGeneration == generation else { return }
+                segments = restored
+            }
             var transaction = Transaction(); transaction.disablesAnimations = true
             withTransaction(transaction) { displayRoutes = segments.map(\.display) }
             guard planning, !segments.isEmpty else { return }
@@ -292,9 +299,11 @@ import SwiftUI
                     guard !Task.isCancelled, self.routeGeneration == generation else { return }
                     if let index = displayRoutes.firstIndex(where: { $0.id == display.id }) {
                         var updated = displayRoutes[index]
-                        updated.points = points; updated.isPlanned = !route.isFallback
-                        var transaction = Transaction(); transaction.disablesAnimations = true
-                        withTransaction(transaction) { displayRoutes[index] = updated }
+                        if updated.points != points || updated.isPlanned != !route.isFallback {
+                            updated.points = points; updated.isPlanned = !route.isFallback
+                            var transaction = Transaction(); transaction.disablesAnimations = true
+                            withTransaction(transaction) { displayRoutes[index] = updated }
+                        }
                     }
                 } catch {
                     if Task.isCancelled || self.routeGeneration != generation { return }

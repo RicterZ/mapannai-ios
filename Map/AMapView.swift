@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import QuartzCore
 
 #if !targetEnvironment(simulator)
 struct AMapNativeRenderer: UIViewRepresentable {
@@ -17,6 +18,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
     }
     func updateUIView(_ map: MAMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: MAMapView, coordinator: Coordinator) {
+        coordinator.cancelRouteUpdates()
         map.delegate = nil; map.showsUserLocation = false
     }
     final class Pin: MAPointAnnotation {
@@ -48,10 +50,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
         var searchPins: [String: SearchPin] = [:]
         var lines: [String: (MAPolyline, MAPolyline)] = [:]
         var overlayStyle: [ObjectIdentifier: (UIColor, Bool)] = [:]
-        var lastRoutes: [String: [Coordinate]] = [:]
+        var lastRoutes: [String: RouteOverlayGeometry] = [:]
         private let routeProcessing = RouteProcessing()
-        private var coordinateTasks: [String: Task<Void, Never>] = [:]
-        private var pendingCoordinates: [String: [Coordinate]] = [:]
+        private var coordinateTask: Task<Void, Never>?
+        private var desiredRoutes: [RouteOverlayGeometry] = []
+        private var routeRevision = UUID()
         var lastCamera: UUID?
         var lastLocate: UUID?
         var routesVisible = true
@@ -84,35 +87,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 if let pin = searchPins[place.id], let view = map.view(for: pin) { styleSearch(view, pin: pin) }
             }
             updateZoomPresentation(map)
-            let routeIDs = Set(store.displayRoutes.map(\.id))
-            for id in Array(lines.keys) where !routeIDs.contains(id) {
-                if let (white, color) = lines.removeValue(forKey: id) {
-                    map.removeOverlays([white, color]); overlayStyle.removeValue(forKey: ObjectIdentifier(white)); overlayStyle.removeValue(forKey: ObjectIdentifier(color))
-                }; lastRoutes.removeValue(forKey: id)
-            }
-            for id in Array(coordinateTasks.keys) where !routeIDs.contains(id) {
-                coordinateTasks.removeValue(forKey: id)?.cancel()
-                pendingCoordinates.removeValue(forKey: id)
-            }
-            for route in store.displayRoutes {
-                if lines[route.id] != nil && lastRoutes[route.id] == route.points {
-                    coordinateTasks.removeValue(forKey: route.id)?.cancel()
-                    pendingCoordinates.removeValue(forKey: route.id)
-                    continue
-                }
-                if pendingCoordinates[route.id] == route.points { continue }
-                coordinateTasks[route.id]?.cancel()
-                pendingCoordinates[route.id] = route.points
-                let processor = routeProcessing
-                coordinateTasks[route.id] = Task { [weak self, weak map] in
-                    guard let points = try? await processor.amapCoordinates(route.points), !Task.isCancelled,
-                          let self, let map, self.pendingCoordinates[route.id] == route.points,
-                          self.store.displayRoutes.contains(where: { $0.id == route.id && $0.points == route.points }) else { return }
-                    self.applyRoute(route, coordinates: points, map: map)
-                    self.pendingCoordinates.removeValue(forKey: route.id)
-                    self.coordinateTasks.removeValue(forKey: route.id)
-                }
-            }
+            updateRoutes(map)
             if let command = store.camera, lastCamera != command.id {
                 lastCamera = command.id
                 let coords = command.points.map { p -> CLLocationCoordinate2D in
@@ -158,22 +133,73 @@ struct AMapNativeRenderer: UIViewRepresentable {
             style(view, pin: pin, map: mapView)
             return view
         }
-        private func applyRoute(_ route: DisplayRoute, coordinates points: [Coordinate], map: MAMapView) {
-            // UIKit/SDK mutation remains on MainActor; conversion already ran off it.
-            var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        func cancelRouteUpdates() {
+            routeRevision = UUID(); coordinateTask?.cancel(); coordinateTask = nil
+        }
+
+        private func updateRoutes(_ map: MAMapView) {
+            let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
+            guard snapshot != desiredRoutes else { return }
+            desiredRoutes = snapshot
+            cancelRouteUpdates()
+            let revision = routeRevision
+            let changed = snapshot.filter { lastRoutes[$0.id] != $0 }
+            let processor = routeProcessing
+            coordinateTask = Task { [weak self, weak map] in
+                guard let prepared = try? await processor.amapSnapshot(changed), !Task.isCancelled,
+                      let self, let map, self.routeRevision == revision,
+                      self.store.displayRoutes.map(RouteOverlayGeometry.init) == snapshot else { return }
+                // Keep the old complete picture while converting. Commit removals, new
+                // geometry, both strokes and renderer invalidation in one UI turn.
+                CATransaction.begin(); CATransaction.setDisableActions(true)
+                UIView.performWithoutAnimation {
+                    let wanted = Set(snapshot.map(\.id))
+                    var removed: [MAPolyline] = []
+                    for id in Array(self.lines.keys) where !wanted.contains(id) {
+                        if let (white, colored) = self.lines.removeValue(forKey: id) {
+                            removed += [white, colored]
+                            self.overlayStyle.removeValue(forKey: ObjectIdentifier(white))
+                            self.overlayStyle.removeValue(forKey: ObjectIdentifier(colored))
+                        }
+                        self.lastRoutes.removeValue(forKey: id)
+                    }
+                    if !removed.isEmpty { map.removeOverlays(removed) }
+                    var added: [MAPolyline] = []
+                    for route in prepared { added += self.applyRoute(route, map: map) }
+                    if self.routesVisible && !added.isEmpty { map.addOverlays(added) }
+                }
+                CATransaction.commit()
+                self.coordinateTask = nil
+            }
+        }
+
+        private func applyRoute(_ prepared: PreparedRouteOverlay, map: MAMapView) -> [MAPolyline] {
+            let route = prepared.geometry
+            var coordinates = prepared.coordinates.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            guard coordinates.count > 1 else { return [] }
             let tint = UIColor(Theme.color(route.colorIndex))
+            var added: [MAPolyline] = []
             if let (white, colored) = lines[route.id] {
-                white.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
-                colored.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
+                if lastRoutes[route.id]?.points != route.points {
+                    white.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
+                    colored.setPolylineWithCoordinates(&coordinates, count: coordinates.count)
+                }
+                overlayStyle[ObjectIdentifier(colored)] = (tint, false)
+                // The SDK requires renderer invalidation when its overlay model changes.
+                map.renderer(for: white)?.setNeedsUpdate()
+                if let renderer = map.renderer(for: colored) as? MAPolylineRenderer {
+                    renderer.strokeColor = tint; renderer.setNeedsUpdate()
+                }
             } else {
-                guard coordinates.count > 1, let white = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)),
-                      let colored = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)) else { return }
+                guard let white = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)),
+                      let colored = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)) else { return [] }
                 overlayStyle[ObjectIdentifier(white)] = (.white, true)
                 overlayStyle[ObjectIdentifier(colored)] = (tint, false)
                 lines[route.id] = (white, colored)
-                if routesVisible { map.addOverlays([white, colored]) }
+                added = [white, colored]
             }
-            lastRoutes[route.id] = route.points
+            lastRoutes[route.id] = route
+            return added
         }
         private func styleSearch(_ view: MAAnnotationView, pin: SearchPin) {
             let selected = store.selectedSearchPlaceID == pin.place.id

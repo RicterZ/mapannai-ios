@@ -25,7 +25,8 @@ actor RouteProcessing {
                                                points: RouteGeometry.curve(a.coordinates, b.coordinates), isPlanned: false)
                     if preserve, let old = oldRoutes[display.id], old.isPlanned,
                        old.points.first == a.coordinates, old.points.last == b.coordinates {
-                        display = old
+                        display.points = old.points
+                        display.isPlanned = true
                     }
                     segments.append(RouteSegment(display: display, origin: a.coordinates, destination: b.coordinates))
                 }
@@ -33,6 +34,24 @@ actor RouteProcessing {
         }
         return segments
     }
+    /// Hydrate every cached segment before exposing a new selection to the map.
+    /// Previously hidden days must not pass through an unrelated fallback curve.
+    func restoringCachedGeometry(_ segments: [RouteSegment], cache: RouteCache,
+                                 mode: TravelMode, provider: MapServiceProvider, server: String) async throws -> [RouteSegment] {
+        var restored = segments
+        for index in restored.indices {
+            try Task.checkCancellation()
+            let segment = restored[index]
+            if segment.display.isPlanned { continue }
+            let key = RouteCache.key(segment.origin, segment.destination, mode: mode, provider: provider, server: server)
+            guard let cached = await cache.get(key) else { continue }
+            restored[index].display.points = try displayPoints(cached, origin: segment.origin, destination: segment.destination)
+            restored[index].display.isPlanned = !cached.isFallback
+        }
+        try Task.checkCancellation()
+        return restored
+    }
+
     func displayPoints(_ route: PlannedRoute, origin: Coordinate, destination: Coordinate) throws -> [Coordinate] {
         assert(!Thread.isMainThread, "Route smoothing must stay off the UI thread")
         try Task.checkCancellation()
@@ -43,6 +62,16 @@ actor RouteProcessing {
         try Task.checkCancellation()
         return result
     }
+    func amapSnapshot(_ routes: [RouteOverlayGeometry]) throws -> [PreparedRouteOverlay] {
+        var prepared: [PreparedRouteOverlay] = []
+        for route in routes {
+            try Task.checkCancellation()
+            prepared.append(PreparedRouteOverlay(geometry: route, coordinates: try amapCoordinates(route.points)))
+        }
+        try Task.checkCancellation()
+        return prepared
+    }
+
     func amapCoordinates(_ points: [Coordinate]) throws -> [Coordinate] {
         assert(!Thread.isMainThread, "Bulk coordinate conversion must stay off the UI thread")
         try Task.checkCancellation()
