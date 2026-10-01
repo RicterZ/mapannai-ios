@@ -28,7 +28,14 @@ jobs:
           xcrun swift --version
       - name: Install XcodeGen
         run: brew list xcodegen || brew install xcodegen
+      - name: Cache pinned map SDK
+        id: map-sdk
+        uses: actions/cache@v4
+        with:
+          path: Vendor
+          key: amap-sdk-${{ runner.os }}-${{ hashFiles('Scripts/fetch-sdk.py') }}
       - name: Download official map SDK
+        if: steps.map-sdk.outputs.cache-hit != 'true'
         run: python3 Scripts/fetch-sdk.py
       - name: Configure native map key
         env:
