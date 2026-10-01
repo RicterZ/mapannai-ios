@@ -34,11 +34,13 @@ struct AIConfigurationView: View {
 struct AIPlannerView: View {
     @ObservedObject var planner: AIPlannerStore
     @ObservedObject var store: AppStore
+    var onOpenSettings: () -> Void = {}
     @State private var text = ""
     @State private var deleteConfirmation = false
     @State private var resetConfirmation = false
     @FocusState private var inputFocused: Bool
-    private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && planner.ready }
+    private var configurationReady: Bool { (try? planner.configuration.validated()) != nil }
+    private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && planner.ready && configurationReady }
 
     private func composerIcon(_ symbol: String, active: Bool, stopping: Bool = false) -> some View {
         Image(systemName: symbol)
@@ -55,6 +57,14 @@ struct AIPlannerView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
+                        if !configurationReady {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("请先配置 AI API").font(.headline)
+                                Text("在设置中填写 API 地址和模型后，即可开始规划。").font(.subheadline).foregroundStyle(.secondary)
+                                Button("前往设置", action: onOpenSettings)
+                                    .buttonStyle(.bordered).accessibilityIdentifier("ai-open-settings")
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         if !planner.ready {
                             Text(planner.storageError ?? "正在读取会话…").foregroundStyle(.secondary)
                             if planner.storageError != nil {

@@ -2,6 +2,31 @@ import XCTest
 import UIKit
 
 final class AIPlannerUITests: XCTestCase {
+    @MainActor func testPadEntryToggleAndSettingsGuidance() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "iPad sidebar")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let entry = app.buttons["open-ai-planner"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        entry.tap()
+        XCTAssertTrue(app.textFields["ai-message-input"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["close-ai-planner"].exists)
+        XCTAssertTrue(app.buttons["ai-open-settings"].exists)
+        app.buttons["ai-open-settings"].tap()
+        let config = app.buttons["ai-configuration-link"]
+        if !config.isHittable { app.collectionViews.firstMatch.swipeUp() }
+        XCTAssertTrue(config.waitForExistence(timeout: 5))
+        config.tap()
+        XCTAssertTrue(app.textFields["ai-api-url"].waitForExistence(timeout: 5))
+        app.terminate(); app.launch()
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        entry.tap()
+        XCTAssertTrue(app.textFields["ai-message-input"].waitForExistence(timeout: 3))
+        entry.tap()
+        XCTAssertTrue(app.otherElements["landscape-itinerary-sidebar"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["ai-message-input"].exists)
+    }
     @MainActor func testSwipeClosesAssistantAndRestoresJourney() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "Phone system sheet")
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()

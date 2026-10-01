@@ -39,7 +39,7 @@ struct HomeView: View {
                 .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0; if !$0 && aiPresented { aiPlanner.close() } }), onDismiss: { nativeJourneyPresented = true }) {
                     modalContent(panelWorkspace(sidebar: false))
                         .presentationDetents(!aiPresented ? [.height(compactJourneyHeight), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
-                        .presentationDragIndicator(.visible)
+                        .presentationDragIndicator(aiPresented && UIDevice.current.userInterfaceIdiom == .pad ? .hidden : .visible)
                         .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
                         .presentationBackgroundInteraction(.enabled)
                         .presentationContentInteraction(.resizes)
@@ -51,10 +51,13 @@ struct HomeView: View {
                     if ProcessInfo.processInfo.arguments.contains("--ai-planner-demo") { aiPlanner.presented = true }
                 }
                 .onReceive(aiPlanner.$presented.removeDuplicates()) { open in
-                    aiPresented = open
-                    guard !sidebar else { return }
-                    if open { aiReturnDetent = sheetDetent; sheetDetent = .half }
-                    else if let original = aiReturnDetent { sheetDetent = original; aiReturnDetent = nil }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+                        aiPresented = open
+                        if !sidebar {
+                            if open { aiReturnDetent = sheetDetent; sheetDetent = .half }
+                            else if let original = aiReturnDetent { sheetDetent = original; aiReturnDetent = nil }
+                        }
+                    }
                 }
                 .onChange(of: sidebar) { _, _ in nativeJourneyPresented = true }
                 .onDisappear { aiPlanner.close() }
@@ -64,7 +67,7 @@ struct HomeView: View {
     @ViewBuilder private func panelWorkspace(sidebar: Bool) -> some View {
         ZStack {
             if aiPresented && !sidebar {
-                AIPlannerView(planner: aiPlanner, store: store)
+                AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { showSettings = true })
             }
             journeyNavigation(sidebar: sidebar)
                 .opacity(!store.placeSearchPresented && !aiPresented && (sidebar || !compactNavigationVisible) ? 1 : 0)
@@ -395,26 +398,23 @@ struct HomeView: View {
                 .transaction { $0.animation = nil; $0.disablesAnimations = true }
                 .ignoresSafeArea()
             if aiPresented && layout.usesSidebar {
-                AIPlannerView(planner: aiPlanner, store: store)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        Capsule().fill(.secondary).frame(width: 36, height: 5)
-                            .frame(maxWidth: .infinity).frame(height: 24).contentShape(Rectangle())
-                            .gesture(DragGesture().onEnded { if $0.translation.height > 50 { aiPlanner.close() } })
-                            .accessibilityLabel("关闭AI助手").accessibilityAddTraits(.isButton)
-                            .accessibilityAction { aiPlanner.close() }
-                    }
+                AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { showSettings = true })
+                    .padding(.top, 60)
                     .frame(width: min(420, layout.width * 0.46), height: layout.height)
                     .background(.regularMaterial)
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(2)
             }
-            if AIPlannerStore.entryEnabled && !aiPresented {
-                Button { aiPlanner.presented = true } label: {
+            if AIPlannerStore.entryEnabled && (!aiPresented || layout.usesSidebar) {
+                Button { if aiPresented { aiPlanner.close() } else { aiPlanner.presented = true } } label: {
                     Image(systemName: "bubble.left").font(.system(size: 20, weight: .regular)).foregroundStyle(.primary).frame(width: 32, height: 32)
-                }.modifier(AIEntryButtonStyle()).accessibilityLabel("AI 助手")
+                }.modifier(AIEntryButtonStyle()).accessibilityLabel(aiPresented ? "收起AI助手" : "AI 助手")
+                    .zIndex(3)
                     .accessibilityIdentifier("open-ai-planner")
                     .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16).padding(.top, 8)
             }
-            if layout.usesSidebar && !aiPresented {
+            if layout.usesSidebar {
                 HStack(spacing: 0) {
                     if expanded {
                         workspacePanel(topInset: topInset, bottomInset: bottomInset, leftInset: leftInset)
@@ -432,6 +432,9 @@ struct HomeView: View {
                     }
                     Spacer(minLength: 0)
                 }.frame(width: layout.width, height: layout.height, alignment: .topLeading)
+                    .opacity(aiPresented ? 0 : 1)
+                    .allowsHitTesting(!aiPresented)
+                    .accessibilityHidden(aiPresented)
                 locationButton.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 20).padding(.bottom, 20)
             }
