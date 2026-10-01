@@ -264,6 +264,23 @@ final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 final class APIClientTests: XCTestCase {
+    func testTripDeletionOnlyOptsIntoExclusiveMarkersWhenSelected() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
+        let client = APIClient(baseURL: "https://example.invalid", token: "test-only", session: URLSession(configuration: config))
+        for includeMarkers in [false, true] {
+            MockURLProtocol.handler = { request in
+                XCTAssertEqual(request.httpMethod, "DELETE")
+                XCTAssertEqual(request.url?.query, includeMarkers ? "deleteExclusiveMarkers=true" : nil)
+                XCTAssertTrue(request.url!.absoluteString.contains("trip%2Fid"))
+                return (200, Data(#"{"success":true,"deletedMarkerIds":[]}"#.utf8))
+            }
+            try await client.deleteTrip(id: "trip/id", deleteExclusiveMarkers: includeMarkers)
+        }
+        MockURLProtocol.handler = { _ in (500, Data(#"{"error":"删除失败"}"#.utf8)) }
+        do { try await client.deleteTrip(id: "id", deleteExclusiveMarkers: true); XCTFail("Must preserve failure") }
+        catch { XCTAssertEqual(error.localizedDescription, "删除失败") }
+    }
+
     func testBearerTokenAndAPIPath() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
         let client = APIClient(baseURL: "https://example.invalid/map",token: "test-only",session: URLSession(configuration: config))

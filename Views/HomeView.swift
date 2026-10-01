@@ -181,7 +181,7 @@ struct HomeView: View {
         .onChange(of: settings.mode) { _, _ in store.rebuildRoutes() }
     }
 
-    private var compactJourneyHeight: CGFloat { store.trip == nil ? 68 : 80 }
+    private var compactJourneyHeight: CGFloat { 80 }
     private var compactNavigationVisible: Bool {
         sheetDetent == .compact && !store.placeSearchPresented && !aiPresented
     }
@@ -490,6 +490,12 @@ struct HomeView: View {
                 Text(store.trip?.name ?? "我的旅途")
                     .font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
                     .accessibilityIdentifier("itinerary-panel-title")
+                if store.trip == nil {
+                    Text("旅の目的地は、まだ見ぬ地平線の向こうに")
+                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.65).multilineTextAlignment(.center)
+                        .padding(.top, 3).accessibilityIdentifier("journey-overview-subtitle")
+                }
             }.frame(maxWidth: .infinity)
             HStack(spacing: 0) {
                 Button { location.request { store.locating = UUID() } } label: {

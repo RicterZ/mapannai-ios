@@ -36,13 +36,9 @@ struct TripLibraryView: View {
                 .refreshable { await store.refresh() }
                 .sheet(isPresented: $creating) { TripEditorView(store: store, trip: nil) }
                 .sheet(item: $editing) { TripEditorView(store: store, trip: $0) }
-                .alert("删除旅行？", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
-                    Button("取消", role: .cancel) { deletion = nil }
-                    Button("删除", role: .destructive) {
-                        guard let trip = deletion else { return }
-                        Task { _ = await store.perform { try await $0.mutate("trips/\(APIClient.id(trip.id))", method: "DELETE") }; deletion = nil }
-                    }
-                } message: { Text("将删除旅行及其每日安排，地点仍保留在地图上。") }
+            .sheet(item: $deletion) { trip in
+                TripDeletionView(store: store, trip: trip)
+            }
         }
     }
 }

@@ -63,13 +63,9 @@ struct JourneyOverviewContents<SearchContent: View, SettingsContent: View>: View
         }
             .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
             .sheet(item: $editing) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
-            .alert("删除旅行？", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
-                Button("取消", role: .cancel) {}
-                Button("删除", role: .destructive) {
-                    guard let trip = deletion else { return }
-                    Task { _ = await store.perform { try await $0.mutate("trips/\(APIClient.id(trip.id))", method: "DELETE") }; deletion = nil }
-                }
-            } message: { Text("删除旅行及每日安排，保留地图地点。") }
+            .sheet(item: $deletion) { trip in
+                TripDeletionView(store: store, trip: trip)
+            }
     }
     private func tripRow(_ trip: Trip) -> some View {
         HStack(spacing: 12) {

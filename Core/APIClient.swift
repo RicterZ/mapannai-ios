@@ -29,6 +29,10 @@ struct APIClient {
     nonisolated func mutate(_ path: String, method: String, body: [String: Any]? = nil) async throws {
         let _: IgnoredResponse = try await request(path, method: method, body: body)
     }
+    nonisolated func deleteTrip(id: String, deleteExclusiveMarkers: Bool) async throws {
+        let suffix = deleteExclusiveMarkers ? "?deleteExclusiveMarkers=true" : ""
+        try await mutate("trips/\(Self.id(id))" + suffix, method: "DELETE")
+    }
     static func id(_ id: String) -> String { id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id }
     nonisolated func uploadImage(_ data: Data) async throws -> String {
         struct SignedUpload: Decodable { var presignedUrl: String; var publicUrl: String }
