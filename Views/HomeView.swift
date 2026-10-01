@@ -95,7 +95,7 @@ struct HomeView: View {
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
                                    sheetHeight: sheetDetent == .compact ? compactJourneyHeight : sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
             let cameraInsets = aiPresented && layout.usesSidebar
-                ? MapViewportInsets(top: 50, left: 35, bottom: 70, right: min(420, proxy.size.width * 0.46) + 25)
+                ? MapViewportInsets(top: 50, left: 35, bottom: 70, right: min(420, Double(proxy.size.width) * 0.46) + 25)
                 : layout.insets
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
