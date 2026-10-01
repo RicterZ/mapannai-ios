@@ -23,6 +23,7 @@ import SwiftUI
     @Published var saving = false
     @Published var errorMessage: String?
     @Published var routeError: String?
+    @Published var routeSelectionRequest = UUID()
     @Published var routeCandidates: [DisplayRoute] = []
     @Published var displayRoutes: [DisplayRoute] = []
     @Published var routeProgress = ""
@@ -198,9 +199,9 @@ import SwiftUI
         }
     }
     func selectRoute(_ route: DisplayRoute) {
-        if dayID == route.dayID { return }
         guard let trip = trips.first(where: { $0.id == route.tripID }), let day = trip.days.first(where: { $0.id == route.dayID }) else { return }
-        select(trip: trip, day: day, focus: false)
+        if tripID != trip.id || dayID != day.id { select(trip: trip, day: day, focus: false) }
+        routeSelectionRequest = UUID()
     }
     func focus(_ marker: Marker) {
         guard selectedMarker?.id != marker.id else { return }

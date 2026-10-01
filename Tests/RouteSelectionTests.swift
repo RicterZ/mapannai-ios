@@ -1,0 +1,40 @@
+import XCTest
+@testable import MapAnNai
+
+final class RouteSelectionTests: XCTestCase {
+    private func route(_ id: String, day: String = "day", offset: Double = 0) -> DisplayRoute {
+        DisplayRoute(id: id, dayID: day, tripID: "trip", colorIndex: 0,
+            points: [Coordinate(latitude: offset, longitude: 0), Coordinate(latitude: offset, longitude: 100)], isPlanned: false)
+    }
+    func testHitUsesSamePathAndDeduplicatesDates() {
+        let routes = [route("a"), route("b"), route("c", day: "other", offset: 1)]
+        let candidates = RouteSelection.candidates(at: (50, 0), routes: routes) { ($0.longitude, $0.latitude) }
+        XCTAssertEqual(Set(candidates.map(\.dayID)), ["day", "other"])
+        XCTAssertTrue(RouteSelection.candidates(at: (50, 19), routes: [routes[0]]) { ($0.longitude, $0.latitude) }.isEmpty)
+    }
+    func testSweepRunsInRouteOrderAndCompletesAtLastPoint() {
+        let routes = [route("a"), route("b")]
+        XCTAssertEqual(RouteSelection.progress(0, route: routes[0], routes: routes), 0)
+        XCTAssertEqual(RouteSelection.progress(0.25, route: routes[0], routes: routes), 0.5, accuracy: 0.001)
+        XCTAssertEqual(RouteSelection.progress(0.25, route: routes[1], routes: routes), 0)
+        XCTAssertEqual(RouteSelection.progress(0.75, route: routes[0], routes: routes), 1)
+        XCTAssertEqual(RouteSelection.progress(0.75, route: routes[1], routes: routes), 0.5, accuracy: 0.001)
+        XCTAssertEqual(RouteSelection.progress(1, route: routes[1], routes: routes), 1)
+    }
+    @MainActor func testRouteClickSelectsDayPreservesCameraAndCanBeRepeated() async throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        await store.awaitRouteUpdates()
+        let route = try XCTUnwrap(store.displayRoutes.first)
+        let trip = try XCTUnwrap(store.trip)
+        store.select(trip: trip, focus: false); await store.awaitRouteUpdates()
+        let camera = store.camera?.id, first = store.routeSelectionRequest
+        store.selectRoute(route)
+        XCTAssertEqual(store.dayID, route.dayID)
+        XCTAssertEqual(store.camera?.id, camera)
+        XCTAssertNotEqual(store.routeSelectionRequest, first)
+        let second = store.routeSelectionRequest
+        store.selectRoute(route)
+        XCTAssertNotEqual(store.routeSelectionRequest, second)
+        XCTAssertEqual(store.camera?.id, camera)
+    }
+}

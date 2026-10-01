@@ -56,6 +56,10 @@ struct HomeView: View {
                     journeyAvailableHeight = size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
                 .onChange(of: layout.insets) { _, insets in store.mapViewportInsets = insets }
+                .onChange(of: store.routeSelectionRequest) { _, _ in
+                    showDates = false; expanded = true
+                    if !layout.usesSidebar { sheetDrag = 0; sheetDetent = .half }
+                }
                 .onChange(of: store.selectedMarker?.id) { _, markerID in
                     guard markerID != nil else { return }
                     showDates = false

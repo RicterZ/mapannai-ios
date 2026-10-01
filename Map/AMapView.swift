@@ -18,6 +18,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
     }
     func updateUIView(_ map: MAMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: MAMapView, coordinator: Coordinator) {
+        coordinator.stopSelectionAnimation()
         coordinator.cancelRouteUpdates()
         map.delegate = nil; map.showsUserLocation = false
     }
@@ -61,6 +62,12 @@ struct AMapNativeRenderer: UIViewRepresentable {
         var lastStyledCompact: Bool?
         var lastStyledSelection: String?
         var pinImages: [String: UIImage] = [:]
+        private var selectionDay: String?
+        private var selectionRequest: UUID?
+        private var selectionLink: CADisplayLink?
+        private var selectionStarted: CFTimeInterval = 0
+        private var selectionRoutes: [DisplayRoute] = []
+        private var sweepLines: [String: MAPolyline] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
             let wanted = Set(store.mapMarkers.map(\.id))
@@ -88,6 +95,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
             updateZoomPresentation(map)
             updateRoutes(map)
+            updateRouteSelection(map)
             if let command = store.camera, lastCamera != command.id {
                 lastCamera = command.id
                 let coords = command.points.map { p -> CLLocationCoordinate2D in
@@ -147,6 +155,69 @@ struct AMapNativeRenderer: UIViewRepresentable {
             style(view, pin: pin, map: mapView)
             return view
         }
+        func stopSelectionAnimation() {
+            selectionLink?.invalidate(); selectionLink = nil
+            if let map { map.removeOverlays(Array(sweepLines.values)) }
+            for line in sweepLines.values { overlayStyle.removeValue(forKey: ObjectIdentifier(line)) }
+            sweepLines.removeAll()
+        }
+
+        private func updateRouteSelection(_ map: MAMapView, geometryChanged: Bool = false) {
+            let day = store.dayID
+            let selected = store.displayRoutes.filter { $0.dayID == day && lastRoutes[$0.id]?.points == $0.points }
+            let changed = day != selectionDay || selectionRequest != store.routeSelectionRequest
+            guard changed || geometryChanged else { return }
+            let newGeometry = selected.map(RouteOverlayGeometry.init) != selectionRoutes.map(RouteOverlayGeometry.init)
+            selectionDay = day; selectionRequest = store.routeSelectionRequest
+            for (id, pair) in lines {
+                let active = selected.contains { $0.id == id }
+                let animate = active && !UIAccessibility.isReduceMotionEnabled && (changed || newGeometry)
+                (map.renderer(for: pair.0) as? MAPolylineRenderer)?.lineWidth = active && !animate ? 9 : 6
+                (map.renderer(for: pair.1) as? MAPolylineRenderer)?.lineWidth = active && !animate ? 6 : 3.5
+            }
+            guard changed || newGeometry else { return }
+            stopSelectionAnimation(); selectionRoutes = selected
+            guard routesVisible, !selected.isEmpty, !UIAccessibility.isReduceMotionEnabled else { return }
+            for route in selected {
+                guard let base = lines[route.id]?.1,
+                      let line = MAPolyline(points: base.points, count: base.pointCount) else { continue }
+                sweepLines[route.id] = line
+                overlayStyle[ObjectIdentifier(line)] = (.white, false)
+            }
+            map.addOverlays(Array(sweepLines.values))
+            for line in sweepLines.values {
+                if let renderer = map.renderer(for: line) as? MAPolylineRenderer {
+                    renderer.lineWidth = 2.5; renderer.showRangeEnabled = true
+                    renderer.showRange = MAPathShowRangeMake(0, 0)
+                }
+            }
+            selectionStarted = CACurrentMediaTime()
+            let link = CADisplayLink(target: self, selector: #selector(advanceSelection(_:)))
+            selectionLink = link; link.add(to: .main, forMode: .common)
+        }
+
+        @objc private func advanceSelection(_ link: CADisplayLink) {
+            guard let map else { stopSelectionAnimation(); return }
+            let elapsed = max(0, link.timestamp - selectionStarted)
+            let progress = min(1, elapsed / 1.4)
+            let growth = min(1, elapsed / 0.22)
+            let eased = growth * growth * (3 - 2 * growth)
+            for route in selectionRoutes {
+                if let pair = lines[route.id] {
+                    (map.renderer(for: pair.0) as? MAPolylineRenderer)?.lineWidth = 6 + 3 * eased
+                    (map.renderer(for: pair.1) as? MAPolylineRenderer)?.lineWidth = 3.5 + 2.5 * eased
+                }
+                guard let line = sweepLines[route.id], let renderer = map.renderer(for: line) as? MAPolylineRenderer else { continue }
+                let end = RouteSelection.progress(progress, route: route, routes: selectionRoutes)
+                let begin = RouteSelection.progress(max(0, progress - 0.13), route: route, routes: selectionRoutes)
+                let last = Float(max(0, Int(line.pointCount) - 1))
+                renderer.showRangeEnabled = true
+                renderer.showRange = MAPathShowRangeMake(Float(begin) * last, Float(end) * last)
+                renderer.setNeedsUpdate()
+            }
+            if progress >= 1 { stopSelectionAnimation() }
+        }
+
         private func withCameraAnimation(duration: TimeInterval, changes: () -> Void) {
             CATransaction.begin()
             CATransaction.setDisableActions(duration == 0)
@@ -193,6 +264,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 CATransaction.commit()
                 self.coordinateTask = nil
+                self.updateRouteSelection(map, geometryChanged: true)
             }
         }
 
@@ -303,6 +375,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let visible = !MapZoomPresentation.isCompact(Double(map.zoomLevel))
             guard visible != routesVisible else { return }
             routesVisible = visible
+            if !visible { stopSelectionAnimation() }
             let overlays = lines.values.flatMap { [$0.0, $0.1] }
             if visible { map.addOverlays(overlays) } else { map.removeOverlays(overlays) }
         }
@@ -323,7 +396,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
         func mapView(_ mapView: MAMapView!, rendererFor overlay: MAOverlay!) -> MAOverlayRenderer! {
             guard let line = overlay as? MAPolyline, let style = overlayStyle[ObjectIdentifier(line)] else { return nil }
             let renderer = MAPolylineRenderer(polyline: line)!
-            renderer.strokeColor = style.0; renderer.lineWidth = style.1 ? 6 : 3.5
+            renderer.strokeColor = style.0
+            let id = lines.first { $0.value.0 === line || $0.value.1 === line }?.key
+            let selected = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.dayID == store.dayID && store.dayID != nil
+            renderer.lineWidth = sweepLines.values.contains(where: { $0 === line }) ? 2.5 : style.1 ? (selected ? 9 : 6) : (selected ? 6 : 3.5)
             return renderer
         }
         func mapView(_ mapView: MAMapView!, didSelect view: MAAnnotationView!) {
@@ -339,17 +415,17 @@ struct AMapNativeRenderer: UIViewRepresentable {
         func mapView(_ mapView: MAMapView!, didSingleTappedAt coordinate: CLLocationCoordinate2D) {
             guard !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
             let tap = mapView.convert(coordinate, toPointTo: mapView)
-            let candidates = store.displayRoutes.map { route -> (DisplayRoute, Double) in
-                let path = route.points.map { point -> (Double, Double) in
-                    let p = Coordinates.gcj(point)
-                    let screen = mapView.convert(CLLocationCoordinate2D(latitude: p.latitude, longitude: p.longitude), toPointTo: mapView)
-                    return (screen.x, screen.y)
-                }
-                return (route, RouteGeometry.nearestDistance((tap.x, tap.y), to: path))
-            }.filter { $0.1 <= 14 }.sorted { $0.1 < $1.1 }
-            guard !candidates.isEmpty else { return }
-            let near = candidates.filter { $0.1 <= candidates[0].1 + 2 }
-            let unique = Dictionary(grouping: near, by: { $0.0.dayID }).values.compactMap { $0.first?.0 }.sorted { $0.dayID < $1.dayID }
+            // Annotation taps belong to place details, even where a route meets its endpoint.
+            if pins.values.contains(where: { pin in
+                let p = mapView.convert(pin.coordinate, toPointTo: mapView)
+                return hypot(p.x - tap.x, p.y - tap.y) <= 22
+            }) { return }
+            let rendered = store.displayRoutes.filter { lastRoutes[$0.id]?.points == $0.points }
+            let unique = RouteSelection.candidates(at: (tap.x, tap.y), routes: rendered) { point in
+                let p = Coordinates.gcj(point)
+                let screen = mapView.convert(CLLocationCoordinate2D(latitude: p.latitude, longitude: p.longitude), toPointTo: mapView)
+                return (screen.x, screen.y)
+            }
             if unique.count > 1 { store.routeCandidates = unique }
             else if let first = unique.first { store.selectRoute(first) }
         }
@@ -371,6 +447,8 @@ struct PreviewMap: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var previewZoom = ProcessInfo.processInfo.arguments.contains("--compact-map-demo") ? 9.0 : 13.0
     @GestureState private var magnification = 1.0
+    @State private var sweepStarted = Date()
+    @State private var sweeping = false
     private var zoom: Double { previewZoom + log2(max(0.01, magnification)) }
     func point(_ p: Coordinate, size: CGSize) -> CGPoint {
         let insets = store.mapViewportInsets
@@ -398,10 +476,28 @@ struct PreviewMap: View {
                         var path = Path(); for (index, p) in route.points.enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                         }
-                        context.stroke(path, with: .color(.white), style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        context.stroke(path, with: .color(.white), style: StrokeStyle(lineWidth: store.dayID == route.dayID ? 9 : 6, lineCap: .round))
+                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: store.dayID == route.dayID ? 6 : 3.5, lineCap: .round))
                     }
                 }
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !sweeping)) { timeline in
+                    Canvas { context, size in
+                        guard sweeping, !MapZoomPresentation.isCompact(zoom) else { return }
+                        let routes = store.displayRoutes.filter { $0.dayID == store.dayID }
+                        let progress = min(1, max(0, timeline.date.timeIntervalSince(sweepStarted) / 1.4))
+                        for route in routes {
+                            var path = Path()
+                            for (index, coordinate) in route.points.enumerated() {
+                                let p = point(coordinate, size: size)
+                                if index == 0 { path.move(to: p) } else { path.addLine(to: p) }
+                            }
+                            let begin = RouteSelection.progress(max(0, progress - 0.13), route: route, routes: routes)
+                            let end = RouteSelection.progress(progress, route: route, routes: routes)
+                            context.stroke(path.trimmedPath(from: begin, to: end), with: .color(.white),
+                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        }
+                    }
+                }.allowsHitTesting(false)
                 ForEach(store.mapMarkers) { marker in
                     Button { store.focus(marker) } label: {
                         MapMarkerCircle(icon: marker.icon, selected: store.selectedMarker?.id == marker.id,
@@ -426,6 +522,24 @@ struct PreviewMap: View {
                     .padding(6).background(.regularMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.bottom, store.mapViewportInsets.bottom+12).padding(.leading, store.mapViewportInsets.left+8)
             }
             .accessibilityElement(children: .contain).accessibilityIdentifier("preview-map-surface")
+            .task(id: "\(store.dayID ?? "")|\(store.routeSelectionRequest)|\(store.displayRoutes.count)") {
+                guard store.dayID != nil, !reduceMotion else { sweeping = false; return }
+                sweepStarted = Date(); sweeping = true
+                try? await Task.sleep(for: .milliseconds(1400))
+                if !Task.isCancelled { sweeping = false }
+            }
+            .simultaneousGesture(SpatialTapGesture().onEnded { value in
+                guard !MapZoomPresentation.isCompact(zoom) else { return }
+                if store.mapMarkers.contains(where: { marker in
+                    let p = point(marker.coordinates, size: proxy.size)
+                    return hypot(p.x - value.location.x, p.y - value.location.y) <= 22
+                }) { return }
+                let candidates = RouteSelection.candidates(at: (value.location.x, value.location.y), routes: store.displayRoutes) {
+                    let p = point($0, size: proxy.size); return (p.x, p.y)
+                }
+                if candidates.count > 1 { store.routeCandidates = candidates }
+                else if let route = candidates.first { store.selectRoute(route) }
+            })
             .simultaneousGesture(MagnifyGesture().updating($magnification) { value, state, _ in
                 state = value.magnification
             }.onEnded { value in
