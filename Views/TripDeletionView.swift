@@ -10,16 +10,28 @@ struct TripDeletionView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text("删除「\(trip.name)」及其每日行程？")
-                    Toggle("同时删除独占地点", isOn: $deleteExclusiveMarkers)
+            VStack(alignment: .leading, spacing: 16) {
+                Text("删除「\(trip.name)」及其每日行程？")
+                    .font(.body)
+                List(selection: Binding<Set<String>>(
+                    get: { deleteExclusiveMarkers ? ["places"] : [] },
+                    set: { deleteExclusiveMarkers = $0.contains("places") }
+                )) {
+                    Text("同时删除独占地点")
+                        .tag("places")
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                         .accessibilityIdentifier("delete-trip-markers")
-                } footer: {
-                    Text("关联多个旅行或多个日期的地点会保留。未开启时，保留全部地点。")
                 }
+                .environment(\.editMode, .constant(.active))
+                .listStyle(.plain)
+                .scrollDisabled(true)
+                .scrollContentBackground(.hidden)
+                .frame(height: 52)
+                Text("关联多个旅行或多个日期的地点会保留。不勾选则保留全部地点。")
+                    .font(.footnote).foregroundStyle(.secondary)
                 if let failure { Text(failure).foregroundStyle(.red) }
-                Section {
+                Group {
                     Button(role: .destructive) {
                         deleting = true
                         let includeMarkers = deleteExclusiveMarkers
@@ -37,9 +49,14 @@ struct TripDeletionView: View {
                             Spacer()
                             if deleting { ProgressView() }
                         }.contentShape(Rectangle())
-                    }.accessibilityIdentifier("confirm-delete-trip")
+                    }
+                    .buttonStyle(.borderedProminent).tint(.red)
+                    .accessibilityIdentifier("confirm-delete-trip")
                 }
-            }.disabled(deleting || store.saving)
+                Spacer(minLength: 0)
+            }
+                .padding(20)
+                .disabled(deleting || store.saving)
                 .navigationTitle("删除旅行").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -47,7 +64,7 @@ struct TripDeletionView: View {
                     }
                 }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.height(320), .medium])
         .interactiveDismissDisabled(deleting)
     }
 }

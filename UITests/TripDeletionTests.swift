@@ -10,12 +10,17 @@ final class TripDeletionTests: XCTestCase {
         if !row.isHittable { app.collectionViews.firstMatch.swipeUp() }
         row.press(forDuration: 1)
         app.buttons["删除旅行"].tap()
-        let toggle = app.switches["delete-trip-markers"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertEqual(toggle.value as? String, "0")
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        expectation(for: NSPredicate(format: "value == %@", "1"), evaluatedWith: toggle)
+        let option = app.staticTexts["delete-trip-markers"]
+        XCTAssertTrue(option.waitForExistence(timeout: 5))
+        let rowChoice = app.cells.containing(.staticText, identifier: "delete-trip-markers").firstMatch
+        XCTAssertFalse(rowChoice.isSelected)
+        rowChoice.tap()
+        expectation(for: NSPredicate(format: "selected == true"), evaluatedWith: rowChoice)
         waitForExpectations(timeout: 3)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Native trip deletion checkmark"
+        shot.lifetime = .keepAlways
+        add(shot)
         app.buttons["取消"].tap()
         XCTAssertFalse(app.buttons["confirm-delete-trip"].exists)
         XCTAssertTrue(row.exists)
