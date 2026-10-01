@@ -1,6 +1,20 @@
 import XCTest
 
 final class SearchReturnTests: XCTestCase {
+    @MainActor func testOverviewCapsuleSubtitle() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
+        app.buttons["journey-back"].tap()
+        app.buttons["journey-back"].tap()
+        app.buttons["close-journey"].tap()
+        XCTAssertTrue(app.staticTexts["旅の目的地は、まだ見ぬ地平線の向こうに"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["compact-create-journey"].exists)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "My Trips capsule with Japanese subtitle"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     @MainActor func testSearchReturnsToCompactAndExpandedJourney() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         XCTAssertTrue(app.buttons["itinerary-search"].waitForExistence(timeout: 10))
