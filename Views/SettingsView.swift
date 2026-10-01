@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: Settings
     @ObservedObject var store: AppStore
+    @ObservedObject var aiPlanner: AIPlannerStore
     @Environment(\.dismiss) private var dismiss
     @State private var url = ""
     @State private var token = ""
@@ -31,6 +32,10 @@ struct SettingsView: View {
                     TextField("https://map.example.com", text: $url).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("API token（可留空）", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
                 } header: { Text("MapAnNai 服务") } footer: { Text("可先留空服务地址，只开启原生地图。填写现有 Web 服务的根地址后，地点与旅行会和网页共享；token 保存在系统钥匙串。HTTP 可用于局域网开发，公网建议使用 HTTPS。") }
+                Section("AI 助手") {
+                    NavigationLink("AI API 配置") { AIConfigurationView(planner: aiPlanner) }
+                        .accessibilityIdentifier("ai-configuration-link")
+                }
                 Section {
                     Toggle("同意高德地图隐私说明", isOn: $consent)
                     Link("查看高德隐私政策", destination: URL(string: "https://lbs.amap.com/pages/privacy/")!)

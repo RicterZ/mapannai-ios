@@ -72,3 +72,12 @@
 - 设置底部保留 RicterZ/mapannai-plus、RicterZ/mapannai-ios 入口及 MIT 许可说明，第三方SDK不随源码发布。
 
 - 发布使用 .github/workflows/unsigned-ipa.yml 和 Scripts/build-unsigned-ipa.sh：Release配置、真机无签名包、资源/Key存在性校验及SHA256。main推送产出artifact，v版本标签发布Release；tag必须匹配MARKETING_VERSION。Key只从仓库Secret注入，不输出；不要将AltStore重签宣称为已验证兼容，注意高德Bundle ID绑定。
+
+## AI 助手
+
+- 地图右上角使用无文字圆形图标入口（AIPlannerStore.entryEnabled=true）；API配置在设置页可用。iPhone复用半屏sheet并记住关闭前档位，iPad宽窗口使用右侧聊天区并保留地图空间，遮挡计入镜头insets。
+- 只调用现有 /api/ai/chat NDJSON合约，提示词、上下文补全和MCP工具完全由服务器处理，不复制或臆造接口。Key存钥匙串，按服务与凭据摘要隔离；配置会交给所连服务器，界面必须说明。
+- 会话本地存Application Support，后台I/O，保留工具消息；停止后补齐未知工具结果，绝不重试写入请求。服务切换/关闭取消旧请求，generation拒绝旧事件；数据变化串行合并刷新。
+- 创建hook只消费实时create_marker/plan_trip_day成功created ID，刷新后定位、不弹详情、不回放历史；用户镜头操作优先。测试用mock/只读示例，不调用生产AI执行写入。
+
+- 底部旅途面板试验：选择旅行后收起档为96pt，收起内容整体上移3pt，第一排无独立背景的日期菜单、第二排旅行名及原生操作，不重复日期、不显示退出×；半屏/全屏隐藏胶囊，手机地图顶部不重复显示。总览收起保持68pt；iPad侧栏保留顶部胶囊。地图遮挡使用同一收起高度。

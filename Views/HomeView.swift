@@ -4,6 +4,10 @@ import CoreLocation
 struct HomeView: View {
     @ObservedObject var store: AppStore
     @ObservedObject var settings: Settings
+    // Only presentation changes invalidate Home/map; streaming tokens are observed inside the chat view.
+    @State private var aiPlanner = AIPlannerStore()
+    @State private var aiPresented = false
+    @State private var aiReturnDetent: ItineraryDetent?
     @State private var showSettings = false
     @State private var creatingTrip = false
     @State private var showDates = false
@@ -32,7 +36,8 @@ struct HomeView: View {
             }
                 .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0 })) {
                     modalContent(panelWorkspace(sidebar: false))
-                        .presentationDetents(!store.placeSearchPresented ? [.height(68), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
+                        .offset(y: sheetDetent == .compact && !store.placeSearchPresented && !aiPresented ? -3 : 0)
+                        .presentationDetents(!store.placeSearchPresented && !aiPresented ? [.height(compactJourneyHeight), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
                         .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
                         .presentationBackgroundInteraction(.enabled)
@@ -40,17 +45,50 @@ struct HomeView: View {
                         .interactiveDismissDisabled()
                 }
                 .onAppear { nativeJourneyPresented = true }
+                .task(id: settings.revision) {
+                    await aiPlanner.configure(for: settings)
+                    if ProcessInfo.processInfo.arguments.contains("--ai-planner-demo") { aiPlanner.presented = true }
+                }
+                .onReceive(aiPlanner.$presented.removeDuplicates()) { open in
+                    aiPresented = open
+                    guard !sidebar else { return }
+                    if open { aiReturnDetent = sheetDetent; sheetDetent = .half }
+                    else if let original = aiReturnDetent { sheetDetent = original; aiReturnDetent = nil }
+                }
                 .onChange(of: sidebar) { _, _ in nativeJourneyPresented = true }
+                .onDisappear { aiPlanner.close() }
         }
     }
 
     @ViewBuilder private func panelWorkspace(sidebar: Bool) -> some View {
         ZStack {
-            journeyNavigation(sidebar: sidebar)
-                .opacity(!store.placeSearchPresented ? 1 : 0)
-                .allowsHitTesting(!store.placeSearchPresented)
-                .accessibilityHidden(store.placeSearchPresented)
-            if store.placeSearchPresented {
+            if aiPresented && !sidebar {
+                AIPlannerView(planner: aiPlanner, store: store)
+            }
+            VStack(spacing: 0) {
+                if !sidebar {
+                    ZStack {
+                        if compactNavigationVisible {
+                            compactDateNavigation.transition(.opacity)
+                        }
+                    }
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, compactNavigationVisible ? 4 : 0)
+                        .frame(height: compactNavigationVisible ? 48 : 0)
+                        .opacity(compactNavigationVisible ? 1 : 0)
+                        .clipped()
+                        .allowsHitTesting(compactNavigationVisible)
+                        .accessibilityHidden(!compactNavigationVisible)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: compactNavigationVisible)
+                }
+                journeyNavigation(sidebar: sidebar)
+                    .padding(.top, !sidebar && compactNavigationVisible ? -12 : 0)
+            }
+                .opacity(!store.placeSearchPresented && !aiPresented ? 1 : 0)
+                .allowsHitTesting(!store.placeSearchPresented && !aiPresented)
+                .accessibilityHidden(store.placeSearchPresented || aiPresented)
+            if store.placeSearchPresented && !aiPresented {
                 DayMarkerPicker(store: store, day: store.addPlaceDay,
                     onInput: { if !sidebar { sheetDetent = .full } },
                     onSearch: { if !sidebar { sheetDetent = .half } })
@@ -67,16 +105,19 @@ struct HomeView: View {
         GeometryReader { proxy in
             let layout = MapLayout(width: proxy.size.width, height: proxy.size.height,
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
-                                   sheetHeight: sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
+                                   sheetHeight: sheetDetent == .compact ? compactJourneyHeight : sheetDetent == .half ? proxy.size.height * 0.5 : sheetDetent.height(in: proxy.size.height))
+            let cameraInsets = aiPresented && layout.usesSidebar
+                ? MapViewportInsets(top: 50, left: 35, bottom: 70, right: min(420, proxy.size.width * 0.46) + 25)
+                : layout.insets
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
-                    store.mapViewportInsets = layout.insets
+                    store.mapViewportInsets = cameraInsets
                     journeyAvailableHeight = proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
                 .onChange(of: proxy.size) { _, size in
                     journeyAvailableHeight = size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
-                .onChange(of: layout.insets) { _, insets in store.mapViewportInsets = insets }
+                .onChange(of: cameraInsets) { _, insets in store.mapViewportInsets = insets }
                 .onChange(of: store.routeSelectionRequest) { _, _ in
                     showDates = false; expanded = true
                     if !layout.usesSidebar {
@@ -108,7 +149,7 @@ struct HomeView: View {
             Button("取消", role: .cancel) {}
             Button("保存") { Task { if var day = store.day { day.title = dayTitle; _ = await store.updateDay(day) } } }
         }
-        .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store).presentationDragIndicator(.visible) }
+        .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible) }
         .sheet(item: Binding(get: { !store.placeSearchPresented ? store.selectedMarker : nil }, set: { store.selectedMarker = $0 })) { marker in MarkerDetailView(store: store, marker: marker, onNavigateItinerary: {
                 expanded = true
                 if sheetDetent == .compact { sheetDetent = .half }
@@ -141,10 +182,15 @@ struct HomeView: View {
         .onChange(of: settings.mode) { _, _ in store.rebuildRoutes() }
     }
 
+    private var compactJourneyHeight: CGFloat { store.trip == nil ? 68 : 96 }
+    private var compactNavigationVisible: Bool {
+        sheetDetent == .compact && store.trip != nil && !store.placeSearchPresented && !aiPresented
+    }
+
     private var nativeJourneyDetent: Binding<PresentationDetent> {
         Binding(get: {
             switch sheetDetent {
-            case .compact: .height(68)
+            case .compact: .height(compactJourneyHeight)
             case .half: .medium
             case .full: .large
             }
@@ -223,9 +269,9 @@ struct HomeView: View {
         let page = scope(destination)
         return VStack(alignment: .center, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(journeyTitle(destination)).font(.headline).lineLimit(1).minimumScaleFactor(0.75)
+                Text(!sidebar && sheetDetent == .compact ? (page.trip?.name ?? "旅途") : journeyTitle(destination)).font(.headline).lineLimit(1).minimumScaleFactor(0.75)
                     .accessibilityIdentifier("itinerary-panel-title")
-                if let day = page.day { Text(shortDate(day.date)).font(.caption).foregroundStyle(.secondary) }
+                if let day = page.day, sidebar || sheetDetent != .compact { Text(shortDate(day.date)).font(.caption).foregroundStyle(.secondary) }
             }
             if sheetDetent != .compact {
                 if let day = page.day {
@@ -270,6 +316,8 @@ struct HomeView: View {
                 JourneyOverviewContents(store: store, searchContent: { EmptyView() }, settingsContent: { journeySettingsRow }, usesNativeNavigation: true)
             }
         }.listStyle(.insetGrouped).buttonStyle(.automatic)
+            .opacity(!sidebar && sheetDetent == .compact ? 0 : 1)
+            .allowsHitTesting(sidebar || sheetDetent != .compact)
             .scrollContentBackground(sidebar ? .visible : .hidden)
             .contentMargins(.top, 0, for: .scrollContent).listSectionSpacing(8)
             .id(ItineraryScrollIdentity(tripID: page.trip?.id, dayID: page.day?.id,
@@ -346,7 +394,20 @@ struct HomeView: View {
             MapSurface(store: store, settings: settings, onOpenSettings: { showSettings = true })
                 .transaction { $0.animation = nil; $0.disablesAnimations = true }
                 .ignoresSafeArea()
-            if layout.usesSidebar {
+            if aiPresented && layout.usesSidebar {
+                AIPlannerView(planner: aiPlanner, store: store)
+                    .frame(width: min(420, layout.width * 0.46), height: layout.height)
+                    .background(.regularMaterial)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            if AIPlannerStore.entryEnabled && !aiPresented {
+                Button { aiPlanner.presented = true } label: {
+                    Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 20)).frame(width: 32, height: 32)
+                }.buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("AI 助手")
+                    .accessibilityIdentifier("open-ai-planner")
+                    .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16).padding(.top, 8)
+            }
+            if layout.usesSidebar && !aiPresented {
                 HStack(spacing: 0) {
                     if expanded {
                         workspacePanel(topInset: topInset, bottomInset: bottomInset, leftInset: leftInset)
@@ -367,10 +428,11 @@ struct HomeView: View {
                 locationButton.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 20).padding(.bottom, 20)
             }
-            let capsulesVisible = !store.placeSearchPresented && (layout.usesSidebar || sheetDetent != .full)
+            let capsulesVisible = layout.usesSidebar && !store.placeSearchPresented && !aiPresented
             ZStack {
-                navigationCapsules
-                    .transition(.opacity)
+                if capsulesVisible {
+                    navigationCapsules.transition(.opacity)
+                }
             }
             .padding(.horizontal, 16).padding(.top, 8)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -382,6 +444,32 @@ struct HomeView: View {
 
         }
         .onChange(of: store.tripID) { _, _ in showDates = false }
+    }
+
+    @ViewBuilder private var compactDateNavigation: some View {
+        if let trip = store.trip {
+            Menu {
+                ForEach(trip.days.sorted { $0.date < $1.date }) { day in
+                    Button { store.select(trip: trip, day: day) } label: {
+                        if store.dayID == day.id {
+                            Label("第\(dayNumber(day))天 · \(shortDate(day.date))", systemImage: "checkmark")
+                        } else {
+                            Text("第\(dayNumber(day))天 · \(shortDate(day.date))")
+                        }
+                    }.accessibilityIdentifier("date-option-\(day.id)")
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(store.day.map { "第\(dayNumber($0))天" } ?? "选择日期")
+                        .font(.subheadline.weight(.semibold))
+                    if let day = store.day {
+                        Text(shortDate(day.date)).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+                }.frame(maxWidth: .infinity).frame(height: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).tint(Theme.accent)
+                .accessibilityLabel("选择日期").accessibilityIdentifier("date-selector")
+        }
     }
 
     @ViewBuilder private var navigationCapsules: some View {

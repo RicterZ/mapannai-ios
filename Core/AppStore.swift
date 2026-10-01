@@ -149,6 +149,14 @@ import SwiftUI
             if moved { rebuildRoutes() }
         } catch { /* Keep cached detail visible on background failure. */ }
     }
+    func refreshAfterAIChange() async {
+        // Serialize with an already-running refresh, then force a post-write snapshot.
+        while refreshing || saving {
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+        }
+        guard !Task.isCancelled else { return }
+        await refresh(force: true, quietly: true)
+    }
     func runBackgroundUpdates() async {
         while !Task.isCancelled {
             await refresh(force: false, quietly: true)
