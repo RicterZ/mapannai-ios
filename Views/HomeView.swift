@@ -181,7 +181,7 @@ struct HomeView: View {
         .onChange(of: settings.mode) { _, _ in store.rebuildRoutes() }
     }
 
-    private var compactJourneyHeight: CGFloat { 80 }
+    private var compactJourneyHeight: CGFloat { store.trip == nil ? 68 : 80 }
     private var compactNavigationVisible: Bool {
         sheetDetent == .compact && !store.placeSearchPresented && !aiPresented
     }
