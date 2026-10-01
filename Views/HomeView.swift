@@ -71,6 +71,7 @@ struct HomeView: View {
             }
             journeyNavigation(sidebar: sidebar)
                 .opacity(!store.placeSearchPresented && !aiPresented && (sidebar || !compactNavigationVisible) ? 1 : 0)
+                .animation(nil, value: compactNavigationVisible)
                 .allowsHitTesting(!store.placeSearchPresented && !aiPresented && (sidebar || !compactNavigationVisible))
                 .accessibilityHidden(store.placeSearchPresented || aiPresented || (!sidebar && compactNavigationVisible))
             if !sidebar && compactNavigationVisible {
@@ -315,7 +316,6 @@ struct HomeView: View {
                 JourneyOverviewContents(store: store, searchContent: { EmptyView() }, settingsContent: { journeySettingsRow }, usesNativeNavigation: true)
             }
         }.listStyle(.insetGrouped).buttonStyle(.automatic)
-            .opacity(!sidebar && sheetDetent == .compact ? 0 : 1)
             .allowsHitTesting(sidebar || sheetDetent != .compact)
             .scrollContentBackground(sidebar ? .visible : .hidden)
             .contentMargins(.top, 0, for: .scrollContent).listSectionSpacing(8)

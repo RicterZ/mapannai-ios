@@ -4,7 +4,7 @@ struct TripDeletionView: View {
     @ObservedObject var store: AppStore
     let trip: Trip
     var body: some View {
-        DeletionConfirmationView(store: store, title: "删除旅行", message: "「\(trip.name)」及其每日行程将被删除。", kind: "trip") { includeMarkers in
+        DeletionConfirmationView(store: store, title: "删除旅行", message: "“\(trip.name)”及其每日行程将被删除。", kind: "trip") { includeMarkers in
             await store.perform { try await $0.deleteTrip(id: trip.id, deleteExclusiveMarkers: includeMarkers) }
         }
     }
@@ -28,6 +28,7 @@ private struct DeletionConfirmationView: View {
     let kind: String
     let action: (Bool) async -> Bool
     @State private var contentHeight: CGFloat = 250
+    @State private var bottomSafeArea: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
     @State private var deleteExclusiveMarkers = false
     @State private var deleting = false
@@ -35,15 +36,15 @@ private struct DeletionConfirmationView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-                Text("\(title)？").font(.title3.bold())
+                Text(title).font(.title2.bold())
                 Text(message)
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(.body).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 List(selection: Binding<Set<String>>(
                     get: { deleteExclusiveMarkers ? ["places"] : [] },
                     set: { deleteExclusiveMarkers = $0.contains("places") }
                 )) {
-                    Text("同时删除独占地点")
+                    Text("同时删除行程内所有标记").font(.body)
                         .tag("places")
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -54,8 +55,6 @@ private struct DeletionConfirmationView: View {
                 .scrollDisabled(true)
                 .scrollContentBackground(.hidden)
                 .frame(height: 52)
-                Text("共享地点会保留。不勾选则保留全部地点。")
-                    .font(.footnote).foregroundStyle(.secondary)
                 if let failure { Text(failure).foregroundStyle(.red) }
                 HStack(spacing: 12) {
                     Button { dismiss() } label: {
@@ -81,7 +80,9 @@ private struct DeletionConfirmationView: View {
                 }
             }
             .controlSize(.large)
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 8)
             .disabled(deleting || store.saving)
             .fixedSize(horizontal: false, vertical: true)
             .background {
@@ -91,7 +92,16 @@ private struct DeletionConfirmationView: View {
                         .onChange(of: proxy.size.height) { _, height in contentHeight = height }
                 }
             }
-            .presentationDetents([.height(contentHeight)])
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .ignoresSafeArea(.container, edges: .bottom)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { bottomSafeArea = proxy.safeAreaInsets.bottom }
+                        .onChange(of: proxy.safeAreaInsets.bottom) { _, inset in bottomSafeArea = inset }
+                }
+            }
+            .presentationDetents([.height(max(160, contentHeight - bottomSafeArea))])
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled(deleting)
     }
