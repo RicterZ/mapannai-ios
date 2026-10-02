@@ -136,7 +136,9 @@ struct DayContentsView: View {
                     .font(.body)
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 8))
                     if !collapsedRoutes.contains(index) {
-                        ForEach(Array(chain.enumerated()), id: \.element) { position, id in
+                        ForEach(chain.enumerated().map { RoutePlaceSlot(markerID: $0.element, position: $0.offset) }) { slot in
+                            let id = slot.markerID
+                            let position = slot.position
                             if let marker = store.markers.first(where: { $0.id == id }) {
                                 VStack(spacing: 0) {
                                     Button { store.focus(marker) } label: {
@@ -147,6 +149,7 @@ struct DayContentsView: View {
                                         }.contentShape(Rectangle())
                                     }.buttonStyle(.automatic).foregroundStyle(.primary)
                                         .accessibilityIdentifier("route-\(index)-marker-\(id)")
+                                        .accessibilityValue("\(position + 1)")
                                     if position + 1 < chain.count, let distance = routeDistance(chain: chain, index: index, position: position + 1) {
                                         HStack(spacing: 8) {
                                             Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
@@ -329,6 +332,14 @@ struct DayContentsView: View {
     }
 
 }
+/// A slot changes identity when its contents or ordinal change. Native list drag
+/// snapshots must not retain the old content/number at a newly occupied position.
+private struct RoutePlaceSlot: Identifiable {
+    let markerID: String
+    let position: Int
+    var id: String { "\(position)/\(markerID)" }
+}
+
 struct ChainEditRequest: Identifiable { var id = UUID(); var day: TripDay; var index: Int?; var ids: [String] }
 struct ChainEditorView: View {
     @ObservedObject var store: AppStore
@@ -564,6 +575,7 @@ final class NativePlaceItemProvider: NSItemProvider {
     init(payload: String) {
         self.payload = payload
         super.init()
+        suggestedName = payload
         registerObject(NSString(string: payload), visibility: .all)
     }
 }
@@ -670,7 +682,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             var path = destination
             // UIKit reports a final index for moves within the same section,
             // after removing the source. Our model accepts a pre-removal boundary.
-            if let payload = (session.items.first?.itemProvider as? NativePlaceItemProvider)?.payload {
+            if let payload = localPayload(session) {
                 let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
                 if parts.count == 2, let sourceRouteKey = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])],
                    let source = nativeRowTargets.first(where: { entry in
@@ -718,11 +730,18 @@ struct NativePlaceListDrop: UIViewRepresentable {
             parent.onTarget(nil)
             acceptDrop(session, target: target)
         }
+        private func localPayload(_ session: UIDropSession) -> String? {
+            guard session.localDragSession != nil, let item = session.items.first else { return nil }
+            let payload = (item.localObject as? String)
+                ?? (item.itemProvider as? NativePlaceItemProvider)?.payload
+                ?? item.itemProvider.suggestedName
+            guard let payload, payload.hasPrefix(parent.prefix) else { return nil }
+            return payload
+        }
         private func acceptDrop(_ session: UIDropSession, target: String) {
             let prefix = parent.prefix, accept = parent.accept
-            if let provider = session.items.first?.itemProvider as? NativePlaceItemProvider {
-                guard provider.payload.hasPrefix(prefix) else { return }
-                accept(String(provider.payload.dropFirst(prefix.count)), target)
+            if let payload = localPayload(session) {
+                accept(String(payload.dropFirst(prefix.count)), target)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
             }

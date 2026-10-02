@@ -2,7 +2,7 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
-    @MainActor func testPreviewTripPlaceDragBecomesDayIsolatedPlace() {
+    @MainActor func testOfflineRouteSecondToThirdKeepsUniqueRowsAndNumbers() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--trip-places-preview"]
         app.launch()
@@ -28,6 +28,16 @@ final class NativeJourneyTests: XCTestCase {
         let inserted = app.buttons["route-0-marker-preview-cafe"]
         XCTAssertLessThan(inserted.frame.minY, app.buttons["route-0-marker-demo-1"].frame.minY)
         XCTAssertGreaterThan(inserted.frame.minY, app.buttons["route-0-marker-demo-0"].frame.minY)
+        XCTAssertEqual(inserted.value as? String, "2")
+        XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-preview-cafe").count, 1)
+        let next = app.buttons["route-0-marker-demo-1"]
+        inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
+            forDuration: 1.5, thenDragTo: next.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.8)),
+            withVelocity: .slow, thenHoldForDuration: 0.2)
+        XCTAssertEqual(inserted.value as? String, "3")
+        XCTAssertEqual(next.value as? String, "2")
+        XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-preview-cafe").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-demo-1").count, 1)
         let last = app.buttons["route-0-marker-demo-0"]
         inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
             forDuration: 1.5, thenDragTo: last.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.1)),
@@ -38,10 +48,14 @@ final class NativeJourneyTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [reordered], timeout: 5), .completed)
         let finalRow = app.buttons["route-0-marker-demo-2"]
         inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
-            forDuration: 1.5, thenDragTo: finalRow.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.2)),
+            forDuration: 1.5, thenDragTo: finalRow.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.8)),
             withVelocity: .slow, thenHoldForDuration: 1)
         XCTAssertGreaterThan(inserted.frame.minY, app.buttons["route-0-marker-demo-1"].frame.minY)
-        XCTAssertLessThan(inserted.frame.minY, finalRow.frame.minY)
+        XCTAssertGreaterThan(inserted.frame.minY, finalRow.frame.minY)
+        XCTAssertEqual(inserted.value as? String, "4")
+        XCTAssertEqual(app.buttons["route-0-marker-demo-1"].value as? String, "2")
+        XCTAssertEqual(finalRow.value as? String, "3")
+        XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-preview-cafe").count, 1)
         let pool = app.buttons["day-search-add-place"]
         if !pool.isHittable { app.swipeUp() }
         inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
