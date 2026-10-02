@@ -1,22 +1,38 @@
 import SwiftUI
 
-/// One native material for every navigation page. Tint becomes opaque as the
-/// system sheet grows, using its actual height rather than a detent switch.
+/// Compact glass follows the native sheet outline; expanded pages keep their
+/// opaque grouped surface. Both follow the actual sheet height during a drag.
 struct JourneySheetBackground: View {
     let availableHeight: CGFloat
+    var usesCompactGlass = true
 
     var body: some View {
         NativeSheetHeightReader(enabled: true) { geometry in
             let fullHeight = max(availableHeight, 1)
             let progress = min(1, max(0, (geometry.visibleHeight / fullHeight - 0.55) / 0.35))
-            Rectangle().fill(.regularMaterial)
+            let expansion = JourneyPresentation.expandedProgress(height: geometry.visibleHeight,
+                compactHeight: JourneyPresentation.compactHeight)
+            ZStack {
+                if #available(iOS 26.0, *), usesCompactGlass {
+                    Color.clear
+                        .ignoresSafeArea()
+                        .glassEffect(.regular, in: Capsule())
+                        .opacity(1 - expansion)
+                }
+                Rectangle().fill(.regularMaterial)
                 .overlay {
                     Color(uiColor: .systemGroupedBackground)
                         .opacity(0.18 + 0.82 * progress)
                 }
                 .ignoresSafeArea()
+                .opacity(usesCompactGlass && isGlassAvailable ? expansion : 1)
+            }
         }
         .allowsHitTesting(false)
+    }
+    private var isGlassAvailable: Bool {
+        if #available(iOS 26.0, *) { return true }
+        return false
     }
 }
 

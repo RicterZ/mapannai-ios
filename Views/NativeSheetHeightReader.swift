@@ -4,6 +4,7 @@ import UIKit
 struct SheetPresentationGeometry {
     let layoutHeight: CGFloat
     let visibleHeight: CGFloat
+    let safeAreaInsets: EdgeInsets
 }
 
 /// UISheetPresentationController can commit its destination bounds before its
@@ -17,7 +18,8 @@ struct NativeSheetHeightReader<Content: View>: View {
     var body: some View {
         GeometryReader { geometry in
             content(SheetPresentationGeometry(layoutHeight: geometry.size.height,
-                visibleHeight: enabled ? (visibleHeight ?? geometry.size.height) : geometry.size.height))
+                visibleHeight: enabled ? (visibleHeight ?? geometry.size.height) : geometry.size.height,
+                safeAreaInsets: geometry.safeAreaInsets))
                 .background {
                     if enabled {
                         SheetHeightProbe(layoutHeight: geometry.size.height) { height in

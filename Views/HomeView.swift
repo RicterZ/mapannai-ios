@@ -44,7 +44,8 @@ struct HomeView: View {
                     modalContent(panelWorkspace(sidebar: false))
                         .presentationDetents([.height(compactJourneyHeight), .medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
-                        .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
+                        .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight,
+                            usesCompactGlass: !store.placeSearchPresented && !aiPresented) }
                         .presentationBackgroundInteraction(.enabled)
                         .presentationContentInteraction(.resizes)
                         .interactiveDismissDisabled()
@@ -120,6 +121,8 @@ struct HomeView: View {
                     compactJourneyControls
                         // The exiting header keeps its original center as the sheet grows.
                         .frame(height: min(geometry.visibleHeight, compactJourneyHeight))
+                        // The material covers the sheet safe areas; center controls in that same outline.
+                        .offset(y: (geometry.safeAreaInsets.bottom - geometry.safeAreaInsets.top) * 0.5 * (1 - headerProgress))
                         .opacity(1 - headerProgress)
                         .animation(AppMotion.crossfade(reduceMotion: reduceMotion)) { content in
                             content.opacity(journeyVisible ? 1 : 0)
