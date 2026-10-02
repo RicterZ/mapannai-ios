@@ -122,7 +122,12 @@ struct JourneyDaysContents: View {
                     Button { store.beginAddingPlace() } label: {
                         Label("添加地点", systemImage: "plus").fullRowActionLabel()
                     }.foregroundStyle(Theme.accent)
-                } header: { Text("未安排日期") }
+                } header: {
+                    Text("未安排日期")
+                        .font(.subheadline.weight(.regular))
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                }
                   footer: { Text("已收藏到这次旅行，之后可以安排到某一天。") }
             }
             Section {
