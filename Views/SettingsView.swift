@@ -14,6 +14,11 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("地图") {
+                    Picker("打开地图", selection: $settings.navigationMapApp) {
+                        ForEach(NavigationMapApp.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }.accessibilityIdentifier("navigation-map-picker")
+                }
                 Section("路线规划") {
                     Toggle("路线规划", isOn: $settings.planning).accessibilityIdentifier("planning-toggle")
                     if settings.planning {

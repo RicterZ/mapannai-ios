@@ -12,7 +12,7 @@ MapAnNai iOS is the native iPhone and iPad client for MapAnNai Plus. Save restau
 - **Plan each day**: Create a trip and add places to its daily itinerary. Add or remove days, shift your travel dates, and reuse places you have already saved. When deleting a trip or day, optionally remove its exclusive places while keeping shared places.
 - **Arrange visits your way**: Create multiple routes within a day and change the visit order to organize different activities.
 - **See the whole plan on a map**: View all places, a trip overview, or daily routes. Colors distinguish days; tap a place or route to see its itinerary.
-- **View routes and open directions**: Choose walking, driving, or automatic route planning. When you are ready to go, open a place in Apple Maps for navigation.
+- **View routes and open directions**: Choose walking, driving, or automatic route planning. When you are ready to go, open a place in Apple Maps or AMap for navigation. Choose your preferred app in Settings → Open Map.
 - **Use it on your phone or tablet**: Switch trip dates from the collapsed itinerary panel on iPhone, pull it up for details, or view the map and itinerary side by side on iPad to compare places and organize your plans.
 - **Share travel data with the web app**: Connect to your own MapAnNai Plus server and continue editing the same trip on the web, iPhone, or iPad.
 

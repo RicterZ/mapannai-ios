@@ -2,6 +2,115 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
+    @MainActor func testMapLongPressReplacesDetailWithEditorAndCancelKeepsJourneyCompact() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.2)).press(forDuration: 1)
+        XCTAssertTrue(app.navigationBars["添加地点"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["close-marker-detail"].exists)
+        app.buttons["取消"].tap()
+        let panel = app.otherElements["phone-itinerary-panel"]
+        let compact = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in panel.frame.height < 200 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [compact], timeout: 5), .completed)
+        XCTAssertFalse(app.navigationBars["地点"].exists)
+    }
+
+    @MainActor func testSwitchingCompactAndNoteDetailsResizesSameSheet() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let first = app.buttons["route-0-marker-demo-0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10)); first.tap()
+        let bar = app.navigationBars["地点"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let compactY = bar.frame.minY
+        let next = app.buttons["map-marker-demo-1"]
+        XCTAssertTrue(next.isHittable); next.tap()
+        XCTAssertTrue(app.staticTexts["武康庭"].waitForExistence(timeout: 5))
+        let resized = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in bar.frame.minY < compactY - 20 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 5), .completed)
+        XCTAssertGreaterThan(bar.frame.minY, 200)
+        app.buttons["close-marker-detail"].tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testSwitchingCoverDetailsGrowsAndShrinksSameSheet() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--cover-resize-preview"]; app.launch()
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        let bar = app.navigationBars["地点"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        let originalY = bar.frame.minY
+        app.buttons["map-marker-demo-2"].tap()
+        let taller = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in bar.frame.minY < originalY - 80 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [taller], timeout: 5), .completed)
+        app.buttons["map-marker-demo-1"].tap()
+        let shorter = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in abs(bar.frame.minY - originalY) < 5 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [shorter], timeout: 5), .completed)
+        app.buttons["close-marker-detail"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testSwitchingMapMarkerKeepsDetailHalfScreenAndJourneyReturnHeight() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let panel = app.otherElements["phone-itinerary-panel"]
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        let bar = app.navigationBars["第1天"]
+        let start = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -450)))
+        let large = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in panel.frame.height > 650 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [large], timeout: 5), .completed)
+        let originalHeight = panel.frame.height
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
+        let detailBar = app.navigationBars["地点"]
+        let previousY = detailBar.frame.minY
+        let other = app.buttons["map-marker-demo-2"]
+        XCTAssertTrue(other.isHittable)
+        other.tap()
+        XCTAssertTrue(app.staticTexts["安福路"].waitForExistence(timeout: 5))
+        XCTAssertEqual(detailBar.frame.minY, previousY, accuracy: 15)
+        app.buttons["close-marker-detail"].tap()
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in abs(panel.frame.height - originalHeight) < 10 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
+    }
+
+    @MainActor func testCoverPlaceholderIsCenteredInBanner() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        XCTAssertTrue(app.buttons["编辑"].waitForExistence(timeout: 5)); app.buttons["编辑"].tap()
+        let cover = app.buttons["marker-cover-upload"]
+        XCTAssertTrue(cover.waitForExistence(timeout: 5))
+        if !cover.isHittable { app.collectionViews.firstMatch.swipeUp() }
+        XCTAssertEqual(cover.frame.width / cover.frame.height, 16.0 / 9.0, accuracy: 0.05)
+        let label = app.staticTexts["添加封面图"]
+        XCTAssertTrue(label.exists)
+        XCTAssertEqual(label.frame.midY, cover.frame.midY, accuracy: 2)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Centered cover banner placeholder"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
+    @MainActor func testLongNoteExpandsAndScrollsWithWholeDetail() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--long-note-preview"]; app.launch()
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 5))
+        let expanded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in web.frame.height > 500 }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 5), .completed)
+        let end = web.staticTexts["长笔记结束"]
+        for _ in 0..<14 {
+            if end.exists && end.isHittable { break }
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(end.exists)
+        XCTAssertTrue(end.isHittable)
+    }
+
     @MainActor func testDeleteChainConfirmationActuallySubmitsDeletion() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let route = app.buttons["route-view-0"]

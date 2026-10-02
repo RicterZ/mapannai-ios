@@ -250,19 +250,28 @@ import SwiftUI
             }
         }
     }
-    func saveMarker(_ draft: MarkerDraft) async -> Bool {
+    func saveMarker(_ draft: MarkerDraft, using suppliedClient: APIClient? = nil) async -> Bool {
         guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
         let targetDay = draft.marker == nil ? (addPlaceDay ?? day) : nil
-        let ok = await perform { client in
+        var createdMarker: Marker?
+        let ok = await perform { defaultClient in
+            let client = suppliedClient ?? defaultClient
             if let marker = draft.marker {
                 try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": draft.html, "headerImage": draft.headerImage])
             } else {
                 let created: Marker = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": draft.html])
                 if !draft.headerImage.isEmpty { try await client.mutate("markers/\(APIClient.id(created.id))", method: "PUT", body: ["headerImage": draft.headerImage]) }
                 if let targetDay { try await client.mutate(Self.dayPath(targetDay) + "/markers", method: "POST", body: ["markerId": created.id]) }
+                createdMarker = created
             }
         }
-        if ok { self.draft = nil }; return ok
+        if ok {
+            if let createdMarker, !placeSearchPresented {
+                focus(markers.first(where: { $0.id == createdMarker.id }) ?? createdMarker)
+            }
+            self.draft = nil
+        }
+        return ok
     }
     @discardableResult
     func deleteMarker(_ marker: Marker, animated: Bool = true) -> Bool {
@@ -429,14 +438,16 @@ import SwiftUI
         camera = CameraCommand(points: [marker.coordinates], detailLayout: detail)
     }
     func fly(_ points: [Coordinate]) { if !points.isEmpty { camera = CameraCommand(points: points) } }
-    func create(at coordinate: Coordinate) {
+    func create(at coordinate: Coordinate, poiName: String? = nil) {
         guard coordinate.isValid, draft == nil else { return }
         if placeSearchPresented {
             let place = Place(id: UUID().uuidString, name: "", address: "", coordinates: coordinate)
             searchResults.append(place); editingSearchPlaceID = place.id
         }
         selectedSearchPlaceID = nil; draftExpanded = false
+        let selectedName = poiName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var pending = MarkerDraft(coordinates: coordinate)
+        if !selectedName.isEmpty { pending.title = selectedName }
         pending.resolvingPlace = true
         draft = pending
         let draftID = pending.id
@@ -444,8 +455,10 @@ import SwiftUI
             do {
                 let place = try await mapServices.details(at: coordinate)
                 guard self.draft?.id == draftID else { return }
-                self.draft?.title = place.name
-                self.draft?.address = place.address
+                if selectedName.isEmpty, self.draft?.title == pending.title {
+                    self.draft?.title = place.name
+                }
+                if self.draft?.address == pending.address { self.draft?.address = place.address }
                 self.draft?.resolvingPlace = false
             } catch {
                 guard self.draft?.id == draftID else { return }
@@ -703,6 +716,14 @@ import SwiftUI
                    content: MarkerContent(id: "demo-\(i)", title: name, address: "上海市", iconType: i == 1 ? .food : .landmark,
                                           markdownContent: i == 0 ? "<p><br></p>" : "<p>示例地点笔记。</p>"))
         }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--cover-resize-preview") {
+            markers[2].content.headerImage = "https://example.invalid/cover.jpg"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--long-note-preview") {
+            markers[1].content.markdownContent = (1...24).map { "<p>第\($0)段旅行笔记：查看地点信息与当天安排。</p>" }.joined() + "<p>长笔记结束</p>"
+        }
+        #endif
         let days = [TripDay(id: "day-1", tripId: "demo-trip", date: "2026-10-01", title: "梧桐街区漫步", colorIndex: 0, markerIds: ["demo-0","demo-1","demo-2"], chains: [["demo-0","demo-1","demo-2"]]),
                     TripDay(id: "day-2", tripId: "demo-trip", date: "2026-10-02", title: "城市与旧时光", colorIndex: 1, markerIds: ["demo-2","demo-3","demo-4"], chains: [["demo-2","demo-3","demo-4"]])]
         trips = [Trip(id: "demo-trip", name: "上海 · 秋日散步", description: "示例行程", startDate: "2026-10-01", endDate: "2026-10-02", emoji: "🍂", days: days)]

@@ -1,6 +1,11 @@
 import Foundation
 import Security
 
+enum NavigationMapApp: String, CaseIterable {
+    case system, amap
+    var label: String { self == .system ? "系统地图" : "高德地图" }
+}
+
 @MainActor final class Settings: ObservableObject {
     @Published private(set) var baseURL: String
     @Published private(set) var token: String
@@ -8,9 +13,13 @@ import Security
     @Published private(set) var privacyAccepted: Bool
     @Published var planning: Bool { didSet { UserDefaults.standard.set(planning, forKey: "planning") } }
     @Published var mode: TravelMode { didSet { UserDefaults.standard.set(mode.rawValue, forKey: "travelMode") } }
+    @Published var navigationMapApp: NavigationMapApp {
+        didSet { UserDefaults.standard.set(navigationMapApp.rawValue, forKey: "navigationMapApp") }
+    }
     @Published var revision = UUID()
     var configured: Bool { !baseURL.isEmpty }
     init() {
+        navigationMapApp = NavigationMapApp(rawValue: UserDefaults.standard.string(forKey: "navigationMapApp") ?? "system") ?? .system
         baseURL = UserDefaults.standard.string(forKey: "baseURL") ?? ""
         token = Keychain.read("api-token")
         privacyAccepted = UserDefaults.standard.bool(forKey: "amapPrivacy")

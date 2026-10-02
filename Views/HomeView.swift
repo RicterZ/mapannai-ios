@@ -23,6 +23,8 @@ struct HomeView: View {
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var routeReturnDetent: ItineraryDetent?
     @State private var markerReturnDetent: ItineraryDetent?
+    @State private var mapDraftReady = true
+    @State private var mapEditorActive = false
     @State private var markerReturnExpanded = true
     @State private var searchReturnDetent: ItineraryDetent?
     @State private var searchReturnExpanded = true
@@ -189,19 +191,28 @@ struct HomeView: View {
                 }
         }
         .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible) }
-        .sheet(item: Binding(get: { !store.placeSearchPresented ? store.selectedMarker : nil }, set: {
-            store.selectedMarker = $0
-            if $0 == nil { restoreJourneyAfterMarker() }
-        }), onDismiss: restoreJourneyAfterMarker) { marker in MarkerDetailView(store: store, marker: marker, onClose: {
-            restoreJourneyAfterMarker()
-            store.selectedMarker = nil
-        }, onNavigateItinerary: {
-                expanded = true
-                // Entering an itinerary is an explicit navigation, rather than returning to the old page.
-                markerReturnDetent = .half
-                markerReturnExpanded = true
-            }) }
-        .sheet(item: Binding(get: { !store.placeSearchPresented ? store.draft : nil }, set: { store.draft = $0 })) { draft in
+        .sheet(isPresented: Binding(get: { !store.placeSearchPresented && store.selectedMarker != nil && store.draft == nil && !mapEditorActive }, set: {
+            if !$0, store.draft == nil, !mapEditorActive { store.selectedMarker = nil; restoreJourneyAfterMarker() }
+        }), onDismiss: {
+            if store.draft != nil { mapDraftReady = true }
+            else { restoreJourneyAfterMarker() }
+        }) {
+            if let marker = store.selectedMarker {
+                MarkerDetailView(store: store, marker: marker, onClose: {
+                    restoreJourneyAfterMarker()
+                    store.selectedMarker = nil
+                }, onNavigateItinerary: {
+                    expanded = true
+                    markerReturnDetent = .half
+                    markerReturnExpanded = true
+                })
+            }
+        }
+        .sheet(item: Binding(get: { !store.placeSearchPresented && mapDraftReady && store.selectedMarker == nil ? store.draft : nil }, set: { if mapDraftReady { store.draft = $0 } }), onDismiss: {
+            mapEditorActive = false
+            mapDraftReady = true
+            store.draft = nil
+        }) { draft in
             if UIDevice.current.userInterfaceIdiom == .pad {
                 MarkerEditorView(store: store, initial: draft).id(draft.id)
                     .onAppear { store.draftExpanded = true }
@@ -229,8 +240,15 @@ struct HomeView: View {
         }
         .onChange(of: store.draft?.id) { old, new in
             guard !store.placeSearchPresented else { return }
-            if new != nil, UIDevice.current.userInterfaceIdiom != .pad, store.selectedSearchPlaceID != nil { sheetDetent = .compact }
-            else if old != nil, new == nil, !store.searchResults.isEmpty, !store.placeSearchPresented { sheetDetent = .half }
+            if new != nil {
+                let replacingDetail = store.selectedMarker != nil
+                mapDraftReady = !replacingDetail
+                mapEditorActive = true
+                markerReturnDetent = .compact
+                markerReturnExpanded = expanded
+                setJourneyDetent(.compact)
+                store.selectedMarker = nil
+            }
         }
         .alert("无法完成操作", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
@@ -240,7 +258,7 @@ struct HomeView: View {
     }
 
     private func restoreJourneyAfterMarker() {
-        guard let original = markerReturnDetent else { return }
+        guard store.draft == nil, !mapEditorActive, let original = markerReturnDetent else { return }
         let originalExpanded = markerReturnExpanded
         markerReturnDetent = nil
         withAnimation(AppMotion.presentation(reduceMotion: reduceMotion)) {

@@ -9,25 +9,50 @@ private enum NoteEditorTypography {
 // HTML is rendered as content only. The app, map and editor are native UIKit/SwiftUI.
 struct HTMLReader: UIViewRepresentable {
     let html: String
+    @Binding var contentHeight: CGFloat
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         let web = WKWebView(frame: .zero, configuration: config)
-        web.isOpaque = false; web.backgroundColor = .clear; web.scrollView.isScrollEnabled = true
+        web.isOpaque = false; web.backgroundColor = .clear
+        web.scrollView.isScrollEnabled = false
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        context.coordinator.observe(web)
         return web
     }
     func updateUIView(_ web: WKWebView, context: Context) {
+        context.coordinator.height = $contentHeight
         guard context.coordinator.lastHTML != html else { return }
         context.coordinator.lastHTML = html
         let prefix = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline';">
-        <style>body{font:16px -apple-system;color:#253c37;margin:0;line-height:1.6}img{max-width:100%;height:auto;border-radius:12px}p{margin:0 0 12px}a{color:#24765e}</style></head><body>
+        <style>html,body{padding:0}body{overflow-wrap:anywhere;font:16px -apple-system;color:#253c37;margin:0;line-height:1.6}img{max-width:100%;height:auto;border-radius:12px}p{margin:0 0 12px}a{color:#24765e}</style></head><body>
         """
         web.loadHTMLString(prefix + html + "</body></html>", baseURL: nil)
     }
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var lastHTML: String? }
+    func makeCoordinator() -> Coordinator { Coordinator(height: $contentHeight) }
+    static func dismantleUIView(_ web: WKWebView, coordinator: Coordinator) {
+        coordinator.observation = nil
+        web.stopLoading()
+    }
+    final class Coordinator {
+        var lastHTML: String?
+        var height: Binding<CGFloat>
+        var observation: NSKeyValueObservation?
+        init(height: Binding<CGFloat>) { self.height = height }
+        func observe(_ web: WKWebView) {
+            // WebKit updates contentSize again when layout or inline images finish loading.
+            observation = web.scrollView.observe(\.contentSize, options: [.new]) { [weak self] scroll, _ in
+                let measured = max(1, ceil(scroll.contentSize.height))
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.observation != nil,
+                          abs(self.height.wrappedValue - measured) > 0.5 else { return }
+                    self.height.wrappedValue = measured
+                }
+            }
+        }
+    }
 }
 @MainActor final class RichEditorController: ObservableObject {
     weak var textView: UITextView?

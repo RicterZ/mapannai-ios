@@ -1,6 +1,36 @@
 import XCTest
 
 final class OptimisticDeletionTests: XCTestCase {
+    @MainActor func testMapCreationOpensCreatedDetailOnlyAfterSuccessfulSave() async throws {
+        let defaults = UserDefaults.standard
+        let previousURL = defaults.object(forKey: "baseURL")
+        defaults.set("", forKey: "baseURL")
+        let settings = Settings()
+        if let previousURL { defaults.set(previousURL, forKey: "baseURL") }
+        else { defaults.removeObject(forKey: "baseURL") }
+        let store = AppStore(settings: settings, demo: false)
+        var draft = MarkerDraft(coordinates: Coordinate(latitude: 31.2, longitude: 121.4))
+        draft.title = "新增地点"
+        store.draft = draft
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
+        let client = APIClient(baseURL: "https://example.invalid", token: "", session: URLSession(configuration: config))
+        MockURLProtocol.handler = { _ in (500, Data(#"{"error":"保存失败"}"#.utf8)) }
+        let failed = await store.saveMarker(draft, using: client)
+        XCTAssertFalse(failed)
+        XCTAssertNotNil(store.draft)
+        XCTAssertNil(store.selectedMarker)
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            return (200, Data(#"{"id":"new-marker","coordinates":{"latitude":31.2,"longitude":121.4},"content":{"id":"new-marker","title":"新增地点","iconType":"location","markdownContent":""}}"#.utf8))
+        }
+        let saved = await store.saveMarker(draft, using: client)
+        XCTAssertTrue(saved)
+        XCTAssertNil(store.draft)
+        XCTAssertEqual(store.selectedMarker?.id, "new-marker")
+        XCTAssertEqual(store.camera?.points, [draft.coordinates])
+        MockURLProtocol.handler = nil
+    }
+
     @MainActor func testMarkerDeletionIsImmediateAndFailureRestoresMemberships() async throws {
         let defaults = UserDefaults.standard
         let previousURL = defaults.object(forKey: "baseURL")
@@ -95,7 +125,7 @@ final class CoreTests: XCTestCase {
         let command = try XCTUnwrap(store.camera)
         let insets = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: true)
         XCTAssertEqual(store.mapViewportInsets, collapsed)
-        XCTAssertEqual(insets.bottom, 451)
+        XCTAssertEqual(insets.bottom, 852 * 0.55 + 25, accuracy: 0.001)
         let full = MapLayout(width: 393, height: 852, regularWidth: false, expanded: true, sheetHeight: 852).insets
         XCTAssertEqual(command.viewportInsets(base: full, height: 852, bottomSafeArea: 34, bottomSheet: true).bottom, insets.bottom)
         let centerY = (852 + insets.top - insets.bottom) / 2
@@ -107,6 +137,19 @@ final class CoreTests: XCTestCase {
         let ipad = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: false)
         XCTAssertEqual(ipad, collapsed)
     }
+    @MainActor func testCoverDetailUsesTallerRestingHeightAndCameraOcclusion() {
+        let store = AppStore(settings: Settings(), demo: true)
+        var marker = store.markers[1]
+        let withoutCover = MarkerDetailLayout(marker: marker, itineraryCount: 1, hasSelectedDay: true)
+        marker.content.headerImage = "https://example.invalid/cover.jpg"
+        let withCover = MarkerDetailLayout(marker: marker, itineraryCount: 1, hasSelectedDay: true)
+        XCTAssertFalse(withoutCover.compact)
+        XCTAssertFalse(withCover.compact)
+        XCTAssertGreaterThan(withCover.restingFraction, withoutCover.restingFraction)
+        XCTAssertGreaterThan(withCover.occlusion(height: 852, bottomSafeArea: 34),
+                             withoutCover.occlusion(height: 852, bottomSafeArea: 34) + 100)
+    }
+
     @MainActor func testCompactDetailCameraUsesSameHeightAsSheetIncludingSafeArea() throws {
         let store = AppStore(settings: Settings(), demo: true)
         var marker = store.markers[0]
@@ -137,6 +180,22 @@ final class CoreTests: XCTestCase {
         sample.select(trip: rows[1].trip, day: rows[1].day, focus: false)
         XCTAssertEqual(sample.dayID, "day-2"); XCTAssertNil(sample.selectedMarker)
         XCTAssertEqual(sample.camera?.id, camera)
+    }
+    @MainActor func testAMapNavigationPreservesDestinationAndEncodesTitle() throws {
+        let sample = AppStore(settings: Settings(), demo: true)
+        var marker = sample.markers[0]
+        marker.content.title = "咖啡 & 地图 / 東京?#"
+        let url = try XCTUnwrap(MarkerPresentation.amapNavigationURL(for: marker))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(components.scheme, "iosamap")
+        XCTAssertEqual(components.host, "navi")
+        XCTAssertEqual(query["poiname"], marker.title)
+        XCTAssertEqual(query["lat"], String(marker.coordinates.latitude))
+        XCTAssertEqual(query["lon"], String(marker.coordinates.longitude))
+        XCTAssertEqual(query["dev"], "1")
+        marker.coordinates.latitude = .nan
+        XCTAssertNil(MarkerPresentation.amapNavigationURL(for: marker))
     }
     @MainActor func testAppleMapsDestinationUsesPlaceTitleAndSameCoordinatesAsWeb() throws {
         let sample = AppStore(settings: Settings(), demo: true)

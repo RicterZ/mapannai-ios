@@ -107,18 +107,19 @@ final class RouteSelectionTests: XCTestCase {
         for frame in 1...60 {
             position = try XCTUnwrap(animation.positions(timestamp: Double(frame) / 60, project: project).first ?? nil)
         }
-        XCTAssertEqual(position.x, 60, accuracy: 0.001)
+        XCTAssertEqual(RouteMotionAnimation.pointsPerSecond, 90, accuracy: 0.001, "The requested 1.5× speed is 90pt/s")
+        XCTAssertEqual(position.x, 90, accuracy: 0.001)
         // Zoom retains the same segment/fraction; only the next frame's travel is added.
         scale = 2
         position = try XCTUnwrap(animation.positions(timestamp: 1 + 1.0 / 60, project: project).first ?? nil)
-        XCTAssertEqual(position.x, 121, accuracy: 0.001)
+        XCTAssertEqual(position.x, 181.5, accuracy: 0.001)
         scale = 0.5
         position = try XCTUnwrap(animation.positions(timestamp: 1 + 2.0 / 60, project: project).first ?? nil)
-        XCTAssertEqual(position.x, 31.25, accuracy: 0.001)
+        XCTAssertEqual(position.x, 46.875, accuracy: 0.001)
         for frame in 1...120 {
             position = try XCTUnwrap(animation.positions(timestamp: 1 + 2.0 / 60 + Double(frame) / 120, project: project).first ?? nil)
         }
-        XCTAssertEqual(position.x, 91.25, accuracy: 0.001, "60Hz and 120Hz must cover the same distance per second")
+        XCTAssertEqual(position.x, 136.875, accuracy: 0.001, "60Hz and 120Hz must cover the same distance per second")
     }
     func testMovingCircleLoopsAndIndependentPathsHaveSameScreenSpeed() throws {
         let routes = [route("day|0|1"), route("day|1|1")]
@@ -131,10 +132,10 @@ final class RouteSelectionTests: XCTestCase {
         let animation = RouteMotionAnimation(); animation.reset(paths: [short, long])
         _ = animation.positions(timestamp: 0, project: project)
         let positions = animation.positions(timestamp: 0.1, project: project)
-        XCTAssertEqual(try XCTUnwrap(positions[0]).x, 6, accuracy: 0.001)
-        XCTAssertEqual(try XCTUnwrap(positions[1]).x, 6, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(positions[0]).x, 9, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(positions[1]).x, 9, accuracy: 0.001)
         let resumed = animation.positions(timestamp: 20, project: project)
-        XCTAssertEqual(try XCTUnwrap(resumed[1]).x, 12, accuracy: 0.001, "Don't catch up with a huge jump after suspension")
+        XCTAssertEqual(try XCTUnwrap(resumed[1]).x, 18, accuracy: 0.001, "Don't catch up with a huge jump after suspension")
         var zeroCursor = RouteMotionCursor()
         XCTAssertEqual(zeroCursor.advance(on: RouteMotionPath(points: [short.points[0], short.points[0]]), distance: 6, project: project), .zero)
     }

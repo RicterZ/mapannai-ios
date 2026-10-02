@@ -8,9 +8,12 @@ struct MarkerDetailView: View {
     var onClose: () -> Void
     var onNavigateItinerary: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var navigationUnavailable = false
     @State private var editing = false
     @State private var deleting = false
-    private var current: Marker { store.markers.first(where: { $0.id == marker.id }) ?? marker }
+    @State private var noteHeight: CGFloat = 1
+    private var current: Marker { store.selectedMarker ?? store.markers.first(where: { $0.id == marker.id }) ?? marker }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
     private var detailLayout: MarkerDetailLayout {
         MarkerDetailLayout(marker: current, itineraryCount: itineraries.count, hasSelectedDay: store.day != nil)
@@ -21,20 +24,39 @@ struct MarkerDetailView: View {
         detailLayout.compactHeight
     }
     var body: some View {
+        detailContent
+            .alert("无法打开高德地图", isPresented: $navigationUnavailable) {
+                Button("取消", role: .cancel) {}
+                Button("打开系统地图") { MarkerPresentation.appleMapsItem(for: current)?.openInMaps(launchOptions: nil) }
+            } message: { Text("请确认已安装高德地图，或使用系统地图打开此地点。") }
+    }
+    private var detailContent: some View {
         NavigationStack {
+            ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let image = current.content.headerImage, let url = imageURL(image) {
-                        AsyncImage(url: url) { phase in
-                            if let image = phase.image { image.resizable().scaledToFill() }
-                            else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
-                        }.frame(height: 210).clipped().clipShape(RoundedRectangle(cornerRadius: 20))
+                        MarkerCoverBanner {
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image { image.resizable().scaledToFill() }
+                                else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
+                            }
+                        }.clipShape(RoundedRectangle(cornerRadius: 20))
                     }
                     Label(current.title, systemImage: current.icon.symbol).font(.title2.weight(.bold)).foregroundStyle(Theme.ink)
                     if let address = current.content.address { Text(address).font(.subheadline).foregroundStyle(.secondary) }
                     HStack(spacing: 12) {
                         if let item = MarkerPresentation.appleMapsItem(for: current) {
-                            Button { item.openInMaps(launchOptions: nil) } label: {
+                            Button {
+                                if store.settings.navigationMapApp == .amap,
+                                   let url = MarkerPresentation.amapNavigationURL(for: current) {
+                                    UIApplication.shared.open(url, options: [:]) { opened in
+                                        Task { @MainActor in navigationUnavailable = !opened }
+                                    }
+                                } else {
+                                    item.openInMaps(launchOptions: nil)
+                                }
+                            } label: {
                                 Label("导航", systemImage: "location")
                                     .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
                                     .foregroundStyle(Theme.accent).background(Theme.consoleRaised, in: RoundedRectangle(cornerRadius: 12))
@@ -82,11 +104,19 @@ struct MarkerDetailView: View {
                         }
                     }
                     if hasNote {
-                        HTMLReader(html: current.content.markdownContent)
-                            .frame(minHeight: 120).accessibilityIdentifier("marker-note")
+                        HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight)
+                            .frame(height: noteHeight).accessibilityIdentifier("marker-note")
                     }
                 }.padding(20)
-            }.navigationTitle("地点").navigationBarTitleDisplayMode(.inline)
+            }
+            .id(current.id)
+            .transition(reduceMotion ? .identity : .asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)))
+            }
+            .clipped()
+            .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: current.id)
+            .navigationTitle("地点").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     PanelCloseToolbarItem(identifier: "close-marker-detail") { onClose() }
                     ToolbarItem(placement: .confirmationAction) { Button("编辑") { editing = true } }
@@ -96,8 +126,9 @@ struct MarkerDetailView: View {
                     Button("取消", role: .cancel) {}
                     Button("删除", role: .destructive) { if store.deleteMarker(current) { dismiss() } }
                 } message: { Text("会从所有每日行程和路线中移除这个地点。") }
-        }.task(id: current.id) { await store.refreshSelectedMarker(current.id) }
-            .modifier(MarkerDetailPresentation(compactDetails: compactDetails, compactHeight: compactHeight))
+        }.onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
+            .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
+            .modifier(MarkerDetailPresentation(compactDetails: compactDetails, compactHeight: compactHeight, restingFraction: detailLayout.restingFraction))
     }
 
 }
@@ -161,18 +192,22 @@ struct MarkerEditorView: View {
     }
     private var coverPicker: some View {
         PhotosPicker(selection: $photo, matching: .images) {
-            if uploading {
-                HStack { ProgressView(); Text("上传中…") }.frame(maxWidth: .infinity, minHeight: 44)
-            } else if let uploadedPreview {
-                Image(uiImage: uploadedPreview).resizable().scaledToFit().frame(maxWidth: .infinity)
-            } else if let url = imageURL(draft.headerImage) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image { image.resizable().scaledToFit() }
-                    else { Label("更换封面图", systemImage: "photo") }
-                }.frame(maxWidth: .infinity)
-            } else {
-                Label("添加封面图", systemImage: "photo").frame(minHeight: 44)
-            }
+            MarkerCoverBanner {
+                if uploading {
+                    HStack { ProgressView(); Text("上传中…") }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let uploadedPreview {
+                    Image(uiImage: uploadedPreview).resizable().scaledToFill()
+                } else if let url = imageURL(draft.headerImage) {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image { image.resizable().scaledToFill() }
+                        else { Label("更换封面图", systemImage: "photo").frame(maxWidth: .infinity, maxHeight: .infinity) }
+                    }
+                } else {
+                    Label("添加封面图", systemImage: "photo")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }.contentShape(Rectangle())
         }.buttonStyle(.plain)
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
@@ -308,13 +343,97 @@ private struct IPadMarkerDialogPresentation: ViewModifier {
 private struct MarkerDetailPresentation: ViewModifier {
     let compactDetails: Bool
     let compactHeight: CGFloat
+    let restingFraction: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewBuilder func body(content: Content) -> some View {
         if UIDevice.current.userInterfaceIdiom == .pad {
             content.modifier(IPadMarkerDialogPresentation(allowsBackgroundInteraction: true))
         } else {
-            content.presentationDetents(compactDetails ? [.height(compactHeight), .large] : [.medium, .large])
+            content.background {
+                MarkerSheetResize(compact: compactDetails, height: compactHeight, fraction: restingFraction, reduceMotion: reduceMotion)
+                    .allowsHitTesting(false)
+            }
                 .presentationBackgroundInteraction(.enabled)
                 .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+/// The cover always fills the available width; source images are cropped, never stretched.
+private struct MarkerCoverBanner<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        Color.clear
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .overlay {
+                GeometryReader { geometry in
+                    content().frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .clipped()
+    }
+}
+
+/// Keep one stable resting detent and animate its resolver changes with UIKit.
+private struct MarkerSheetResize: UIViewRepresentable {
+    let compact: Bool
+    let height: CGFloat
+    let fraction: CGFloat
+    let reduceMotion: Bool
+    func makeUIView(context: Context) -> Probe { Probe() }
+    func updateUIView(_ view: Probe, context: Context) {
+        view.compact = compact; view.height = height; view.fraction = fraction; view.reduceMotion = reduceMotion
+        view.setNeedsLayout()
+    }
+    final class Probe: UIView {
+        var compact = false
+        var height: CGFloat = 0
+        var fraction: CGFloat = 0.55
+        private var resolvedCompact = false
+        private var resolvedHeight: CGFloat = 0
+        private var resolvedFraction: CGFloat = 0.55
+        var reduceMotion = false
+        private var previous: String?
+        private weak var configuredSheet: UISheetPresentationController?
+        private let resting = UISheetPresentationController.Detent.Identifier("marker-resting")
+        override func didMoveToWindow() { super.didMoveToWindow(); setNeedsLayout() }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            var responder: UIResponder? = self
+            var sheet: UISheetPresentationController?
+            while let next = responder?.next {
+                responder = next
+                if let controller = next as? UIViewController,
+                   let value = controller.presentationController as? UISheetPresentationController,
+                   value.presentedViewController === controller {
+                    sheet = value; break
+                }
+            }
+            guard window != nil, let sheet else { return }
+            let key = "\(compact):\(height):\(fraction)"
+            guard configuredSheet !== sheet || previous != key else { return }
+            let first = configuredSheet !== sheet
+            configuredSheet = sheet; previous = key
+            let updateResolver = {
+                self.resolvedCompact = self.compact
+                self.resolvedHeight = self.height
+                self.resolvedFraction = self.fraction
+            }
+            if first {
+                updateResolver()
+                sheet.detents = [.custom(identifier: resting) { [weak self] context in
+                    guard let self else { return nil }
+                    return self.resolvedCompact ? min(self.resolvedHeight, context.maximumDetentValue) : context.maximumDetentValue * self.resolvedFraction
+                }, .large()]
+                sheet.selectedDetentIdentifier = resting
+                sheet.largestUndimmedDetentIdentifier = resting
+            } else {
+                let changes = { updateResolver(); sheet.invalidateDetents() }
+                if reduceMotion { changes() }
+                else { sheet.animateChanges(changes) }
+            }
         }
     }
 }
