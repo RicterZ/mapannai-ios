@@ -184,6 +184,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     ?? MAAnnotationView(annotation: pin, reuseIdentifier: "draft-location")!
                 view.annotation = pin
                 view.canShowCallout = false
+                view.image = nil
                 styleDraftPin(view)
                 return view
             }
@@ -423,7 +424,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
         }
         private func styleDraftPin(_ view: MAAnnotationView) {
-            let symbol = store.draft?.icon == .location ? "scope" : (store.draft?.icon.symbol ?? "scope")
+            let symbol = store.draft?.icon == .location ? "circle" : (store.draft?.icon.symbol ?? "circle")
             let key = "draft-" + symbol
             if pinImages[key] == nil {
                 pinImages[key] = UIGraphicsImageRenderer(size: CGSize(width: 44, height: 48)).image { context in
@@ -456,7 +457,20 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     }
                 }
             }
+            let firstAppearance = view.image == nil
             view.image = pinImages[key]
+            if firstAppearance && !UIAccessibility.isReduceMotionEnabled {
+                let scale = CABasicAnimation(keyPath: "transform.scale")
+                scale.fromValue = 0.75; scale.toValue = 1
+                scale.duration = 0.22
+                scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                view.layer.add(scale, forKey: "draft-appear-scale")
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 0; fade.toValue = 1
+                fade.duration = 0.22
+                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                view.layer.add(fade, forKey: "draft-appear-fade")
+            }
             // The tip (22, 42) is the selected geographic point.
             view.centerOffset = CGPoint(x: 0, y: -18)
             view.zIndex = 1000
