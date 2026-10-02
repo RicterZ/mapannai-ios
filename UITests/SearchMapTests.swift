@@ -94,17 +94,18 @@ final class SearchMapTests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["itinerary-collapse"].exists)
         search.tap()
-        XCTAssertTrue(app.staticTexts["添加到第1天"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["搜索图标"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["同时添加到今日行程"].exists)
         app.buttons["close-place-picker"].tap()
         app.buttons["journey-back"].tap()
         search.tap()
         XCTAssertTrue(app.searchFields["map-place-search"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["添加到第1天"].exists)
+        XCTAssertFalse(app.staticTexts["同时添加到今日行程"].exists)
         app.buttons["close-place-picker"].tap()
         app.buttons["journey-back"].tap()
         search.tap()
         XCTAssertTrue(app.searchFields["map-place-search"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["添加到第1天"].exists)
+        XCTAssertFalse(app.staticTexts["同时添加到今日行程"].exists)
     }
 
     @MainActor private func openSearch(_ app: XCUIApplication) {

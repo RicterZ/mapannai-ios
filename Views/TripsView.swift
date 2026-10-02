@@ -329,12 +329,8 @@ struct DayMarkerPicker: View {
     var onSearch: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searched = false
-    private var targetTitle: String {
-        guard let day else { return "搜索地点" }
-        let trip = store.trips.first { $0.id == day.tripId }
-        let number = (trip?.days.sorted { $0.date < $1.date }.firstIndex { $0.id == day.id } ?? 0) + 1
-        return "添加到第\(number)天"
-    }
+    private var targetTitle: String { day == nil ? "搜索地点" : "搜索图标" }
+    private var targetSubtitle: String? { day == nil ? nil : "同时添加到今日行程" }
     var body: some View {
         ZStack(alignment: .top) {
         NavigationStack {
@@ -397,7 +393,7 @@ struct DayMarkerPicker: View {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 2) {
                         Text(targetTitle).font(.headline)
-                        if let day { Text(day.date).font(.caption).foregroundStyle(.secondary) }
+                        if let targetSubtitle { Text(targetSubtitle).font(.caption).foregroundStyle(.secondary) }
                     }.accessibilityElement(children: .combine)
                 }
                 ToolbarItem(placement: .cancellationAction) {
@@ -436,7 +432,7 @@ struct DayMarkerPicker: View {
                         .frame(width: 88, alignment: .leading)
                     VStack(spacing: 3) {
                         Text(targetTitle).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: .label)).lineLimit(1)
-                        if let day { Text(day.date).font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel)) }
+                        if let targetSubtitle { Text(targetSubtitle).font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel)) }
                     }.frame(maxWidth: .infinity)
                     Button {
                         searched = true; onSearch(); Task { await store.search() }
