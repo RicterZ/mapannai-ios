@@ -89,6 +89,8 @@ struct HomeView: View {
                     .mask(alignment: .top) {
                         JourneyContentReveal(headerProgress: sidebar ? 1 : headerProgress,
                             headerHeight: compactJourneyHeight)
+                            // Cover the native sheet bottom safe area as well as its content.
+                            .ignoresSafeArea(.container, edges: .bottom)
                     }
                     .animation(AppMotion.crossfade(reduceMotion: reduceMotion)) { content in
                         content.opacity(journeyVisible ? 1 : 0)
@@ -116,7 +118,6 @@ struct HomeView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .clipped()
             .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: store.placeSearchPresented)
             .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: aiPresented)
         }
