@@ -35,7 +35,6 @@ import SwiftUI
     @Published private(set) var searchPageRevision = UUID()
     @Published var searching = false
     @Published var loading = false
-    @Published var routeEdit: RouteEditSession?
     @Published var saving = false
     @Published var errorMessage: String?
     @Published var routeError: String?
@@ -44,17 +43,6 @@ import SwiftUI
     @Published var routeCandidatePoint = CGPoint.zero
     @Published var displayRoutes: [DisplayRoute] = []
     @Published var routeProgress = ""
-    // Heavy detail work waits until the renderer's camera interpolation has settled.
-    private var detailWorkNotBefore = Date.distantPast
-    func deferDetailWork(for duration: TimeInterval) {
-        detailWorkNotBefore = Date().addingTimeInterval(duration)
-    }
-    func waitForDetailPresentation() async throws {
-        while detailWorkNotBefore > Date() {
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        try Task.checkCancellation()
-    }
     @Published var camera: CameraCommand?
     @Published var locating = UUID()
     @Published var mapViewportInsets: MapViewportInsets = .phone
@@ -94,7 +82,6 @@ import SwiftUI
     func connect() async {
         connectionRevision = UUID(); refreshGeneration = UUID(); loading = false; refreshing = false
         endAddingPlace()
-        routeEdit = nil
         tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
         camera = nil; startupCameraPending = true
         resetSearchSession(); rebuildRoutes()
@@ -131,7 +118,6 @@ import SwiftUI
         if changedTrips { trips = snapshot.trips }
         if let tripID, !trips.contains(where: { $0.id == tripID }) { self.tripID = nil; dayID = nil }
         if let dayID, !(trip?.days.contains(where: { $0.id == dayID }) ?? false) { self.dayID = nil }
-        if let routeEdit, !trips.contains(where: { $0.id == routeEdit.day.tripId && $0.days.contains(where: { $0.id == routeEdit.day.id }) }) { self.routeEdit = nil }
         if let selection = selectedMarker, let updated = markers.first(where: { $0.id == selection.id }) {
             if selection != updated { selectedMarker = updated }
         } else if selectedMarker != nil { selectedMarker = nil }
@@ -143,7 +129,7 @@ import SwiftUI
         let revision = connectionRevision, dataVersion = dataRevision, client = api
         do {
             guard let marker = try await markerRepository.detail(id, using: client) else { return }
-            try await waitForDetailPresentation()
+            try Task.checkCancellation()
             guard revision == connectionRevision, dataVersion == dataRevision,
                   !saving, let index = markers.firstIndex(where: { $0.id == id }), markers[index] != marker else { return }
             let moved = markers[index].coordinates != marker.coordinates
@@ -278,8 +264,45 @@ import SwiftUI
         }
         if ok { self.draft = nil }; return ok
     }
-    func deleteMarker(_ marker: Marker) async {
-        if await perform({ try await $0.mutate("markers/\(APIClient.id(marker.id))", method: "DELETE") }) { selectedMarker = nil }
+    @discardableResult
+    func deleteMarker(_ marker: Marker, animated: Bool = true) -> Bool {
+        guard !demo else { errorMessage = "当前为只读示例，无法删除地点。"; return false }
+        guard !saving else { errorMessage = "请等待当前保存完成"; return false }
+        guard markers.contains(where: { $0.id == marker.id }) else { return false }
+        let previousMarkers = markers, previousTrips = trips
+        let revision = connectionRevision, client = api
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
+        saving = true
+        withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
+            markers.removeAll { $0.id == marker.id }
+            for ti in trips.indices {
+                for di in trips[ti].days.indices {
+                    trips[ti].days[di] = trips[ti].days[di].removing(marker.id)
+                }
+            }
+            if selectedMarker?.id == marker.id { selectedMarker = nil }
+        }
+        rebuildRoutes(preservingPlannedGeometry: true)
+        Task {
+            await markerRepository.invalidate(using: client)
+            do {
+                try await client.mutate("markers/\(APIClient.id(marker.id))", method: "DELETE")
+                guard revision == connectionRevision else { return }
+                await markerRepository.invalidate(using: client)
+                guard revision == connectionRevision else { return }
+                saving = false
+                await refresh(quietly: true)
+            } catch {
+                guard revision == connectionRevision else { return }
+                withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
+                    markers = previousMarkers; trips = previousTrips
+                }
+                saving = false
+                rebuildRoutes(preservingPlannedGeometry: true)
+                report(error)
+            }
+        }
+        return true
     }
     func updateDay(_ day: TripDay) async -> Bool {
         let body: [String: Any] = ["title": day.title ?? "", "emoji": day.emoji ?? "", "markerIds": day.markerIds, "chains": day.chains]
@@ -288,26 +311,6 @@ import SwiftUI
     static func dayPath(_ day: TripDay) -> String { "trips/\(APIClient.id(day.tripId))/days/\(APIClient.id(day.id))" }
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
         return await perform { try await $0.mutate(Self.dayPath(day) + "/markers", method: "POST", body: ["markerId": marker.id]) }
-    }
-    func beginRouteEditing(_ day: TripDay, index: Int?) {
-        guard !saving, routeEdit == nil else { return }
-        if let index, !day.chains.indices.contains(index) { return }
-        routeEdit = RouteEditSession(day: day, index: index, ids: index.map { day.chains[$0] } ?? [])
-    }
-    func cancelRouteEditing() { routeEdit = nil }
-    @discardableResult func saveRouteEditing() -> Bool {
-        guard let edit = routeEdit,
-              let latest = trips.first(where: { $0.id == edit.day.tripId })?.days.first(where: { $0.id == edit.day.id }) else { return false }
-        do {
-            guard edit.ids.allSatisfy({ id in markers.contains(where: { $0.id == id }) }) else {
-                throw AppError.message("部分地点已被删除，请取消编辑后重试")
-            }
-            let updated = try edit.applying(to: latest)
-            if updated == latest { routeEdit = nil; return true }
-            guard saveDayInBackground(updated) else { return false }
-            routeEdit = nil
-            return true
-        } catch { report(error); return false }
     }
     @discardableResult
     func saveDayInBackground(_ day: TripDay, animated: Bool = true) -> Bool {
@@ -371,7 +374,6 @@ import SwiftUI
     }
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
         let changedDay = tripID != trip?.id || dayID != day?.id
-        if changedDay { routeEdit = nil }
         tripID = trip?.id; dayID = day?.id; selectedMarker = nil
         rebuildRoutes(preservingPlannedGeometry: true)
         guard focus else { return }
@@ -423,7 +425,6 @@ import SwiftUI
         let detail = MarkerDetailLayout(marker: marker,
             itineraryCount: MarkerPresentation.itineraries(for: marker.id, trips: trips).count,
             hasSelectedDay: day != nil)
-        deferDetailWork(for: 1.6) // Renderer replaces this with its actual camera duration.
         selectedMarker = marker
         camera = CameraCommand(points: [marker.coordinates], detailLayout: detail)
     }
@@ -675,8 +676,10 @@ import SwiftUI
                     guard !Task.isCancelled, self.routeGeneration == generation else { return }
                     if let index = displayRoutes.firstIndex(where: { $0.id == display.id }) {
                         var updated = displayRoutes[index]
-                        if updated.points != points || updated.isPlanned != !route.isFallback {
+                        let distance = route.isFallback ? nil : route.distance
+                        if updated.points != points || updated.isPlanned != !route.isFallback || updated.distance != distance {
                             updated.points = points; updated.isPlanned = !route.isFallback
+                            updated.distance = distance
                             var transaction = Transaction(); transaction.disablesAnimations = true
                             withTransaction(transaction) { displayRoutes[index] = updated }
                         }
@@ -740,7 +743,8 @@ struct CameraCommand: Identifiable {
                         bottomSheet: Bool) -> MapViewportInsets {
         var insets = base
         if bottomSheet, let detailLayout {
-            insets.bottom = max(insets.bottom, detailLayout.occlusion(height: height, bottomSafeArea: bottomSafeArea) + 25)
+            // The journey panel collapses when details open; its previous full height must not shift the camera.
+            insets.bottom = detailLayout.occlusion(height: height, bottomSafeArea: bottomSafeArea) + 25
         }
         // Keep a visible region without truncating a half-height or taller detail sheet.
         insets.bottom = min(insets.bottom, max(0, height - insets.top - 80))

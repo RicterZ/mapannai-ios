@@ -5,11 +5,11 @@ import UniformTypeIdentifiers
 struct MarkerDetailView: View {
     @ObservedObject var store: AppStore
     let marker: Marker
+    var onClose: () -> Void
     var onNavigateItinerary: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var editing = false
     @State private var deleting = false
-    @State private var noteReady = false
     private var current: Marker { store.markers.first(where: { $0.id == marker.id }) ?? marker }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
     private var detailLayout: MarkerDetailLayout {
@@ -25,7 +25,7 @@ struct MarkerDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let image = current.content.headerImage, let url = imageURL(image) {
-                        AsyncImage(url: noteReady ? url : nil) { phase in
+                        AsyncImage(url: url) { phase in
                             if let image = phase.image { image.resizable().scaledToFill() }
                             else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
                         }.frame(height: 210).clipped().clipShape(RoundedRectangle(cornerRadius: 20))
@@ -82,34 +82,21 @@ struct MarkerDetailView: View {
                         }
                     }
                     if hasNote {
-                        Group {
-                            if noteReady {
-                                HTMLReader(html: current.content.markdownContent)
-                            } else {
-                                Color.clear
-                            }
-                        }.frame(minHeight: 120).accessibilityIdentifier("marker-note")
+                        HTMLReader(html: current.content.markdownContent)
+                            .frame(minHeight: 120).accessibilityIdentifier("marker-note")
                     }
                 }.padding(20)
             }.navigationTitle("地点").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    PanelCloseToolbarItem(identifier: "close-marker-detail") { dismiss() }
+                    PanelCloseToolbarItem(identifier: "close-marker-detail") { onClose() }
                     ToolbarItem(placement: .confirmationAction) { Button("编辑") { editing = true } }
                 }
                 .sheet(isPresented: $editing) { MarkerEditorView(store: store, initial: MarkerDraft(marker: current)) }
                 .alert("删除地点？", isPresented: $deleting) {
                     Button("取消", role: .cancel) {}
-                    Button("删除", role: .destructive) { Task { await store.deleteMarker(current); if store.selectedMarker == nil { dismiss() } } }
+                    Button("删除", role: .destructive) { if store.deleteMarker(current) { dismiss() } }
                 } message: { Text("会从所有每日行程和路线中移除这个地点。") }
         }.task(id: current.id) { await store.refreshSelectedMarker(current.id) }
-            .task(id: marker.id) {
-                // Wait for both sheet and native camera animation, not a fixed 300ms.
-                do {
-                    try await Task.sleep(for: .milliseconds(350))
-                    try await store.waitForDetailPresentation()
-                } catch { return }
-                noteReady = true
-            }
             .modifier(MarkerDetailPresentation(compactDetails: compactDetails, compactHeight: compactHeight))
     }
 

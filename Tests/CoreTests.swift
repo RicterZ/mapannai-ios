@@ -1,6 +1,31 @@
 import XCTest
 
 final class OptimisticDeletionTests: XCTestCase {
+    @MainActor func testMarkerDeletionIsImmediateAndFailureRestoresMemberships() async throws {
+        let defaults = UserDefaults.standard
+        let previousURL = defaults.object(forKey: "baseURL")
+        defaults.set("", forKey: "baseURL")
+        let settings = Settings()
+        if let previousURL { defaults.set(previousURL, forKey: "baseURL") }
+        else { defaults.removeObject(forKey: "baseURL") }
+        let sample = AppStore(settings: settings, demo: true)
+        let store = AppStore(settings: settings, demo: false)
+        store.trips = sample.trips; store.markers = sample.markers
+        let originalTrips = store.trips, originalMarkers = store.markers
+        let marker = try XCTUnwrap(store.markers.first)
+        store.focus(marker)
+        XCTAssertTrue(store.deleteMarker(marker, animated: false))
+        XCTAssertNil(store.selectedMarker)
+        XCTAssertFalse(store.markers.contains { $0.id == marker.id })
+        XCTAssertFalse(store.trips.flatMap(\.days).contains { $0.markerIds.contains(marker.id) || $0.chains.contains { $0.contains(marker.id) } })
+        XCTAssertTrue(store.saving)
+        for _ in 0..<100 where store.saving { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(store.saving)
+        XCTAssertEqual(store.trips, originalTrips)
+        XCTAssertEqual(store.markers, originalMarkers)
+        XCTAssertNotNil(store.errorMessage)
+    }
+
     @MainActor func testDeletionIsImmediateAndFailureRestoresData() async throws {
         let defaults = UserDefaults.standard
         let previousURL = defaults.object(forKey: "baseURL")
@@ -71,6 +96,8 @@ final class CoreTests: XCTestCase {
         let insets = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: true)
         XCTAssertEqual(store.mapViewportInsets, collapsed)
         XCTAssertEqual(insets.bottom, 451)
+        let full = MapLayout(width: 393, height: 852, regularWidth: false, expanded: true, sheetHeight: 852).insets
+        XCTAssertEqual(command.viewportInsets(base: full, height: 852, bottomSafeArea: 34, bottomSheet: true).bottom, insets.bottom)
         let centerY = (852 + insets.top - insets.bottom) / 2
         XCTAssertLessThan(centerY + 22, 852 / 2)
         store.focus(marker)
@@ -514,6 +541,22 @@ final class AppConfigurationTests: XCTestCase {
     }
 }
 final class RoutePolicyTests: XCTestCase {
+    func testCachedDistanceSurvivesGeometryRestoreButFallbackDoesNotExposeDistance() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = RouteCache(directory: directory), processing = RouteProcessing()
+        let a = Coordinate(latitude: 31, longitude: 121), b = Coordinate(latitude: 31.01, longitude: 121.01)
+        let display = DisplayRoute(id: "segment", dayID: "day", tripID: "trip", colorIndex: 0, points: [a, b], isPlanned: false)
+        let segment = RouteSegment(display: display, origin: a, destination: b)
+        let key = RouteCache.key(a, b, mode: .walking, provider: .amap, server: "test")
+        for fallback in [nil, "UNSUPPORTED_REGION"] as [String?] {
+            await cache.put(PlannedRoute(path: [RoutePoint(lat: a.latitude, lng: a.longitude), RoutePoint(lat: b.latitude, lng: b.longitude)], distance: 1234, duration: 900, fallback: fallback), key: key)
+            let result = try await processing.restoringCachedGeometry([segment], cache: cache, mode: .walking, provider: .amap, server: "test")
+            XCTAssertEqual(result[0].display.distance, fallback == nil ? 1234 : nil)
+            XCTAssertEqual(result[0].display.isPlanned, fallback == nil)
+        }
+    }
+
     @MainActor func testAutomaticModeAtTwoKilometreBoundaryAndCacheReuse() {
         let start = Coordinate(latitude: 0, longitude: 0)
         func point(_ metres: Double) -> Coordinate {
@@ -581,7 +624,7 @@ final class LongPressLookupTests: XCTestCase {
     }
 }
 
-final class InlineRouteEditingTests: XCTestCase {
+final class RouteEditingTests: XCTestCase {
     func testDraftReordersOnlySelectedRouteAndRetainsDayMembership() throws {
         let day = TripDay(id: "day", tripId: "trip", date: "2026-10-02", markerIds: ["a", "b", "c", "d"], chains: [["a", "b", "c"], ["a", "d"]])
         var edit = RouteEditSession(day: day, index: 0, ids: day.chains[0])
@@ -601,7 +644,7 @@ final class InlineRouteEditingTests: XCTestCase {
         XCTAssertEqual(try empty.applying(to: day).markerIds, day.markerIds)
         XCTAssertThrowsError(try RouteEditSession(day: day, index: nil, ids: ["a"]).applying(to: day))
     }
-    @MainActor func testSaveClosesDraftImmediatelyAndFailedAPIRestoresDay() async throws {
+    @MainActor func testSaveUpdatesImmediatelyAndFailedAPIRestoresDay() async throws {
         let defaults = UserDefaults.standard, previousURL = defaults.object(forKey: "baseURL")
         defaults.set("", forKey: "baseURL")
         let settings = Settings()
@@ -609,11 +652,9 @@ final class InlineRouteEditingTests: XCTestCase {
         let sample = AppStore(settings: settings, demo: true), store = AppStore(settings: settings, demo: false)
         store.trips = sample.trips; store.markers = sample.markers
         let day = try XCTUnwrap(store.trips.first?.days.first)
-        store.beginRouteEditing(day, index: 0)
-        store.routeEdit?.ids.reverse()
+        let draft = RouteEditSession(day: day, index: 0, ids: Array(day.chains[0].reversed()))
         XCTAssertEqual(store.trips.first?.days.first, day)
-        XCTAssertTrue(store.saveRouteEditing())
-        XCTAssertNil(store.routeEdit)
+        XCTAssertTrue(store.saveDayInBackground(try draft.applying(to: day)))
         XCTAssertEqual(store.trips.first?.days.first?.chains[0], Array(day.chains[0].reversed()))
         for _ in 0..<100 where store.saving { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(store.saving)

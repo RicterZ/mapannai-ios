@@ -2,43 +2,99 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
-    @MainActor func testLongPressDragsInPlaceAndRetainsEditModeUntilCancel() throws {
-        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
-        let first = app.buttons["route-0-marker-demo-1"]
-        XCTAssertTrue(first.waitForExistence(timeout: 10))
-        let second = app.buttons["route-0-marker-demo-2"]
-        XCTAssertTrue(second.exists)
-        first.press(forDuration: 0.5, thenDragTo: second)
-        let save = app.buttons["route-save"]
-        XCTAssertTrue(save.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["route-remove-demo-1"].exists)
-        XCTAssertFalse(app.buttons["itinerary-search"].exists)
-        XCTAssertFalse(app.buttons["itinerary-header-location"].exists)
-        XCTAssertFalse(app.alerts["删除路线？"].exists)
-        XCTAssertGreaterThan(first.frame.midY, second.frame.midY)
-        app.buttons["route-remove-demo-2"].tap()
-        XCTAssertFalse(second.exists)
-        XCTAssertTrue(save.exists)
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = "Inline route edit after dragging"; attachment.lifetime = .keepAlways; add(attachment)
-        app.buttons["route-cancel"].tap()
-        XCTAssertTrue(second.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["itinerary-search"].exists)
-        XCTAssertTrue(app.buttons["itinerary-header-location"].exists)
-        XCTAssertFalse(save.exists)
-        XCTAssertLessThan(first.frame.midY, second.frame.midY)
+    @MainActor func testIndependentMarkerHasDeleteMenuAndReturnsToOverview() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--overlapping-routes-demo"]
+        app.launch()
+        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 10))
+        app.buttons["journey-back"].tap()
+        app.buttons["journey-back"].tap()
+        let row = app.buttons["independent-marker-demo-3"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.press(forDuration: 0.7)
+        XCTAssertTrue(app.buttons["删除地点"].waitForExistence(timeout: 5))
+        app.buttons["删除地点"].tap()
+        XCTAssertTrue(app.alerts["删除地点？"].waitForExistence(timeout: 5))
+        app.alerts["删除地点？"].buttons["取消"].tap()
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
+        app.buttons["close-marker-detail"].tap()
+        XCTAssertTrue(app.navigationBars["我的旅途"].waitForExistence(timeout: 5))
+        XCTAssertTrue(row.exists)
     }
-    @MainActor func testUnchangedInlineSaveRestoresToolsAndPlaceTap() throws {
+
+    @MainActor func testMarkerDetailsRestoreJourneyDetent() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "Phone native sheet")
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo"]
+        app.launch()
+        let panel = app.otherElements["phone-itinerary-panel"]
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        for expanded in [false, true] {
+            if expanded {
+                let bar = app.navigationBars["第1天"]
+                let start = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+                start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -450)))
+                let large = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in panel.frame.height > 650 }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [large], timeout: 5), .completed)
+            }
+            let originalHeight = panel.frame.height
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+            XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
+            let detailShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            detailShot.name = expanded ? "Place opened from full journey" : "Place opened from half journey"
+            detailShot.lifetime = .keepAlways
+            add(detailShot)
+            app.buttons["close-marker-detail"].tap()
+            let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                abs(panel.frame.height - originalHeight) < 10
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
+            XCTAssertTrue(app.navigationBars["第1天"].exists)
+            XCTAssertTrue(row.exists)
+        }
+    }
+
+    @MainActor func testDistanceDividersPreservePlaceRowSpacing() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let first = app.buttons["route-0-marker-demo-1"], second = app.buttons["route-0-marker-demo-2"]
+        XCTAssertTrue(second.waitForExistence(timeout: 10))
+        app.terminate()
+        app.launchArguments = ["--demo", "--route-distance-preview"]; app.launch()
+        XCTAssertTrue(second.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["850 m"].exists)
+        XCTAssertTrue(app.staticTexts["1.2 km"].exists)
+        let firstTitle = app.staticTexts["武康大楼"]
+        let secondTitle = app.staticTexts["武康庭"]
+        XCTAssertTrue(firstTitle.exists)
+        XCTAssertTrue(secondTitle.exists)
+        XCTAssertGreaterThan(app.staticTexts["850 m"].frame.midY, firstTitle.frame.midY)
+        XCTAssertLessThan(app.staticTexts["850 m"].frame.midY, secondTitle.frame.midY)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Preview fixture — single distance divider and original spacing"
+        shot.lifetime = .keepAlways; add(shot)
+    }
+
+    @MainActor func testPlaceMenuAndRouteMenuStaySeparateAndEditorIsStandalone() throws {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let row = app.buttons["route-0-marker-demo-1"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.press(forDuration: 0.5)
-        let save = app.buttons["route-save"]
-        XCTAssertTrue(save.waitForExistence(timeout: 5))
-        save.tap()
+        row.press(forDuration: 0.7)
+        XCTAssertTrue(app.buttons["从当天移除"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["删除路线"].exists)
+        app.buttons["编辑路线"].tap()
+        XCTAssertTrue(app.navigationBars["编辑路线"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["route-save"].exists)
+        app.buttons["取消"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        app.buttons["route-view-0"].press(forDuration: 0.7)
+        XCTAssertTrue(app.buttons["删除路线"].waitForExistence(timeout: 5))
+        app.buttons["编辑路线"].tap()
+        XCTAssertTrue(app.navigationBars["编辑路线"].waitForExistence(timeout: 5))
+        app.buttons["保存"].tap()
         XCTAssertTrue(app.buttons["itinerary-search"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["itinerary-header-location"].exists)
-        XCTAssertFalse(save.exists)
+        XCTAssertFalse(app.navigationBars["编辑路线"].exists)
         row.tap()
         XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
     }

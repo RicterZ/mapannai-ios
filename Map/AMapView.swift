@@ -129,7 +129,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
                         from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
                         to: command.points[0], currentZoom: Double(map.zoomLevel), targetZoom: command.zoomLevel,
                         reduceMotion: UIAccessibility.isReduceMotionEnabled)
-                    store.deferDetailWork(for: duration + 0.15)
                     withCameraAnimation(duration: duration) {
                         map.setMapStatus(status, animated: duration > 0, duration: duration)
                     }

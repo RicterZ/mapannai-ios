@@ -12,6 +12,8 @@ enum Theme {
     static let muted = Color(uiColor: .secondaryLabel)
     static let text = Color(uiColor: .label)
     static let separator = Color(uiColor: .separator)
+    static let routeDividerColor = Color(uiColor: .label).opacity(0.25)
+    static let routeDividerHeight: CGFloat = 0.5
     static let palette: [Color] = [.init(red: 0.08, green: 0.63, blue: 0.83), .init(red: 0.88, green: 0.35, blue: 0.66),
                                    .init(red: 0.46, green: 0.43, blue: 0.88), .init(red: 0.96, green: 0.57, blue: 0.27),
                                    .init(red: 0.16, green: 0.66, blue: 0.58), .init(red: 0.58, green: 0.44, blue: 0.72)]

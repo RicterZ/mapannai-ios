@@ -7,7 +7,8 @@ struct HomeView: View {
     // Only presentation changes invalidate Home/map; streaming tokens are observed inside the chat view.
     @State private var aiPlanner = AIPlannerStore()
     @State private var aiPresented = false
-    @State private var aiReturnDetent: ItineraryDetent?
+    @State private var aiSheetDetent: PresentationDetent = .medium
+    @State private var aiSettingsPresented = false
     @State private var showSettings = false
     @State private var creatingTrip = false
     @State private var editingTrip: Trip?
@@ -21,6 +22,8 @@ struct HomeView: View {
     @State private var journeyNavigationWidth: CGFloat = 0
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var routeReturnDetent: ItineraryDetent?
+    @State private var markerReturnDetent: ItineraryDetent?
+    @State private var markerReturnExpanded = true
     @State private var searchReturnDetent: ItineraryDetent?
     @State private var searchReturnExpanded = true
     @StateObject private var location = LocationPermission()
@@ -31,17 +34,17 @@ struct HomeView: View {
         GeometryReader { geometry in
             let sidebar = horizontalSizeClass == .regular && geometry.size.width >= 700
             Group {
-                if sidebar { modalContent(mapPage) }
+                if sidebar { modalContent(mapPage, sidebar: true) }
                 else { mapPage }
             }
-                .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0; if !$0 && aiPresented { aiPlanner.close() } }), onDismiss: { nativeJourneyPresented = true }) {
+                .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0 }), onDismiss: { nativeJourneyPresented = true }) {
                     modalContent(panelWorkspace(sidebar: false))
-                        .presentationDetents(!aiPresented ? [.height(compactJourneyHeight), .medium, .large] : [.medium, .large], selection: nativeJourneyDetent)
-                        .presentationDragIndicator(aiPresented && UIDevice.current.userInterfaceIdiom == .pad ? .hidden : .visible)
+                        .presentationDetents([.height(compactJourneyHeight), .medium, .large], selection: nativeJourneyDetent)
+                        .presentationDragIndicator(.visible)
                         .presentationBackground { JourneySheetBackground(availableHeight: journeyAvailableHeight) }
                         .presentationBackgroundInteraction(.enabled)
                         .presentationContentInteraction(.resizes)
-                        .interactiveDismissDisabled(!aiPresented)
+                        .interactiveDismissDisabled()
                 }
                 .onAppear { nativeJourneyPresented = true }
                 .task(id: settings.revision) {
@@ -51,11 +54,20 @@ struct HomeView: View {
                 .onReceive(aiPlanner.$presented.removeDuplicates()) { open in
                     withAnimation(AppMotion.presentation(reduceMotion: reduceMotion)) {
                         aiPresented = open
-                        if !sidebar {
-                            if open { aiReturnDetent = sheetDetent; sheetDetent = .half }
-                            else if let original = aiReturnDetent { sheetDetent = original; aiReturnDetent = nil }
-                        }
+                        if open { aiSheetDetent = .medium }
                     }
+                }
+                .onChange(of: store.selectedMarker?.id) { _, id in
+                    guard !sidebar, !store.placeSearchPresented else { return }
+                    guard id != nil else {
+                        restoreJourneyAfterMarker()
+                        return
+                    }
+                    if markerReturnDetent == nil {
+                        markerReturnDetent = sheetDetent
+                        markerReturnExpanded = expanded
+                    }
+                    setJourneyDetent(.compact)
                 }
                 .onChange(of: sidebar) { _, _ in nativeJourneyPresented = true }
                 .onDisappear { aiPlanner.close() }
@@ -66,13 +78,9 @@ struct HomeView: View {
         NativeSheetHeightReader(enabled: !sidebar) { geometry in
             let progress = sidebar ? 1 : JourneyPresentation.expandedProgress(
                 height: geometry.visibleHeight, compactHeight: compactJourneyHeight)
-            let journeyVisible = !store.placeSearchPresented && !aiPresented
+            let journeyVisible = !store.placeSearchPresented
             let headerProgress = reduceMotion ? (compactNavigationVisible ? 0.0 : 1.0) : progress
             ZStack(alignment: .top) {
-                if aiPresented && !sidebar {
-                    AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { showSettings = true })
-                        .transition(.opacity)
-                }
                 journeyNavigation(sidebar: sidebar)
                     // Retain list space while UIKit is settling toward smaller model bounds.
                     .frame(height: sidebar ? nil : max(geometry.layoutHeight, geometry.visibleHeight), alignment: .top)
@@ -110,7 +118,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .clipped()
             .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: store.placeSearchPresented)
-            .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: aiPresented)
+            .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: aiPresented)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(sidebar ? "sidebar-workspace" : "phone-itinerary-panel")
@@ -147,7 +155,7 @@ struct HomeView: View {
         }
     }
 
-    private func modalContent<Content: View>(_ content: Content) -> some View {
+    private func modalContent<Content: View>(_ content: Content, sidebar: Bool = false) -> some View {
         content
         .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
         .sheet(item: $editingTrip) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
@@ -159,10 +167,27 @@ struct HomeView: View {
             Button("取消", role: .cancel) {}
             Button("保存") { Task { if var day = store.day { day.title = dayTitle; _ = await store.updateDay(day) } } }
         }
+        .sheet(isPresented: Binding(get: { aiPresented && !sidebar }, set: { if !$0 { aiPlanner.close() } })) {
+            AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { aiSettingsPresented = true })
+                .presentationDetents([.medium, .large], selection: $aiSheetDetent)
+                .presentationDragIndicator(UIDevice.current.userInterfaceIdiom == .pad ? .hidden : .visible)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                .sheet(isPresented: $aiSettingsPresented) {
+                    SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible)
+                }
+        }
         .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible) }
-        .sheet(item: Binding(get: { !store.placeSearchPresented ? store.selectedMarker : nil }, set: { store.selectedMarker = $0 })) { marker in MarkerDetailView(store: store, marker: marker, onNavigateItinerary: {
+        .sheet(item: Binding(get: { !store.placeSearchPresented ? store.selectedMarker : nil }, set: {
+            store.selectedMarker = $0
+            if $0 == nil { restoreJourneyAfterMarker() }
+        }), onDismiss: restoreJourneyAfterMarker) { marker in MarkerDetailView(store: store, marker: marker, onClose: {
+            restoreJourneyAfterMarker()
+            store.selectedMarker = nil
+        }, onNavigateItinerary: {
                 expanded = true
-                if sheetDetent == .compact { sheetDetent = .half }
+                // Entering an itinerary is an explicit navigation, rather than returning to the old page.
+                markerReturnDetent = .half
+                markerReturnExpanded = true
             }) }
         .sheet(item: Binding(get: { !store.placeSearchPresented ? store.draft : nil }, set: { store.draft = $0 })) { draft in
             if UIDevice.current.userInterfaceIdiom == .pad {
@@ -200,6 +225,16 @@ struct HomeView: View {
         } message: { Text(store.errorMessage ?? "") }
         .onChange(of: settings.planning) { _, _ in store.rebuildRoutes() }
         .onChange(of: settings.mode) { _, _ in store.rebuildRoutes() }
+    }
+
+    private func restoreJourneyAfterMarker() {
+        guard let original = markerReturnDetent else { return }
+        let originalExpanded = markerReturnExpanded
+        markerReturnDetent = nil
+        withAnimation(AppMotion.presentation(reduceMotion: reduceMotion)) {
+            sheetDetent = original
+            expanded = originalExpanded
+        }
     }
 
     private var compactJourneyHeight: CGFloat { JourneyPresentation.compactHeight }
@@ -346,36 +381,22 @@ struct HomeView: View {
                 .accessibilityAction(named: "收起旅途") { if !sidebar { setJourneyDetent(.compact) } }
         }
         journeyLeadingControl(destination: destination, sidebar: sidebar)
-        ToolbarItem(placement: .topBarTrailing) {
-            ZStack {
-                if store.routeEdit != nil {
-                    routeSaveButton.transition(.scale(scale: 0.8).combined(with: .opacity))
-                } else {
-                    HStack(spacing: 0) {
-                        if !sidebar {
-                            Button { location.request { store.locating = UUID() } } label: { toolbarActionIcon("location") }
-                                .accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
-                        }
-                        Button {
-                            if sidebar { togglePanel() }
-                            else { store.beginAddingPlace(to: scope(destination).day) }
-                        } label: { toolbarActionIcon(sidebar ? "sidebar.left" : "magnifyingglass") }
-                            .accessibilityLabel(sidebar ? "收起行程" : "搜索地点")
-                            .accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-search")
-                    }.transition(.opacity)
-                }
-            }.animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.routeEdit != nil)
+        if !sidebar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { location.request { store.locating = UUID() } } label: {
+                    toolbarActionIcon("location")
+                }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
+            }
         }
-    }
-    private var routeSaveButton: some View {
-        Button {
-            withAnimation(AppMotion.crossfade(reduceMotion: reduceMotion)) { _ = store.saveRouteEditing() }
-        } label: {
-            Image(systemName: "checkmark").font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.white).frame(width: 44, height: 44)
-                .background(Color.blue, in: Circle())
-        }.buttonStyle(.plain).disabled(store.saving)
-            .accessibilityLabel("保存路线").accessibilityIdentifier("route-save")
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                if sidebar { togglePanel() }
+                else { store.beginAddingPlace(to: scope(destination).day) }
+            } label: {
+                toolbarActionIcon(sidebar ? "sidebar.left" : "magnifyingglass")
+            }.accessibilityLabel(sidebar ? "收起行程" : "搜索地点")
+                .accessibilityIdentifier(sidebar ? "itinerary-panel-toggle" : "itinerary-search")
+        }
     }
 
     @ToolbarContentBuilder private func journeyLeadingControl(destination: JourneyDestination?, sidebar: Bool) -> some ToolbarContent {
@@ -388,11 +409,7 @@ struct HomeView: View {
     private func journeyLeadingItem(destination: JourneyDestination?, sidebar: Bool) -> some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             HStack(spacing: 0) {
-                if store.routeEdit != nil {
-                    Button { withAnimation(AppMotion.crossfade(reduceMotion: reduceMotion)) { store.cancelRouteEditing() } } label: {
-                        toolbarActionIcon("xmark").frame(width: 44, height: 44)
-                    }.accessibilityLabel("取消路线编辑").accessibilityIdentifier("route-cancel")
-                } else if scope(destination).trip != nil {
+                if scope(destination).trip != nil {
                     Button {
                         guard !journeyPath.isEmpty else { return }
                         withAnimation(AppMotion.navigation(reduceMotion: reduceMotion)) { _ = journeyPath.removeLast() }
@@ -446,12 +463,16 @@ struct HomeView: View {
                     .zIndex(2)
             }
             if AIPlannerStore.entryEnabled && (!aiPresented || layout.usesSidebar) {
-                Button { if aiPresented { aiPlanner.close() } else { aiPlanner.presented = true } } label: {
-                    Image(systemName: "bubble.left").font(.system(size: 20, weight: .regular)).foregroundStyle(.primary).frame(width: 32, height: 32)
+                Button {
+                    if aiPresented { aiPlanner.close() } else { aiPlanner.presented = true }
+                } label: {
+                    Image(systemName: "bubble.left").font(.system(size: 20, weight: .regular)).foregroundStyle(.primary)
+                        .frame(width: 48, height: 48).contentShape(Rectangle())
                 }.modifier(AIEntryButtonStyle()).accessibilityLabel(aiPresented ? "收起AI助手" : "AI 助手")
                     .zIndex(3)
                     .accessibilityIdentifier("open-ai-planner")
                     .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16).padding(.top, 8)
+                    .transition(.opacity)
             }
             if layout.usesSidebar {
                 HStack(spacing: 0) {
@@ -496,10 +517,7 @@ struct HomeView: View {
     private var compactJourneyControls: some View {
         HStack(spacing: 4) {
             Group {
-            if store.routeEdit != nil {
-                Button { store.cancelRouteEditing() } label: { toolbarActionIcon("xmark").frame(width: 44, height: 44) }
-                    .accessibilityLabel("取消路线编辑").accessibilityIdentifier("route-cancel")
-            } else if store.trip != nil {
+            if store.trip != nil {
             Button {
                 guard !journeyPath.isEmpty else { return }
                 withAnimation(AppMotion.navigation(reduceMotion: reduceMotion)) { _ = journeyPath.removeLast() }
@@ -533,21 +551,14 @@ struct HomeView: View {
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.tripID)
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.dayID)
             .frame(maxWidth: .infinity)
-            ZStack {
-                if store.routeEdit != nil {
-                    routeSaveButton.transition(.scale(scale: 0.8).combined(with: .opacity))
-                } else {
-                    HStack(spacing: 0) {
-                        Button { location.request { store.locating = UUID() } } label: {
-                            toolbarActionIcon("location").frame(width: 44, height: 44)
-                        }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
-                        Button { store.beginAddingPlace(to: store.day) } label: {
-                            toolbarActionIcon("magnifyingglass").frame(width: 44, height: 44)
-                        }.accessibilityLabel("搜索地点").accessibilityIdentifier("itinerary-search")
-                    }.transition(.opacity)
-                }
-            }.frame(width: 88).buttonStyle(.plain).foregroundStyle(Theme.accent)
-                .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.routeEdit != nil)
+            HStack(spacing: 0) {
+                Button { location.request { store.locating = UUID() } } label: {
+                    toolbarActionIcon("location").frame(width: 44, height: 44)
+                }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
+                Button { store.beginAddingPlace(to: store.day) } label: {
+                    toolbarActionIcon("magnifyingglass").frame(width: 44, height: 44)
+                }.accessibilityLabel("搜索地点").accessibilityIdentifier("itinerary-search")
+            }.buttonStyle(.plain).foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -696,9 +707,19 @@ enum JourneyDestination: Hashable {
 private struct AIEntryButtonStyle: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.buttonStyle(.glass).buttonBorderShape(.circle).tint(.primary)
+            content.buttonStyle(AIEntryPressStyle()).glassEffect(.regular.interactive(), in: Circle())
         } else {
-            content.buttonStyle(.plain).padding(6).background(.regularMaterial, in: Circle())
+            content.buttonStyle(AIEntryPressStyle()).background(.regularMaterial, in: Circle())
         }
+    }
+}
+
+private struct AIEntryPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }

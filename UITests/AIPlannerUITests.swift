@@ -2,6 +2,21 @@ import XCTest
 import UIKit
 
 final class AIPlannerUITests: XCTestCase {
+    @MainActor func testCloseButtonAndConversationMenuPlacement() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let entry = app.buttons["open-ai-planner"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10))
+        entry.tap()
+        let close = app.buttons["ai-close"]
+        let topics = app.buttons["ai-conversations"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        XCTAssertTrue(topics.exists)
+        XCTAssertLessThan(close.frame.midX, topics.frame.midX)
+        close.tap()
+        XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["ai-message-input"].exists)
+    }
+
     @MainActor func testPadEntryToggleAndSettingsGuidance() throws {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "iPad sidebar")
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -9,7 +24,7 @@ final class AIPlannerUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let entry = app.buttons["open-ai-planner"]
         XCTAssertTrue(entry.waitForExistence(timeout: 10))
-        entry.tap()
+        entry.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).tap()
         XCTAssertTrue(app.textFields["ai-message-input"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["close-ai-planner"].exists)
         XCTAssertTrue(app.buttons["ai-open-settings"].exists)
@@ -21,7 +36,7 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertFalse(app.buttons["ai-configuration-link"].exists)
         app.terminate(); app.launch()
         XCTAssertTrue(entry.waitForExistence(timeout: 10))
-        entry.tap()
+        entry.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertTrue(app.textFields["ai-message-input"].waitForExistence(timeout: 3))
         entry.tap()
         XCTAssertTrue(app.otherElements["landscape-itinerary-sidebar"].waitForExistence(timeout: 5))
@@ -31,7 +46,10 @@ final class AIPlannerUITests: XCTestCase {
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "Phone system sheet")
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         XCTAssertTrue(app.buttons["open-ai-planner"].waitForExistence(timeout: 10))
-        app.buttons["open-ai-planner"].tap()
+        let entry = app.buttons["open-ai-planner"]
+        XCTAssertGreaterThanOrEqual(entry.frame.width, 48)
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 48)
+        entry.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).tap()
         XCTAssertTrue(app.textFields["ai-message-input"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["close-ai-planner"].exists)
         XCTAssertFalse(app.buttons["AI API 配置"].exists)
@@ -43,7 +61,7 @@ final class AIPlannerUITests: XCTestCase {
         drag.press(forDuration: 0.1, thenDragTo: drag.withOffset(CGVector(dx: 0, dy: 600)))
         XCTAssertTrue(app.buttons["journey-back"].waitForExistence(timeout: 8))
         XCTAssertFalse(app.textFields["ai-message-input"].exists)
-        app.buttons["open-ai-planner"].tap()
+        entry.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertTrue(app.textFields["ai-message-input"].waitForExistence(timeout: 5))
     }
 }

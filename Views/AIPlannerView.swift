@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum AIComposerLayout {
+    static let inset: CGFloat = 16
+    static let inputCornerRadius: CGFloat = 22
+}
+
 struct AIConfigurationSection: View {
     @ObservedObject var planner: AIPlannerStore
     @State private var draft = AIConfiguration()
@@ -47,6 +52,7 @@ struct AIPlannerView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
         NavigationStack {
             ScrollViewReader { proxy in
                 Group {
@@ -113,15 +119,19 @@ struct AIPlannerView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 4)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
-                    .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 0.5) }
-                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 12)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AIComposerLayout.inputCornerRadius, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: AIComposerLayout.inputCornerRadius, style: .continuous).strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 0.5) }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("ai-message-composer")
+                    .padding(.horizontal, AIComposerLayout.inset).padding(.top, 6)
+                    .padding(.bottom, max(0, AIComposerLayout.inset - geometry.safeAreaInsets.bottom))
                     .background(.regularMaterial)
                 }
             }
             .navigationTitle(planner.conversation?.title ?? "AI 助手").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                PanelCloseToolbarItem(identifier: "ai-close", placement: .topBarLeading) { planner.close() }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("新会话", systemImage: "plus") { planner.newConversation() }
                         ForEach(planner.conversations) { conversation in
@@ -131,7 +141,7 @@ struct AIPlannerView: View {
                             Button("删除当前会话", systemImage: "trash", role: .destructive) { deleteConfirmation = true }
                         }
                     } label: { Image(systemName: "bubble.left.and.bubble.right") }
-                        .disabled(planner.busy).accessibilityLabel("会话记录")
+                        .disabled(planner.busy).accessibilityLabel("会话记录").accessibilityIdentifier("ai-conversations")
                 }
 
             }
@@ -145,5 +155,6 @@ struct AIPlannerView: View {
             } message: { Text("只删除本设备聊天记录，保留已保存的地点和行程。") }
         }
         .accessibilityIdentifier("ai-planner-panel")
+        }
     }
 }

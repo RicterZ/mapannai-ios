@@ -75,21 +75,7 @@ struct DayContentsView: View {
     let day: TripDay
     var onViewRoute: () -> Void = {}
     @Environment(\.colorScheme) private var colorScheme
-    @State private var draggedID: String?
-    @State private var dragPoint = CGPoint.zero
-    @State private var dragAnchor = CGPoint.zero
-    @State private var dragSlots: [CGFloat] = []
-    @State private var listFrame = CGRect.zero
-    @State private var rowFrames: [String: CGRect] = [:]
-    private var editing: RouteEditSession? { store.routeEdit?.day.id == day.id ? store.routeEdit : nil }
-    private var visibleChains: [[String]] {
-        var chains = day.chains
-        if let editing {
-            if let index = editing.index, chains.indices.contains(index) { chains[index] = editing.ids }
-            else if editing.index == nil { chains.append(editing.ids) }
-        }
-        return chains
-    }
+    @State private var chainEditor: ChainEditRequest?
     @State private var editingTitle = false
     @State private var title = ""
     @State private var deletingDay = false
@@ -97,8 +83,9 @@ struct DayContentsView: View {
     @State private var collapsedRoutes: Set<Int> = []
     var body: some View {
         List {
+            Group {
 
-            ForEach(Array(visibleChains.enumerated()), id: \.offset) { index, chain in
+            ForEach(Array(day.chains.enumerated()), id: \.offset) { index, chain in
                 Section {
                     HStack(spacing: 0) {
                         Button {
@@ -121,7 +108,6 @@ struct DayContentsView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("route-view-\(index)")
                         .accessibilityHint("在地图上查看路线")
-                        .disabled(editing != nil)
                         Button {
                             withAnimation(AppMotion.disclosure(reduceMotion: reduceMotion)) {
                                 if collapsedRoutes.contains(index) { collapsedRoutes.remove(index) }
@@ -140,35 +126,55 @@ struct DayContentsView: View {
                         .accessibilityLabel("\(collapsedRoutes.contains(index) ? "展开" : "收起")路线 \(index + 1)")
                         .accessibilityValue(collapsedRoutes.contains(index) ? "已收起" : "已展开")
                         .accessibilityIdentifier("route-toggle-\(index)")
-                        .disabled(editing?.slot == index)
                     }
                     .contextMenu {
-                        Button("编辑顺序", systemImage: "arrow.up.arrow.down") { beginEditing(index) }
-                        DestructiveMenuButton(title: "删除路线", systemImage: "trash") { deletingChain = index }.disabled(editing != nil || store.saving)
+                        Button("编辑路线", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
+                        DestructiveMenuButton(title: "删除路线", systemImage: "trash") { deletingChain = index }
                     }
                     .font(.body)
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 8))
-                    if !collapsedRoutes.contains(index) || editing?.slot == index {
+                    if !collapsedRoutes.contains(index) {
                         ForEach(Array(chain.enumerated()), id: \.element) { position, id in
                             if let marker = store.markers.first(where: { $0.id == id }) {
-                                routeRow(marker, position: position, index: index)
-
+                                VStack(spacing: 0) {
+                                    Button { store.focus(marker) } label: {
+                                        HStack(spacing: 12) {
+                                            Text("\(position + 1)").font(.subheadline).monospacedDigit()
+                                                .foregroundStyle(.secondary).frame(minWidth: 18)
+                                            PlaceSelectionRow(marker: marker)
+                                        }.contentShape(Rectangle())
+                                    }.buttonStyle(.automatic).foregroundStyle(.primary)
+                                        .accessibilityIdentifier("route-\(index)-marker-\(id)")
+                                    if position + 1 < chain.count, let distance = routeDistance(chain: chain, index: index, position: position + 1) {
+                                        HStack(spacing: 8) {
+                                            Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
+                                            Text(distance).font(.caption).foregroundStyle(.secondary).fixedSize()
+                                                .background(Color(uiColor: .systemBackground))
+                                            Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
+                                        }
+                                        .frame(height: 13.5)
+                                        .accessibilityElement(children: .combine)
+                                        .accessibilityIdentifier("route-\(index)-distance-\(position + 1)")
+                                    } else {
+                                        Color.clear.frame(height: 13.5).accessibilityHidden(true)
+                                    }
+                                }
+                                .listRowSeparator(.hidden, edges: .all)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
+                                    } label: { Image(systemName: "trash") }
+                                    .accessibilityLabel("删除").buttonStyle(.automatic).tint(.red).disabled(store.saving)
+                                }
+                                .contextMenu {
+                                    Button("编辑路线", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
+                                    DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day, animated: !reduceMotion) } }
+                                }
                             }
                         }
                     }
-                    if editing?.slot == index {
-                        let candidates = day.markerIds.filter { !chain.contains($0) }
-                        if !candidates.isEmpty {
-                            Menu {
-                                ForEach(candidates, id: \.self) { id in
-                                    if let marker = store.markers.first(where: { $0.id == id }) {
-                                        Button(marker.title) { store.routeEdit?.ids.append(id) }
-                                    }
-                                }
-                            } label: { Label("添加当天地点", systemImage: "plus.circle").fullRowActionLabel() }
-                            .accessibilityIdentifier("route-add-place")
-                        }
-                    }
+
                 }
             }
             let linked = Set(day.chains.flatMap { $0 })
@@ -193,47 +199,19 @@ struct DayContentsView: View {
                 }
             }
             Section {
-                Button { store.beginRouteEditing(day, index: nil) } label: {
+                Button { chainEditor = ChainEditRequest(day: day, index: nil, ids: []) } label: {
                     Label("新建路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath").fullRowActionLabel()
-                }.buttonStyle(.plain).foregroundStyle(Theme.accent).disabled(editing != nil || store.saving)
+                }.buttonStyle(.plain).foregroundStyle(Theme.accent)
                 Button { store.beginAddingPlace(to: day) } label: { Label("添加地点", systemImage: "plus").fullRowActionLabel() }
-                    .buttonStyle(.plain).foregroundStyle(Theme.accent).accessibilityIdentifier("day-search-add-place").disabled(editing != nil || store.saving)
+                    .buttonStyle(.plain).foregroundStyle(Theme.accent).accessibilityIdentifier("day-search-add-place")
             } header: {
-                Color.clear.frame(height: 16).accessibilityHidden(true)
+                Color.clear.frame(height: 8).accessibilityHidden(true)
             }.font(.body)
 
+            }.listRowBackground(Color(uiColor: .systemBackground))
+                .listRowSeparator(.hidden)
         }
-        .background(GeometryReader { geometry in
-            Color.clear.preference(key: RouteListFrame.self, value: geometry.frame(in: .global))
-        })
-        .onPreferenceChange(RouteListFrame.self) { listFrame = $0 }
-        .onPreferenceChange(RouteRowFrames.self) { rowFrames = $0 }
-        .background(RouteDragRecognizer(
-            accepts: { point in
-                !store.saving && visibleChains.enumerated().contains { index, ids in
-                    (editing == nil || editing?.slot == index) && ids.contains { rowFrames["\(index):\($0)"]?.contains(point) == true }
-                }
-            },
-            onChange: handleRouteDrag
-        ))
-        .overlay(alignment: .topLeading) {
-            if let draggedID, let marker = store.markers.first(where: { $0.id == draggedID }), let editing,
-               let frame = rowFrames["\(editing.slot):\(draggedID)"] {
-                HStack(spacing: 12) {
-                    Image(systemName: "minus.circle.fill").foregroundStyle(.red)
-                    PlaceSelectionRow(marker: marker)
-                    Image(systemName: "line.3.horizontal").foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 16)
-                .frame(width: frame.width, height: frame.height)
-                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
-                .position(x: dragPoint.x - listFrame.minX, y: dragPoint.y - listFrame.minY)
-                .allowsHitTesting(false).accessibilityHidden(true)
-            }
-        }
-        .onChange(of: editing == nil) { _, ended in if ended { draggedID = nil } }
-        .onDisappear { draggedID = nil }
+        .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
         .alert("日期标题", isPresented: $editingTitle) {
             TextField("例如：梧桐街区漫步", text: $title)
             Button("取消", role: .cancel) {}
@@ -248,183 +226,74 @@ struct DayContentsView: View {
             } }
         } message: { Text("保留当天的地点，只删除这条访问顺序。") }
     }
-    private func beginEditing(_ index: Int) {
-        withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) {
-            store.beginRouteEditing(day, index: index)
-            collapsedRoutes.remove(index)
+    private func routeDistance(chain: [String], index: Int, position: Int) -> String? {
+        #if DEBUG
+        if store.demo, ProcessInfo.processInfo.arguments.contains("--route-distance-preview"), position > 0, position < chain.count {
+            return position == 1 ? "850 m" : "1.2 km"
         }
-    }
-    private func routeRow(_ marker: Marker, position: Int, index: Int) -> some View {
-        let active = editing?.slot == index
-        let key = "\(index):\(marker.id)"
-        return HStack(spacing: 12) {
-            if active {
-                Button {
-                    withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) {
-                        store.routeEdit?.ids.removeAll { $0 == marker.id }
-                    }
-                } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.red).frame(width: 32, height: 44) }
-                .buttonStyle(.borderless).accessibilityLabel("从路线移除\(marker.title)")
-                .accessibilityIdentifier("route-remove-\(marker.id)")
-            } else {
-                Text("\(position + 1)").font(.subheadline).monospacedDigit().foregroundStyle(.secondary).frame(minWidth: 18)
-            }
-            Button { if editing == nil { store.focus(marker) } } label: { PlaceSelectionRow(marker: marker) }
-                .buttonStyle(.plain).foregroundStyle(.primary)
-                .accessibilityIdentifier("route-\(index)-marker-\(marker.id)")
-            if active {
-                Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).frame(width: 32, height: 44)
-                    .accessibilityLabel("拖动调整顺序")
-            }
-        }
-        .contentShape(Rectangle())
-        .background(GeometryReader { geometry in
-            Color.clear.preference(key: RouteRowFrames.self, value: [key: geometry.frame(in: .global)])
-        })
-        .opacity(draggedID == marker.id && active ? 0 : 1)
-        .accessibilityAction(named: "编辑顺序") { beginEditing(index) }
-        .accessibilityAction(named: "上移") { moveAccessible(marker.id, index: index, offset: -1) }
-        .accessibilityAction(named: "下移") { moveAccessible(marker.id, index: index, offset: 1) }
-    }
-    private func handleRouteDrag(_ state: UIGestureRecognizer.State, _ point: CGPoint, _ scrollDelta: CGFloat) {
-        if state == .began {
-            guard let index = visibleChains.indices.first(where: { index in
-                (editing == nil || editing?.slot == index) && visibleChains[index].contains { rowFrames["\(index):\($0)"]?.contains(point) == true }
-            }), let id = visibleChains[index].first(where: { rowFrames["\(index):\($0)"]?.contains(point) == true }),
-               let frame = rowFrames["\(index):\(id)"] else { return }
-            beginEditing(index)
-            draggedID = id
-            dragSlots = visibleChains[index].compactMap { rowFrames["\(index):\($0)"]?.midY }.sorted()
-            dragAnchor = CGPoint(x: frame.midX - point.x, y: frame.midY - point.y)
-            dragPoint = CGPoint(x: frame.midX, y: frame.midY)
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        } else if state == .changed, let id = draggedID, let editing {
-            dragPoint = CGPoint(x: point.x + dragAnchor.x, y: point.y + dragAnchor.y)
-            let centers = dragSlots.map { $0 - scrollDelta }
-            if centers.count == editing.ids.count,
-               let target = centers.indices.min(by: { abs(centers[$0] - dragPoint.y) < abs(centers[$1] - dragPoint.y) }),
-               editing.ids[target] != id {
-                withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { store.routeEdit?.move(id, to: editing.ids[target]) }
-            }
-        } else if state == .ended || state == .cancelled || state == .failed {
-            draggedID = nil
-        }
-    }
-    private func moveAccessible(_ id: String, index: Int, offset: Int) {
-        beginEditing(index)
-        guard let edit = editing, edit.slot == index, let position = edit.ids.firstIndex(of: id), edit.ids.indices.contains(position + offset) else { return }
-        store.routeEdit?.move(id, to: edit.ids[position + offset])
+        #endif
+        guard position > 0, position < chain.count,
+              let route = store.displayRoutes.first(where: { $0.id == "\(day.id)|\(index)|\(position)|\(chain[position - 1])|\(chain[position])" }),
+              route.isPlanned, let distance = route.distance, distance.isFinite, distance >= 0 else { return nil }
+        return distance < 1000 ? "\(Int(distance.rounded())) m" : String(format: "%.1f km", distance / 1000)
     }
 
 }
-/// Keep one recognizer alive while SwiftUI inserts edit controls and reorders cells.
-/// Touch filtering confines this window-level recognizer to this list's route rows.
-private struct RouteDragRecognizer: UIViewRepresentable {
-    var accepts: (CGPoint) -> Bool
-    var onChange: (UIGestureRecognizer.State, CGPoint, CGFloat) -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-    func makeUIView(context: Context) -> Anchor {
-        let view = Anchor()
-        view.isUserInteractionEnabled = false
-        view.onWindow = { [weak coordinator = context.coordinator] view in coordinator?.attach(view) }
-        context.coordinator.anchor = view
-        return view
-    }
-    func updateUIView(_ view: Anchor, context: Context) { context.coordinator.parent = self }
-    static func dismantleUIView(_ view: Anchor, coordinator: Coordinator) { coordinator.detach() }
-    final class Anchor: UIView {
-        var onWindow: ((Anchor) -> Void)?
-        override func didMoveToWindow() { super.didMoveToWindow(); onWindow?(self) }
-    }
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        var parent: RouteDragRecognizer
-        weak var anchor: Anchor?
-        weak var scroll: UIScrollView?
-        var displayLink: CADisplayLink?
-        var previousPanEnabled: Bool?
-        var manualScrollDelta: CGFloat = 0
-        var activeNotification: NSObjectProtocol?
-        var lastTimestamp: CFTimeInterval = 0
-        lazy var recognizer: UILongPressGestureRecognizer = {
-            let value = UILongPressGestureRecognizer(target: self, action: #selector(changed))
-            value.minimumPressDuration = 0.35; value.allowableMovement = 12
-            value.delegate = self; value.cancelsTouchesInView = true
-            return value
-        }()
-        init(_ parent: RouteDragRecognizer) {
-            self.parent = parent
-            super.init()
-            activeNotification = NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                guard let self else { return }
-                self.recognizer.isEnabled = false
-                self.stopScrolling()
-                self.recognizer.isEnabled = true
-            }
-        }
-        deinit { if let activeNotification { NotificationCenter.default.removeObserver(activeNotification) } }
-        func attach(_ view: Anchor) {
-            if recognizer.view !== view.window { detach(); view.window?.addGestureRecognizer(recognizer) }
-        }
-        func detach() {
-            stopScrolling()
-            if recognizer.state == .began || recognizer.state == .changed { parent.onChange(.cancelled, .zero, manualScrollDelta) }
-            recognizer.view?.removeGestureRecognizer(recognizer)
-        }
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            guard let anchor, anchor.window != nil, anchor.bounds.contains(touch.location(in: anchor)), parent.accepts(touch.location(in: anchor.window)) else { return false }
-            var ancestor = touch.view
-            while let view = ancestor {
-                if let candidate = view as? UIScrollView { scroll = candidate; break }
-                ancestor = view.superview
-            }
-            return true
-        }
-        // SwiftUI's button/collection recognizers must not cancel the long press.
-        // Once it begins, suspend only the scroll pan until release.
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
-        @objc func changed() {
-            guard let anchor else { return }
-            if recognizer.state == .began { manualScrollDelta = 0 }
-            parent.onChange(recognizer.state, recognizer.location(in: anchor.window), manualScrollDelta)
-            if recognizer.state == .began {
-                previousPanEnabled = scroll?.panGestureRecognizer.isEnabled
-                scroll?.panGestureRecognizer.isEnabled = false
-                let link = CADisplayLink(target: self, selector: #selector(tick))
-                link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
-                displayLink = link; lastTimestamp = 0; link.add(to: .main, forMode: .common)
-            } else if recognizer.state == .ended || recognizer.state == .cancelled || recognizer.state == .failed { stopScrolling() }
-        }
-        @objc func tick(_ link: CADisplayLink) {
-            guard let anchor, let scroll, recognizer.state == .began || recognizer.state == .changed else { stopScrolling(); return }
-            let elapsed = lastTimestamp == 0 ? 0 : min(0.05, link.timestamp - lastTimestamp)
-            lastTimestamp = link.timestamp
-            let y = recognizer.location(in: scroll).y - scroll.bounds.minY
-            let top = scroll.adjustedContentInset.top, bottom = scroll.bounds.height - scroll.adjustedContentInset.bottom
-            let speed: CGFloat = y < top + 48 ? -240 : y > bottom - 48 ? 240 : 0
-            guard speed != 0 else { return }
-            let minimum = -scroll.adjustedContentInset.top
-            let maximum = max(minimum, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
-            let offset = min(maximum, max(minimum, scroll.contentOffset.y + speed * elapsed))
-            guard offset != scroll.contentOffset.y else { return }
-            manualScrollDelta += offset - scroll.contentOffset.y
-            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: offset), animated: false)
-            parent.onChange(.changed, recognizer.location(in: anchor.window), manualScrollDelta)
-        }
-        func stopScrolling() {
-            displayLink?.invalidate(); displayLink = nil
-            if let previousPanEnabled { scroll?.panGestureRecognizer.isEnabled = previousPanEnabled }
-            previousPanEnabled = nil; scroll = nil
+struct ChainEditRequest: Identifiable { var id = UUID(); var day: TripDay; var index: Int?; var ids: [String] }
+struct ChainEditorView: View {
+    @ObservedObject var store: AppStore
+    let request: ChainEditRequest
+    @Environment(\.dismiss) private var dismiss
+    @State private var ids: [String] = []
+    @State private var error: String?
+    @State private var query = ""
+    private var candidates: [Marker] {
+        let members = Set(request.day.markerIds)
+        return store.markers.filter {
+            members.contains($0.id) && !ids.contains($0.id) &&
+            (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || ($0.content.address ?? "").localizedCaseInsensitiveContains(query))
         }
     }
-}
-private struct RouteListFrame: PreferenceKey {
-    static var defaultValue = CGRect.zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
-}
-private struct RouteRowFrames: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("访问顺序") {
+                    ForEach(ids, id: \.self) { id in
+                        if let marker = store.markers.first(where: { $0.id == id }) { MarkerRow(marker: marker) }
+                    }.onMove { from, to in ids.move(fromOffsets: from, toOffset: to) }
+                        .onDelete { ids.remove(atOffsets: $0) }
+                }
+                Section("当天地点") {
+                    ForEach(candidates) { marker in
+                        Button { ids.append(marker.id) } label: {
+                            HStack(spacing: 12) {
+                                PlaceSelectionRow(marker: marker)
+                                Image(systemName: "plus.circle.fill").foregroundStyle(Theme.cyan)
+                            }
+                        }.deleteDisabled(true).moveDisabled(true).accessibilityIdentifier("chain-add-marker-\(marker.id)")
+                    }
+                }
+                if let error { Text(error).foregroundStyle(.red) }
+            }.searchable(text: $query, prompt: "搜索当天地点")
+                .environment(\.editMode, .constant(.active))
+                .navigationTitle(request.index == nil ? "新建路线" : "编辑路线").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(store.saving) }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("保存") { Task {
+                            do {
+                                guard let latest = store.trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }), latest.chains == request.day.chains else {
+                                    throw AppError.message("路线已更新，请关闭后重新编辑")
+                                }
+                                let updated = try RouteEditSession(day: request.day, index: request.index, ids: ids).applying(to: latest)
+                                guard ids.allSatisfy({ id in store.markers.contains(where: { $0.id == id }) }) else { throw AppError.message("部分地点已被删除，请重新选择") }
+                                if updated == latest { dismiss(); return }
+                                if store.saveDayInBackground(updated) { dismiss() } else { error = store.errorMessage }
+                            } catch { self.error = error.localizedDescription }
+                        }}.disabled(store.saving || (request.index == nil && ids.count < 2))
+                    }
+                }
+        }.onAppear { ids = request.ids }.interactiveDismissDisabled(store.saving)
     }
 }
 struct PlaceSelectionRow: View {
@@ -528,7 +397,7 @@ struct DayMarkerPicker: View {
                         .accessibilityIdentifier("close-place-picker")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("搜索此区域", systemImage: "arrow.clockwise") {
+                    Button("搜索此区域", systemImage: "magnifyingglass") {
                         searched = true; onSearch(); Task { await store.search() }
                     }.disabled(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.searching)
                 }
@@ -561,7 +430,7 @@ struct DayMarkerPicker: View {
                     Button {
                         searched = true; onSearch(); Task { await store.search() }
                     } label: {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 20))
+                        Image(systemName: "magnifyingglass").font(.system(size: 20))
                             .frame(width: 44, height: 44)
                     }.accessibilityLabel("搜索此区域")
                         .disabled(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.searching)

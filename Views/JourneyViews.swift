@@ -5,6 +5,7 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
     @ViewBuilder var settingsContent: () -> SettingsContent
     @State private var creatingTrip = false
     @State private var editing: Trip?
+    @State private var markerDeletion: Marker?
     @State private var deletion: Trip?
     private var years: [String] { Array(Set(store.trips.map { String($0.startDate.prefix(4)) })).sorted(by: >) }
     private var independent: [Marker] {
@@ -13,6 +14,7 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
     }
     var body: some View {
         List {
+            Group {
             Section {
                 Button { creatingTrip = true } label: {
                     Label("添加旅途", systemImage: "plus").fullRowActionLabel()
@@ -42,7 +44,13 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
             if !independent.isEmpty {
                 Section("未加入行程") {
                     ForEach(independent) { marker in
-                        Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }.buttonStyle(.plain)
+                        Button { store.focus(marker) } label: {
+                            PlaceSelectionRow(marker: marker).fullRowActionLabel()
+                        }.buttonStyle(.plain)
+                            .accessibilityIdentifier("independent-marker-\(marker.id)")
+                            .contextMenu {
+                                DestructiveMenuButton(title: "删除地点", systemImage: "trash") { markerDeletion = marker }
+                            }
                     }
                 }
             }
@@ -52,7 +60,15 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
                 Color.clear.frame(height: 16).accessibilityHidden(true)
             }
 
+            }.listRowBackground(Color(uiColor: .systemBackground))
         }
+            .alert("删除地点？", isPresented: Binding(get: { markerDeletion != nil }, set: { if !$0 { markerDeletion = nil } })) {
+                Button("取消", role: .cancel) { markerDeletion = nil }
+                Button("删除", role: .destructive) {
+                    if let marker = markerDeletion { store.deleteMarker(marker) }
+                    markerDeletion = nil
+                }
+            } message: { Text("会从所有每日行程和路线中移除这个地点。") }
             .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
             .sheet(item: $editing) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
             .sheet(item: $deletion) { trip in
@@ -80,6 +96,7 @@ struct JourneyDaysContents: View {
     @State private var deletion: TripDay?
     var body: some View {
         List {
+            Group {
 
             ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, day in
                 NavigationLink(value: JourneyDestination.day(trip.id, day.id)) { dayRow(day, index: index) }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
@@ -111,6 +128,7 @@ struct JourneyDaysContents: View {
             } header: {
                 Color.clear.frame(height: 16).accessibilityHidden(true)
             }
+            }.listRowBackground(Color(uiColor: .systemBackground))
         }
             .sheet(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: $deletion) { day in

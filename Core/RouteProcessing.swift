@@ -27,6 +27,7 @@ actor RouteProcessing {
                        old.points.first == a.coordinates, old.points.last == b.coordinates {
                         display.points = old.points
                         display.isPlanned = true
+                        display.distance = old.distance
                     }
                     segments.append(RouteSegment(display: display, origin: a.coordinates, destination: b.coordinates))
                 }
@@ -47,6 +48,7 @@ actor RouteProcessing {
             guard let cached = await cache.get(key) else { continue }
             restored[index].display.points = try displayPoints(cached, origin: segment.origin, destination: segment.destination)
             restored[index].display.isPlanned = !cached.isFallback
+            restored[index].display.distance = cached.isFallback ? nil : cached.distance
         }
         try Task.checkCancellation()
         return restored
