@@ -58,6 +58,10 @@ import SwiftUI
     private var connectionRevision = UUID()
     private var dataRevision = UUID()
     private var refreshing = false
+    private var startupLocation: Coordinate?
+    private var startupLocationCameraID: UUID?
+    private var startupLocationFinished = false
+    private var startupMapInteracted = false
     private var startupCameraPending = true
     var api: APIClient { APIClient(baseURL: settings.baseURL, token: settings.token) }
     var mapServices: any MapServices { servicesOverride ?? ServerMapServices(client: api, configuration: mapConfiguration) }
@@ -123,6 +127,7 @@ import SwiftUI
         } else if selectedMarker != nil { selectedMarker = nil }
         if geometry != nextGeometry || changedTrips { rebuildRoutes() }
         applyStartupCamera()
+        applyNearestStartupMarker()
     }
     func refreshSelectedMarker(_ id: String) async {
         guard !demo, settings.configured, !saving else { return }
@@ -152,11 +157,33 @@ import SwiftUI
             do { try await Task.sleep(for: .seconds(60)) } catch { return }
         }
     }
+    func receiveStartupLocation(_ coordinate: Coordinate) {
+        guard coordinate.isValid, !startupLocationFinished else { return }
+        startupLocation = coordinate
+        applyNearestStartupMarker()
+    }
+    func noteMapInteraction() { startupMapInteracted = true }
+    private func applyNearestStartupMarker() {
+        guard let location = startupLocation, !startupLocationFinished, !startupMapInteracted else { return }
+        guard camera == nil || camera?.id == startupLocationCameraID else { return }
+        guard draft == nil, selectedMarker == nil else { return }
+        guard let marker = markers.filter({ $0.coordinates.isValid }).min(by: {
+            let a = Coordinates.distance(location, $0.coordinates)
+            let b = Coordinates.distance(location, $1.coordinates)
+            return a == b ? $0.id < $1.id : a < b
+        }) else { return }
+        camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 15)
+        startupLocationFinished = true
+    }
     func applyStartupCamera(now: Date = Date(), calendar: Calendar = Calendar(identifier: .gregorian)) {
         guard startupCameraPending else { return }
         startupCameraPending = false
         // Do not interrupt a selection or camera action made while data was loading.
         guard tripID == nil, dayID == nil, selectedMarker == nil, draft == nil, camera == nil else { return }
+        defer {
+            startupLocationCameraID = camera?.id
+            applyNearestStartupMarker()
+        }
         let today = StartupCamera.localDate(now: now, calendar: calendar)
         let orderedTrips = trips.sorted { $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate < $1.startDate }
         for trip in orderedTrips {

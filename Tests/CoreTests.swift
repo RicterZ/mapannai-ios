@@ -737,3 +737,40 @@ final class RouteEditingTests: XCTestCase {
         XCTAssertNotNil(store.errorMessage)
     }
 }
+
+
+final class StartupLocationTests: XCTestCase {
+    @MainActor func testNearestMarkerFocusesOnceWithoutOpeningDetails() {
+        let sample = AppStore(settings: Settings(), demo: true)
+        let store = AppStore(settings: Settings(), demo: false)
+        store.markers = sample.markers
+        let marker = store.markers[1]
+        store.receiveStartupLocation(marker.coordinates)
+        XCTAssertEqual(store.camera?.points.first, marker.coordinates)
+        XCTAssertEqual(store.camera?.singlePointZoom, 15)
+        XCTAssertNil(store.selectedMarker)
+        let id = store.camera?.id
+        store.receiveStartupLocation(store.markers[2].coordinates)
+        XCTAssertEqual(store.camera?.id, id)
+    }
+    @MainActor func testLateLocationDoesNotOverrideUserInteraction() {
+        let sample = AppStore(settings: Settings(), demo: true)
+        let store = AppStore(settings: Settings(), demo: false)
+        store.markers = sample.markers
+        store.noteMapInteraction()
+        store.receiveStartupLocation(store.markers[0].coordinates)
+        XCTAssertNil(store.camera)
+    }
+    @MainActor func testLocationWaitsForMarkers() {
+        let sample = AppStore(settings: Settings(), demo: true)
+        let store = AppStore(settings: Settings(), demo: false)
+        store.markers = sample.markers
+        let markers = store.markers
+        store.markers = []
+        store.receiveStartupLocation(markers[1].coordinates)
+        XCTAssertNil(store.camera)
+        store.markers = markers
+        store.applyStartupCamera()
+        XCTAssertEqual(store.camera?.points.first, markers[1].coordinates)
+    }
+}

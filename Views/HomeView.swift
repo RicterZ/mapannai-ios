@@ -50,6 +50,10 @@ struct HomeView: View {
                         .interactiveDismissDisabled()
                 }
                 .onAppear { nativeJourneyPresented = true }
+                .task {
+                    guard !store.demo else { return }
+                    location.requestStartupLocation { store.receiveStartupLocation($0) }
+                }
                 .task(id: settings.revision) {
                     await aiPlanner.configure(for: settings)
                     #if DEBUG
@@ -718,12 +722,25 @@ struct HomeView: View {
 @MainActor final class LocationPermission: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var onAllowed: (() -> Void)?
+    private var onLocation: ((Coordinate) -> Void)?
     override init() { super.init(); manager.delegate = self }
     func request(_ action: @escaping () -> Void) {
         onAllowed = action
         if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
         else if [.authorizedWhenInUse, .authorizedAlways].contains(manager.authorizationStatus) { action(); onAllowed = nil }
     }
+    func requestStartupLocation(_ action: @escaping (Coordinate) -> Void) {
+        guard onLocation == nil else { return }
+        onLocation = action
+        request { [weak self] in self?.manager.requestLocation() }
+        if [.denied, .restricted].contains(manager.authorizationStatus) { onLocation = nil }
+    }
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last(where: { $0.horizontalAccuracy >= 0 }) else { return }
+        onLocation?(Coordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude))
+        onLocation = nil
+    }
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) { onLocation = nil }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         if [.authorizedWhenInUse, .authorizedAlways].contains(manager.authorizationStatus) { onAllowed?(); onAllowed = nil }
     }

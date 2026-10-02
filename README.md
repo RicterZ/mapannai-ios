@@ -29,6 +29,9 @@ With route planning enabled, each planned segment's distance appears between its
 
 Need a server? Follow the [MapAnNai Plus deployment guide](https://github.com/RicterZ/mapannai-plus#deploy-your-own-server), then enter its address and API token, if required, in the client. Searching, saving changes, and route planning require a network connection.
 
+
+On launch, allow location access to center the map on your nearest saved place. If location is unavailable, the app keeps its date-based starting view.
+
 ## Install on iPhone or iPad
 
 Requires **iOS / iPadOS 17 or later**. Releases provide an unsigned `.ipa` that you can sign and install with **AltStore Classic**.

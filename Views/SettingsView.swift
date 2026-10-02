@@ -41,7 +41,7 @@ struct SettingsView: View {
                 Section {
                     Toggle("同意高德地图隐私说明", isOn: $consent)
                     Link("查看高德隐私政策", destination: URL(string: "https://lbs.amap.com/pages/privacy/")!)
-                    Text("高德 SDK 将处理设备信息、网络信息与地图交互信息。定位权限仅在点击定位按钮时请求，用于地图显示当前位置。未同意前不会初始化地图 SDK。")
+                    Text("高德 SDK 将处理设备信息、网络信息与地图交互信息。启动时请求定位权限，用于将地图移到最近的已保存地点；定位按钮可再次显示当前位置。未同意前不会初始化地图 SDK。")
                         .font(.caption).foregroundStyle(.secondary)
                 } header: { Text("地图隐私") }
                 Section {

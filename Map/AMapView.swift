@@ -83,6 +83,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private let motion = RouteMotionAnimation()
         private var motionDots: [CAShapeLayer] = []
         private var pendingRouteTap: DispatchWorkItem?
+        private var mapTapAnnotation: MAAnnotation?
         private var mapTapPoint: CGPoint?
         private var mapTapClaimed = false
         private var filteringSearchPOIs = false
@@ -422,24 +423,30 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
         }
         private func styleDraftPin(_ view: MAAnnotationView) {
-            let symbol = store.draft?.icon == .location ? "mappin" : (store.draft?.icon.symbol ?? "mappin")
+            let symbol = store.draft?.icon == .location ? "scope" : (store.draft?.icon.symbol ?? "scope")
             let key = "draft-" + symbol
             if pinImages[key] == nil {
                 pinImages[key] = UIGraphicsImageRenderer(size: CGSize(width: 44, height: 48)).image { context in
                     let cg = context.cgContext
-                    let shape = UIBezierPath(ovalIn: CGRect(x: 6, y: 3, width: 32, height: 32))
-                    shape.move(to: CGPoint(x: 17, y: 32))
-                    shape.addQuadCurve(to: CGPoint(x: 22, y: 40), controlPoint: CGPoint(x: 20, y: 36))
-                    shape.addQuadCurve(to: CGPoint(x: 27, y: 32), controlPoint: CGPoint(x: 24, y: 36))
+                    // One connected silhouette prevents the tail from blending into the base POI.
+                    let shape = UIBezierPath()
+                    shape.move(to: CGPoint(x: 22, y: 42))
+                    shape.addLine(to: CGPoint(x: 16, y: 34))
+                    shape.addCurve(to: CGPoint(x: 6, y: 19), controlPoint1: CGPoint(x: 10, y: 32), controlPoint2: CGPoint(x: 6, y: 26))
+                    shape.addCurve(to: CGPoint(x: 22, y: 3), controlPoint1: CGPoint(x: 6, y: 10), controlPoint2: CGPoint(x: 13, y: 3))
+                    shape.addCurve(to: CGPoint(x: 38, y: 19), controlPoint1: CGPoint(x: 31, y: 3), controlPoint2: CGPoint(x: 38, y: 10))
+                    shape.addCurve(to: CGPoint(x: 28, y: 34), controlPoint1: CGPoint(x: 38, y: 26), controlPoint2: CGPoint(x: 34, y: 32))
                     shape.close()
                     cg.saveGState()
                     cg.setShadow(offset: CGSize(width: 0, height: 2), blur: 3,
-                                 color: UIColor.black.withAlphaComponent(0.2).cgColor)
-                    UIColor.white.setFill()
+                                 color: UIColor.black.withAlphaComponent(0.25).cgColor)
+                    UIColor.systemBlue.setFill()
                     shape.fill()
                     cg.restoreGState()
-                    UIColor.systemBlue.setFill()
-                    UIBezierPath(ovalIn: CGRect(x: 8, y: 5, width: 28, height: 28)).fill()
+                    UIColor.white.setStroke()
+                    shape.lineWidth = 2
+                    shape.lineJoinStyle = .round
+                    shape.stroke()
                     if let icon = UIImage(systemName: symbol,
                         withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium))?
                         .withTintColor(.white, renderingMode: .alwaysOriginal) {
@@ -450,8 +457,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
             }
             view.image = pinImages[key]
-            // The tip (22, 40) is the selected geographic point.
-            view.centerOffset = CGPoint(x: 0, y: -16)
+            // The tip (22, 42) is the selected geographic point.
+            view.centerOffset = CGPoint(x: 0, y: -18)
             view.zIndex = 1000
         }
         private func markerImage(_ pin: Pin, dot: Bool, selected: Bool) -> UIImage {
@@ -534,6 +541,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
             } else { map.removeOverlays(overlays) }
         }
         func mapView(_ mapView: MAMapView!, regionWillChangeAnimated animated: Bool) {
+            if mapView.gestureRecognizers?.contains(where: { $0.state == .began || $0.state == .changed }) == true {
+                store.noteMapInteraction()
+            }
             mapIsMoving = true; cancelPOIRefresh()
             motionProjection.removeAll(keepingCapacity: true)
         }
@@ -563,8 +573,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MAMapView!, didSelect view: MAAnnotationView!) {
             if let pin = view.annotation as? SearchPin {
+                mapTapAnnotation = pin; mapTapClaimed = true; cancelPendingMapTap()
                 store.choose(pin.place, fromMap: true); mapView.deselectAnnotation(pin, animated: false)
             } else if let pin = view.annotation as? Pin {
+                mapTapAnnotation = pin; mapTapClaimed = true; cancelPendingMapTap()
                 store.focus(pin.marker); mapView.deselectAnnotation(pin, animated: false)
             }
         }
@@ -586,14 +598,17 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             if gestureRecognizer is UITapGestureRecognizer, let map {
+                store.noteMapInteraction()
                 cancelPendingMapTap()
                 mapTapPoint = touch.location(in: map)
+                mapTapAnnotation = annotationAt(mapTapPoint!, map: map)?.annotation
                 mapTapClaimed = false
             }
             return true
         }
         func mapView(_ mapView: MAMapView!, didTouchPois pois: [Any]!) {
-            guard !store.placeSearchPresented, store.draft?.marker == nil,
+            guard !mapTapClaimed, mapTapAnnotation == nil,
+                  !store.placeSearchPresented, store.draft?.marker == nil,
                   let poi = (pois ?? []).compactMap({ $0 as? MATouchPoi }).first else { return }
             if let tap = mapTapPoint, annotationAt(tap, map: mapView) != nil { return }
             mapTapClaimed = true
@@ -614,11 +629,14 @@ struct AMapNativeRenderer: UIViewRepresentable {
             // Use the visible annotation views: no SDK coordinate projection or delayed
             // didSelect callback is needed to acknowledge a marker tap.
             cancelPendingMapTap()
-            if let view = annotationAt(tap, map: mapView) {
+            let annotation = mapTapAnnotation ?? annotationAt(tap, map: mapView)?.annotation
+            if let annotation {
+                mapTapAnnotation = annotation
                 mapTapClaimed = true
-                if let pin = view.annotation as? SearchPin {
-                    store.choose(pin.place, fromMap: true); styleSearch(view, pin: pin)
-                } else if let pin = view.annotation as? Pin {
+                if let pin = annotation as? SearchPin {
+                    store.choose(pin.place, fromMap: true)
+                    if let view = mapView.view(for: pin) { styleSearch(view, pin: pin) }
+                } else if let pin = annotation as? Pin {
                     store.focus(pin.marker); updatePinStyles(mapView)
                 }
                 return
