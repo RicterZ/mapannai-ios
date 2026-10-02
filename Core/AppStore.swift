@@ -1,5 +1,14 @@
 import SwiftUI
 
+struct TripSaveDraft: Identifiable {
+    var id = UUID()
+    let trip: Trip?
+    let name: String
+    let start: Date
+    let end: Date
+    let emoji: String
+}
+
 @MainActor final class AppStore: ObservableObject {
     let settings: Settings
     let configurationSource: any MapConfigurationSource
@@ -13,12 +22,18 @@ import SwiftUI
     @Published var tripID: String?
     @Published var dayID: String?
     @Published var selectedMarker: Marker?
+    @Published var tripSaveRecovery: TripSaveDraft?
+    @Published private(set) var canResumeFailedSave = false
+    private var failedSaveAction: (() -> Void)?
+    private var pendingCreatedMarkers: [UUID: Marker] = [:]
+    private var pendingCreatedTrips: [UUID: Trip] = [:]
     @Published var draft: MarkerDraft?
     @Published var draftExpanded = true
     @Published var selectedSearchPlaceID: String?
     @Published private(set) var placeSearchPresented = false
     @Published var previewTripPlaces: [String: [Marker]] = [:]
     var tripPlacesPreview: Bool { demo && ProcessInfo.processInfo.arguments.contains("--trip-places-preview") }
+    @Published var addPlaceTripID: String?
     @Published var addPlaceDay: TripDay?
     @Published var addPlaceError: String?
     @Published private(set) var addingPlaceID: String?
@@ -77,7 +92,7 @@ import SwiftUI
     var mapMarkers: [Marker] { markers }
     var visibleMarkers: [Marker] {
         guard tripID != nil else { return markers }
-        let ids = Set(visibleDays.flatMap(\.markerIds)); return markers.filter { ids.contains($0.id) }
+        let ids = Set(visibleDays.flatMap(\.markerIds) + (day == nil ? (trip?.markerIds ?? []) : [])); return markers.filter { ids.contains($0.id) }
     }
     init(settings: Settings, demo: Bool = ProcessInfo.processInfo.arguments.contains("--demo"), configurationSource: (any MapConfigurationSource)? = nil, services: (any MapServices)? = nil, markerRepository: MarkerRepository = MarkerRepository(), routeCache: RouteCache = RouteCache()) {
         self.routeCache = routeCache
@@ -86,9 +101,12 @@ import SwiftUI
         if demo { loadDemo() }
     }
     func connect() async {
-        connectionRevision = UUID(); refreshGeneration = UUID(); loading = false; refreshing = false
+        connectionRevision = UUID(); refreshGeneration = UUID(); dataRevision = UUID()
+        loading = false; refreshing = false; saving = false
+        failedSaveAction = nil; canResumeFailedSave = false; tripSaveRecovery = nil
+        pendingCreatedMarkers = [:]; pendingCreatedTrips = [:]
         endAddingPlace()
-        tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
+        tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceTripID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
         camera = nil; startupCameraPending = true
         resetSearchSession(); rebuildRoutes()
         if demo { loadDemo(); rebuildRoutes(); return }
@@ -199,22 +217,26 @@ import SwiftUI
             camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 11)
         }
     }
-    func perform(onSuccess: (() -> Void)? = nil, _ operation: @escaping (APIClient) async throws -> Void) async -> Bool {
+    func perform(reserved: Bool = false, expectedRevision: UUID? = nil, onSuccess: (() -> Void)? = nil, _ operation: @escaping (APIClient) async throws -> Void) async -> Bool {
+        guard expectedRevision == nil || expectedRevision == connectionRevision else { return false }
         guard !demo else { errorMessage = "当前为只读示例。配置服务后退出示例模式，即可保存到你的数据库。"; return false }
-        guard !saving else { errorMessage = "请等待当前保存完成"; return false }
+        guard reserved || !saving else { errorMessage = "请等待当前保存完成"; return false }
         // A background read must not block edits or overwrite their results.
         dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
         saving = true; let revision = connectionRevision, client = api
-        defer { saving = false }
+        defer { if revision == connectionRevision { saving = false } }
         await markerRepository.invalidate(using: client)
+        guard revision == connectionRevision else { return false }
         do {
             try await operation(client)
             guard revision == connectionRevision else { return false }
             onSuccess?()
             await markerRepository.invalidate(using: client)
+            guard revision == connectionRevision else { return false }
             // The mutation has finished; refresh should not be blocked by saving.
             saving = false
-            await refresh(quietly: onSuccess != nil); return true
+            Task { await self.refresh(quietly: true) }
+            return true
         } catch { if revision == connectionRevision { report(error) }; return false }
     }
     func deleteItinerary(tripID targetTripID: String, dayID targetDayID: String? = nil, deleteExclusiveMarkers: Bool, animated: Bool) {
@@ -229,10 +251,11 @@ import SwiftUI
         let previousTrips = trips, previousMarkers = markers
         let revision = connectionRevision, client = api
         let removedDays = owner.days.filter { targetDayID == nil || $0.id == targetDayID }
-        let candidates = Set(removedDays.flatMap { $0.markerIds + $0.chains.flatMap { $0 } })
+        let candidates = Set(removedDays.flatMap { $0.markerIds + $0.chains.flatMap { $0 } } + (targetDayID == nil ? (owner.markerIds ?? []) : []))
         let allDays = trips.flatMap { $0.days }
         let exclusiveIDs = deleteExclusiveMarkers ? Set(candidates.filter { markerID in
-            allDays.filter { $0.markerIds.contains(markerID) || $0.chains.contains(where: { $0.contains(markerID) }) }.count == 1
+            allDays.filter { $0.markerIds.contains(markerID) || $0.chains.contains(where: { $0.contains(markerID) }) }.count
+                + trips.filter { ($0.markerIds ?? []).contains(markerID) }.count == 1
         }) : []
         dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
         saving = true
@@ -279,26 +302,196 @@ import SwiftUI
             }
         }
     }
-    func saveMarker(_ draft: MarkerDraft, using suppliedClient: APIClient? = nil) async -> Bool {
+    private func reserveEditorSave() -> Bool {
+        guard !demo else { errorMessage = "当前为只读示例，无法保存。"; return false }
+        guard !saving else { errorMessage = "请等待当前保存完成"; return false }
+        saving = true
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
+        failedSaveAction = nil; canResumeFailedSave = false
+        return true
+    }
+    private func retainFailedSave(_ action: @escaping () -> Void) {
+        failedSaveAction = action; canResumeFailedSave = true
+    }
+    func resumeFailedSave() {
+        let action = failedSaveAction
+        failedSaveAction = nil; canResumeFailedSave = false; errorMessage = nil
+        action?()
+    }
+    @discardableResult
+    func saveMarkerInBackground(_ value: MarkerDraft, using client: APIClient? = nil) -> Bool {
+        guard value.coordinates.isValid, !value.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = "请输入名称与有效坐标"; return false
+        }
+        guard reserveEditorSave() else { return false }
+        let targetTripID = addPlaceTripID
+        let target = value.marker == nil ? (addPlaceDay ?? day) : nil
+        let previous = value.marker.flatMap { marker in markers.first { $0.id == marker.id } }
+        if var optimistic = previous {
+            optimistic.content.title = value.title; optimistic.content.iconType = value.icon
+            optimistic.content.markdownContent = value.html; optimistic.content.headerImage = value.headerImage
+            if let index = markers.firstIndex(where: { $0.id == optimistic.id }) { markers[index] = optimistic }
+            if selectedMarker?.id == optimistic.id { selectedMarker = optimistic }
+        }
+        let revision = connectionRevision, requestClient = client ?? api
+        if draft?.id == value.id { draft = nil }
+        Task {
+            let ok = await saveMarker(value, using: requestClient, reserved: true, target: target, expectedRevision: revision, targetTripID: targetTripID)
+            guard revision == connectionRevision else { return }
+            if !ok {
+                if let previous {
+                    if let index = markers.firstIndex(where: { $0.id == previous.id }) { markers[index] = previous }
+                    if selectedMarker?.id == previous.id { selectedMarker = previous }
+                }
+                retainFailedSave { [weak self] in
+                    self?.addPlaceDay = target
+                    self?.addPlaceTripID = targetTripID
+                    self?.draft = value
+                }
+            }
+        }
+        return true
+    }
+    @discardableResult
+    func saveTripInBackground(_ value: TripSaveDraft, using suppliedClient: APIClient? = nil) -> Bool {
+        guard !value.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入旅行名称"; return false }
+        guard reserveEditorSave() else { return false }
+        let revision = connectionRevision, client = suppliedClient ?? api
+        let previous = value.trip.flatMap { trip in trips.first { $0.id == trip.id } }
+        if var optimistic = previous {
+            let offset = Calendar.current.dateComponents([.day], from: Date.fromDay(optimistic.startDate), to: Date.fromDay(value.start.dayString)).day ?? 0
+            optimistic.name = value.name; optimistic.emoji = value.emoji; optimistic.startDate = value.start.dayString
+            optimistic.endDate = Calendar.current.date(byAdding: .day, value: offset, to: Date.fromDay(optimistic.endDate))?.dayString ?? optimistic.endDate
+            for index in optimistic.days.indices {
+                optimistic.days[index].date = Calendar.current.date(byAdding: .day, value: offset, to: Date.fromDay(optimistic.days[index].date))?.dayString ?? optimistic.days[index].date
+            }
+            if let index = trips.firstIndex(where: { $0.id == optimistic.id }) { trips[index] = optimistic }
+        }
+        Task {
+            let ok = await perform(reserved: true, expectedRevision: revision) { _ in
+                var body: [String: Any] = ["name": value.name, "startDate": value.start.dayString, "emoji": value.emoji]
+                if let trip = value.trip { try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: body) }
+                else {
+                    body["endDate"] = value.end.dayString
+                    let created: Trip
+                    if let pending = self.pendingCreatedTrips[value.id] {
+                        created = pending
+                        try await client.mutate("trips/\(APIClient.id(pending.id))", method: "PUT", body: body)
+                    } else {
+                        created = try await client.request("trips", method: "POST", body: body)
+                        guard revision == self.connectionRevision else { throw CancellationError() }
+                        self.pendingCreatedTrips[value.id] = created
+                    }
+                    if value.emoji != "✈️" { try await client.mutate("trips/\(APIClient.id(created.id))", method: "PUT", body: ["emoji": value.emoji]) }
+                }
+            }
+            guard revision == connectionRevision else { return }
+            if ok { pendingCreatedTrips[value.id] = nil }
+            else {
+                if let previous, let index = trips.firstIndex(where: { $0.id == previous.id }) { trips[index] = previous }
+                retainFailedSave { [weak self] in self?.tripSaveRecovery = value }
+            }
+        }
+        return true
+    }
+    @discardableResult
+    func addSearchPlaceInBackground(_ place: Place, edited value: MarkerDraft, using suppliedClient: APIClient? = nil) -> Bool {
+        guard placeSearchPresented, addingPlaceID == nil else { return false }
+        guard value.coordinates.isValid, !value.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        let target = addPlaceDay, targetTripID = addPlaceTripID, session = addSession, revision = connectionRevision
+        if let targetTripID, !trips.contains(where: { $0.id == targetTripID }) { errorMessage = "目标旅行已不存在"; return false }
+        if let target, !trips.contains(where: { $0.id == target.tripId && $0.days.contains(where: { $0.id == target.id }) }) {
+            errorMessage = "目标日期已不存在，请返回行程重新选择。"; return false
+        }
+        guard reserveEditorSave() else { return false }
+        let client = suppliedClient ?? api
+        // Preserve the selected marker ID and target day even if the search closes.
+        var draft = value
+        if let existing = savedMarker(for: place) { draft.marker = existing }
+        let keyword = searchText, results = searchResults
+        Task {
+            let ok = await saveMarker(draft, using: client, reserved: true, target: target,
+                expectedRevision: revision, openCreatedDetail: false, joinExistingTarget: true, targetTripID: targetTripID)
+            guard revision == connectionRevision else { return }
+            if ok {
+                let marker = draft.marker.flatMap { existing in markers.first { $0.id == existing.id } }
+                    ?? markers.first { $0.coordinates == draft.coordinates }
+                if session == addSession {
+                    if let marker { createdSearchMarkers[place.id] = marker }
+                    addedPlaceIDs.insert(place.id)
+                }
+                rebuildRoutes(preservingPlannedGeometry: true)
+            } else {
+                if session == addSession { addPlaceError = errorMessage }
+                retainFailedSave { [weak self] in
+                    guard let self else { return }
+                    if self.addSession != session {
+                        self.beginAddingPlace(to: target, tripID: targetTripID)
+                        self.searchText = keyword; self.searchResults = results
+                    }
+                    self.editingSearchPlaceID = place.id; self.draft = value
+                }
+            }
+        }
+        return true
+    }
+    func saveMarker(_ draft: MarkerDraft, using suppliedClient: APIClient? = nil, reserved: Bool = false, target: TripDay? = nil, expectedRevision: UUID? = nil, openCreatedDetail: Bool = true, joinExistingTarget: Bool = false, targetTripID: String? = nil) async -> Bool {
         guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
-        let targetDay = draft.marker == nil ? (addPlaceDay ?? day) : nil
+        let targetDay = draft.marker == nil || joinExistingTarget ? (reserved ? target : (addPlaceDay ?? day)) : nil
+        let tripTarget = targetTripID ?? (reserved ? nil : addPlaceTripID)
+        let revision = expectedRevision ?? connectionRevision
         var createdMarker: Marker?
-        let ok = await perform { defaultClient in
+        let ok = await perform(reserved: reserved, expectedRevision: revision) { defaultClient in
             let client = suppliedClient ?? defaultClient
             if let marker = draft.marker {
                 try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": draft.html, "headerImage": draft.headerImage])
             } else {
-                let created: Marker = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": draft.html])
+                let created: Marker
+                if let pending = self.pendingCreatedMarkers[draft.id] {
+                    created = pending
+                    try await client.mutate("markers/\(APIClient.id(pending.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": draft.html, "headerImage": draft.headerImage])
+                } else {
+                    created = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": draft.html])
+                    guard revision == self.connectionRevision else { throw CancellationError() }
+                    self.pendingCreatedMarkers[draft.id] = created
+                }
                 if !draft.headerImage.isEmpty { try await client.mutate("markers/\(APIClient.id(created.id))", method: "PUT", body: ["headerImage": draft.headerImage]) }
-                if let targetDay { try await client.mutate(Self.dayPath(targetDay) + "/markers", method: "POST", body: ["markerId": created.id]) }
                 createdMarker = created
             }
-        }
-        if ok {
-            if let createdMarker, !placeSearchPresented {
-                focus(markers.first(where: { $0.id == createdMarker.id }) ?? createdMarker)
+            guard revision == self.connectionRevision else { throw CancellationError() }
+            if let targetDay, let marker = createdMarker ?? draft.marker,
+               !self.trips.flatMap(\.days).contains(where: { $0.id == targetDay.id && $0.markerIds.contains(marker.id) }) {
+                try await client.mutate(Self.dayPath(targetDay) + "/markers", method: "POST", body: ["markerId": marker.id])
             }
-            self.draft = nil
+            if let tripTarget, let marker = createdMarker ?? draft.marker {
+                try await client.mutate("trips/\(APIClient.id(tripTarget))/markers", method: "POST", body: ["markerId": marker.id])
+            }
+        }
+        guard revision == connectionRevision else { return false }
+        if ok {
+            pendingCreatedMarkers[draft.id] = nil
+            var saved = createdMarker ?? draft.marker
+            if var updated = saved {
+                updated.content.title = draft.title; updated.content.iconType = draft.icon
+                updated.content.markdownContent = draft.html; updated.content.headerImage = draft.headerImage
+                if draft.marker == nil { updated.content.address = draft.address }
+                if let index = markers.firstIndex(where: { $0.id == updated.id }) { markers[index] = updated }
+                else { markers.append(updated) }
+                if selectedMarker?.id == updated.id { selectedMarker = updated }
+                saved = updated
+            }
+            if let saved, let targetDay,
+               let ti = trips.firstIndex(where: { $0.id == targetDay.tripId }),
+               let di = trips[ti].days.firstIndex(where: { $0.id == targetDay.id }),
+               !trips[ti].days[di].markerIds.contains(saved.id) { trips[ti].days[di].markerIds.append(saved.id) }
+            if let saved, let tripTarget, let ti = trips.firstIndex(where: { $0.id == tripTarget }),
+               !(trips[ti].markerIds ?? []).contains(saved.id) { trips[ti].markerIds = (trips[ti].markerIds ?? []) + [saved.id] }
+            if let saved, let targetDay, let ti = trips.firstIndex(where: { $0.id == targetDay.tripId }) {
+                trips[ti].markerIds?.removeAll { $0 == saved.id }
+            }
+            if let saved, createdMarker != nil, openCreatedDetail, !placeSearchPresented,
+               !reserved || (self.draft == nil && selectedMarker == nil) { focus(saved) }
+            if self.draft?.id == draft.id { self.draft = nil }
         }
         return ok
     }
@@ -314,6 +507,7 @@ import SwiftUI
         withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
             markers.removeAll { $0.id == marker.id }
             for ti in trips.indices {
+                trips[ti].markerIds?.removeAll { $0 == marker.id }
                 for di in trips[ti].days.indices {
                     trips[ti].days[di] = trips[ti].days[di].removing(marker.id)
                 }
@@ -348,7 +542,42 @@ import SwiftUI
     }
     static func dayPath(_ day: TripDay) -> String { "trips/\(APIClient.id(day.tripId))/days/\(APIClient.id(day.id))" }
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
-        return await perform { try await $0.mutate(Self.dayPath(day) + "/markers", method: "POST", body: ["markerId": marker.id]) }
+        addMarkerInBackground(marker, to: day)
+    }
+    @discardableResult
+    func addMarkerInBackground(_ marker: Marker, to day: TripDay, using client: APIClient? = nil) -> Bool {
+        guard var latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return false }
+        if latest.markerIds.contains(marker.id) { return true }
+        latest.markerIds.append(marker.id)
+        return persistDayInBackground(latest, animated: true, using: client) {
+            try await $0.mutate(Self.dayPath(day) + "/markers", method: "POST", body: ["markerId": marker.id])
+        }
+    }
+    @discardableResult
+    func removeTripPlaceInBackground(_ markerID: String, from tripID: String) -> Bool {
+        guard !demo, !saving, let ti = trips.firstIndex(where: { $0.id == tripID }),
+              (trips[ti].markerIds ?? []).contains(markerID) else { return false }
+        let previous = trips[ti].markerIds, revision = connectionRevision, client = api
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; saving = true
+        withAnimation(AppMotion.listMutation(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
+            trips[ti].markerIds?.removeAll { $0 == markerID }
+        }
+        rebuildRoutes(preservingPlannedGeometry: true)
+        Task {
+            await markerRepository.invalidate(using: client)
+            do {
+                try await client.mutate("trips/\(APIClient.id(tripID))/markers", method: "DELETE", body: ["markerId": markerID])
+                guard revision == connectionRevision else { return }
+                await markerRepository.invalidate(using: client)
+                guard revision == connectionRevision else { return }
+                saving = false; await refresh(quietly: true)
+            } catch {
+                guard revision == connectionRevision else { return }
+                if let ti = trips.firstIndex(where: { $0.id == tripID }) { trips[ti].markerIds = previous }
+                saving = false; rebuildRoutes(preservingPlannedGeometry: true); report(error)
+            }
+        }
+        return true
     }
     @discardableResult
     func saveDayInBackground(_ day: TripDay, animated: Bool = true) -> Bool {
@@ -356,15 +585,19 @@ import SwiftUI
             try await client.mutate(Self.dayPath(day), method: "PUT", body: ["title": day.title ?? "", "emoji": day.emoji ?? "", "markerIds": day.markerIds, "chains": day.chains])
         }
     }
-    private func persistDayInBackground(_ day: TripDay, animated: Bool, operation: @escaping (APIClient) async throws -> Void) -> Bool {
+    private func persistDayInBackground(_ day: TripDay, animated: Bool, using suppliedClient: APIClient? = nil, operation: @escaping (APIClient) async throws -> Void) -> Bool {
         guard !demo else { errorMessage = "当前为只读示例，无法保存。"; return false }
         guard !saving else { errorMessage = "请等待当前保存完成"; return false }
         guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
               let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return false }
-        let previous = trips[ti].days[di], revision = connectionRevision, client = api
+        let previousTripMarkers = trips[ti].markerIds
+        let previous = trips[ti].days[di], revision = connectionRevision, client = suppliedClient ?? api
         dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
         saving = true
-        withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) { trips[ti].days[di] = day }
+        withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
+            trips[ti].days[di] = day
+            trips[ti].markerIds?.removeAll { day.markerIds.contains($0) }
+        }
         rebuildRoutes(preservingPlannedGeometry: true)
         Task {
             await markerRepository.invalidate(using: client)
@@ -379,7 +612,10 @@ import SwiftUI
                 guard revision == connectionRevision else { return }
                 if let ti = trips.firstIndex(where: { $0.id == day.tripId }),
                    let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) {
-                    withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) { trips[ti].days[di] = previous }
+                    withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
+                        trips[ti].days[di] = previous
+                        trips[ti].markerIds = previousTripMarkers
+                    }
                 }
                 saving = false
                 rebuildRoutes(preservingPlannedGeometry: true)
@@ -501,17 +737,18 @@ import SwiftUI
             }
         }
     }
-    func beginAddingPlace(to day: TripDay? = nil) {
+    func beginAddingPlace(to day: TripDay? = nil, tripID: String? = nil) {
         endAddingPlace()
         routeCandidates = []; selectedMarker = nil
         addPlaceDay = day
+        addPlaceTripID = day == nil ? tripID : nil
         placeSearchPresented = true
     }
     func endAddingPlace() {
         addSession = UUID(); addedPlaceIDs = []; createdSearchMarkers = [:]
         addPlaceError = nil; editingSearchPlaceID = nil
         draft = nil
-        addPlaceDay = nil; placeSearchPresented = false
+        addPlaceTripID = nil; addPlaceDay = nil; placeSearchPresented = false
         clearSearch()
     }
     func search() async {
@@ -615,7 +852,10 @@ import SwiftUI
     func isPlaceAdded(_ place: Place) -> Bool {
         if addedPlaceIDs.contains(place.id) { return true }
         guard let marker = savedMarker(for: place) else { return false }
-        guard let target = addPlaceDay else { return true }
+        guard let target = addPlaceDay else {
+            guard let tripID = addPlaceTripID, let trip = trips.first(where: { $0.id == tripID }) else { return true }
+            return (trip.markerIds ?? []).contains(marker.id) || trip.days.contains { $0.markerIds.contains(marker.id) }
+        }
         let current = trips.first { $0.id == target.tripId }?.days.first { $0.id == target.id } ?? target
         return current.markerIds.contains(marker.id)
     }
@@ -626,9 +866,11 @@ import SwiftUI
             ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
     }
     /// Keep the created ID after a partial failure so retry only completes membership.
-    @discardableResult func addSearchPlace(_ place: Place, edited: MarkerDraft? = nil, using suppliedClient: APIClient? = nil) async -> Bool {
-        guard placeSearchPresented, !saving, addingPlaceID == nil else { return false }
-        let target = addPlaceDay
+    @discardableResult func addSearchPlace(_ place: Place, edited: MarkerDraft? = nil, using suppliedClient: APIClient? = nil, reserved: Bool = false) async -> Bool {
+        defer { if reserved { saving = false } }
+        guard placeSearchPresented, (reserved || !saving), addingPlaceID == nil else { return false }
+        let target = addPlaceDay, targetTripID = addPlaceTripID
+        if let targetTripID, !trips.contains(where: { $0.id == targetTripID }) { addPlaceError = "目标旅行已不存在"; return false }
         if let target, trips.first(where: { $0.id == target.tripId })?.days.contains(where: { $0.id == target.id }) != true {
             addPlaceError = "目标日期已不存在，请返回行程重新选择。"; return false
         }
@@ -677,12 +919,22 @@ import SwiftUI
             if let target, !isPlaceAdded(place) {
                 try await client.mutate(Self.dayPath(target) + "/markers", method: "POST", body: ["markerId": marker.id])
             }
+            if let targetTripID, !isPlaceAdded(place) {
+                try await client.mutate("trips/\(APIClient.id(targetTripID))/markers", method: "POST", body: ["markerId": marker.id])
+            }
             guard revision == connectionRevision, session == addSession else { return false }
             if let index = markers.firstIndex(where: { $0.id == marker.id }) { markers[index] = marker }
             else { markers.append(marker) }
             if let target, let ti = trips.firstIndex(where: { $0.id == target.tripId }),
                let di = trips[ti].days.firstIndex(where: { $0.id == target.id }),
                !trips[ti].days[di].markerIds.contains(marker.id) { trips[ti].days[di].markerIds.append(marker.id) }
+            if let targetTripID, let ti = trips.firstIndex(where: { $0.id == targetTripID }),
+               !(trips[ti].markerIds ?? []).contains(marker.id) {
+                trips[ti].markerIds = (trips[ti].markerIds ?? []) + [marker.id]
+            }
+            if let target, let ti = trips.firstIndex(where: { $0.id == target.tripId }) {
+                trips[ti].markerIds?.removeAll { $0 == marker.id }
+            }
             addedPlaceIDs.insert(place.id); rebuildRoutes(preservingPlannedGeometry: true)
             await markerRepository.invalidate(using: client)
             return true

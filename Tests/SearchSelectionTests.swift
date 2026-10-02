@@ -144,4 +144,40 @@ final class SearchSelectionTests: XCTestCase {
         store.endAddingPlace(); XCTAssertFalse(store.placeSearchPresented)
     }
 
+    @MainActor func testTripSearchFreezesMembershipAndRetriesWithoutDuplicateCreation() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel(); MockURLProtocol.handler = nil }
+        let client = APIClient(baseURL: "https://trip-search.invalid", token: "", session: session)
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = try XCTUnwrap(store.trip)
+        let chains = trip.days.map(\.chains)
+        store.beginAddingPlace(tripID: trip.id)
+        let place = Place(id: "trip-poi", name: "旅行收藏", address: "", coordinates: Coordinate(latitude: 30, longitude: 120))
+        var creates = 0, joins = 0
+        MockURLProtocol.handler = { request in
+            if request.url!.path == "/api/markers" {
+                creates += 1
+                return (200, try JSONEncoder().encode(Marker(id: "trip-place", coordinates: place.coordinates,
+                    content: MarkerContent(id: "trip-place", title: place.name, markdownContent: ""))))
+            }
+            XCTAssertEqual(request.url!.path, "/api/trips/" + trip.id + "/markers")
+            XCTAssertEqual(request.httpMethod, "POST")
+            joins += 1
+            return (joins == 1 ? 500 : 200, Data("{}".utf8))
+        }
+        let first = await store.addSearchPlace(place, using: client)
+        XCTAssertFalse(first)
+        store.select(trip: nil, focus: false)
+        let second = await store.addSearchPlace(place, using: client)
+        XCTAssertTrue(second)
+        XCTAssertEqual(creates, 1); XCTAssertEqual(joins, 2)
+        XCTAssertEqual(store.trips.first?.markerIds, ["trip-place"])
+        XCTAssertEqual(store.trips.first?.days.map(\.chains), chains)
+        XCTAssertTrue(store.isPlaceAdded(place))
+    }
+    func testOldTripPayloadWithoutMembershipDecodes() throws {
+        let trip = try JSONDecoder().decode(Trip.self, from: Data(#"{"id":"t","name":"Trip","startDate":"2026-10-01","endDate":"2026-10-01","days":[]}"#.utf8))
+        XCTAssertNil(trip.markerIds)
+    }
+
 }

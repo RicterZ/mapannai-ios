@@ -3,6 +3,7 @@ import SwiftUI
 struct TripEditorView: View {
     @ObservedObject var store: AppStore
     let trip: Trip?
+    var initial: TripSaveDraft? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var start = Date.now
@@ -44,28 +45,21 @@ struct TripEditorView: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(store.saving) }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button { Task {
+                        Button {
                             guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "请输入旅行名称"; return }
                             guard trip != nil || start.dayString <= end.dayString else { error = "结束日期不能早于开始日期"; return }
-                            // Bound creation to protect against accidental multi-year ranges.
                             if trip == nil && end.timeIntervalSince(start) > 366*86400 { error = "一次最多创建 367 天，请缩短日期范围"; return }
-                            let ok = await store.perform { client in
-                                var body: [String: Any] = ["name": name.trimmingCharacters(in: .whitespacesAndNewlines), "startDate": start.dayString, "emoji": emoji]
-                                if let trip { try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: body) }
-                                else {
-                                    body["endDate"] = end.dayString
-                                    let created: Trip = try await client.request("trips", method: "POST", body: body)
-                                    if emoji != "✈️" { try await client.mutate("trips/\(APIClient.id(created.id))", method: "PUT", body: ["emoji": emoji]) }
-                                }
-                            }
-                            if ok { dismiss() } else { error = store.errorMessage }
-                        }} label: { Image(systemName: "checkmark") }
+                            let value = TripSaveDraft(id: initial?.id ?? UUID(), trip: trip, name: name.trimmingCharacters(in: .whitespacesAndNewlines), start: start, end: end, emoji: emoji)
+                            if store.saveTripInBackground(value) { dismiss() }
+                            else { error = store.errorMessage }
+                        } label: { Image(systemName: "checkmark") }
                             .accessibilityLabel("保存")
                             .disabled(store.saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
         }.onAppear {
-            if let trip { name = trip.name; start = .fromDay(trip.startDate); end = .fromDay(trip.endDate); emoji = trip.emoji ?? "✈️" }
+            if let initial { name = initial.name; start = initial.start; end = initial.end; emoji = initial.emoji }
+            else if let trip { name = trip.name; start = .fromDay(trip.startDate); end = .fromDay(trip.endDate); emoji = trip.emoji ?? "✈️" }
         }.onChange(of: start) { _, value in
             if trip == nil && end < value { end = value }
         }.interactiveDismissDisabled(store.saving)
@@ -261,7 +255,7 @@ struct DayContentsView: View {
         .alert("日期标题", isPresented: $editingTitle) {
             TextField("例如：梧桐街区漫步", text: $title)
             Button("取消", role: .cancel) {}
-            Button("保存") { Task { var copy = day; copy.title = title; _ = await store.updateDay(copy) } }
+            Button("保存") { var copy = day; copy.title = title; _ = store.saveDayInBackground(copy) }
         }
         .sheet(isPresented: $deletingDay) { DayDeletionView(store: store, day: day) }
         .alert("删除路线？", isPresented: Binding(get: { deletingChain != nil }, set: { if !$0 { deletingChain = nil } })) {
@@ -392,7 +386,7 @@ struct DayMarkerPicker: View {
     private var targetTitle: String { day == nil ? "搜索地点" : "搜索图标" }
     private var targetSubtitle: String? {
         if day != nil { return "同时添加到今日行程" }
-        return store.tripPlacesPreview && store.trip != nil ? "同时添加到当前旅行" : nil
+        return store.addPlaceTripID != nil ? "同时添加到当前旅行" : nil
     }
     var body: some View {
         ZStack(alignment: .top) {

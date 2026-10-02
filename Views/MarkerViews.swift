@@ -96,7 +96,7 @@ struct MarkerDetailView: View {
                                 .accessibilityIdentifier("marker-in-current-day")
                         } else {
                             Button {
-                                Task { if await store.addMarker(current, to: day) { dismiss() } }
+                                if store.addMarkerInBackground(current, to: day) { onClose() }
                             } label: {
                                 Label("加入今日行程", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 32)
                             }.buttonStyle(.borderedProminent).disabled(store.saving)
@@ -271,18 +271,18 @@ struct MarkerEditorView: View {
                             .accessibilityIdentifier("cancel-marker-editor")
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button { Task {
+                        Button {
                             if initial.marker == nil {
                                 guard let lat = Double(latitude), let lng = Double(longitude) else { localError = "请输入有效经纬度"; return }
                                 draft.coordinates = Coordinate(latitude: lat, longitude: lng)
                             }
                             draft.html = rich.exportHTML(original: draft.html)
                             if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
-                                if await store.addSearchPlace(place, edited: draft) { onSaved(); closeEditor() }
-                                else { localError = store.addPlaceError }
-                            } else if await store.saveMarker(draft) { onSaved(); dismiss() }
+                                if store.addSearchPlaceInBackground(place, edited: draft) { onSaved(); closeEditor() }
+                                else { localError = store.addPlaceError ?? store.errorMessage }
+                            } else if store.saveMarkerInBackground(draft) { onSaved(); dismiss() }
                             else { localError = store.errorMessage }
-                        }} label: { Image(systemName: "checkmark") }
+                        } label: { Image(systemName: "checkmark") }
                             .accessibilityLabel("保存")
                             .disabled(store.saving || uploading || draft.title.isEmpty)
                     }

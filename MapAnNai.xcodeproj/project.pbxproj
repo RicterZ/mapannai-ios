@@ -50,6 +50,7 @@
 		820E0ED4AE6E2330AA685E65 /* TripDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB8D50F9FB8E05601301E564 /* TripDeletionView.swift */; };
 		88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDDA121FFD3C16E1FD7287B /* JourneyCircleButtonStyle.swift */; };
 		8ACAB632ABC3011A72B69678 /* JourneySwitchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */; };
+		8E4BA9BE46B890358BAE4A01 /* BackgroundSaveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 198C34C423C7BB478F9EC042 /* BackgroundSaveTests.swift */; };
 		8FC298524B1D52C0FBF7C80B /* SearchSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C335E3944995E33E94762A45 /* SearchSelectionTests.swift */; };
 		90547715CCA2328EA998204F /* NativeJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45FECFBB8C13A6617DE0148 /* NativeJourneyTests.swift */; };
 		94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72771F1E2B151FC279B7446 /* Geometry.swift */; };
@@ -111,6 +112,7 @@
 		1579B0865582F6FFBD7E34E0 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		184D7AD5A43DD29A4BC180FA /* RouteSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSelectionTests.swift; sourceTree = "<group>"; };
 		1967E749797AC413790F093E /* ItineraryScrollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryScrollTests.swift; sourceTree = "<group>"; };
+		198C34C423C7BB478F9EC042 /* BackgroundSaveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSaveTests.swift; sourceTree = "<group>"; };
 		1B01B7D0E0377DDA8508CED5 /* MarkerPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerPresentation.swift; sourceTree = "<group>"; };
 		1C4EE1D4A3CFED767F0CC73D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1D05C6D25966F6717D9418A3 /* MapAnNai.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MapAnNai.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -256,6 +258,7 @@
 			isa = PBXGroup;
 			children = (
 				5AD8D5E25A1C9E0E2FACB862 /* AIPlannerTests.swift */,
+				198C34C423C7BB478F9EC042 /* BackgroundSaveTests.swift */,
 				2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */,
 				CEB25B1C797DC9C67FC988C2 /* ConcurrencyTests.swift */,
 				8ED85B293D18534AAB521985 /* CoreTests.swift */,
@@ -510,6 +513,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DA9CD0CDD537652D05E8EE9E /* AIPlannerTests.swift in Sources */,
+				8E4BA9BE46B890358BAE4A01 /* BackgroundSaveTests.swift in Sources */,
 				0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */,
 				094AD351688781CAF39E4064 /* ConcurrencyTests.swift in Sources */,
 				F454FB7809C094724227F0B8 /* CoreTests.swift in Sources */,

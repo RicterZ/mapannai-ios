@@ -189,6 +189,9 @@ struct HomeView: View {
         .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.hidden) }
+        .sheet(item: $store.tripSaveRecovery) { value in
+            TripEditorView(store: store, trip: value.trip, initial: value).presentationDragIndicator(.visible)
+        }
         .sheet(item: $editingTrip) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
         .sheet(isPresented: $deletingPanelDay) {
             if let day = store.day { DayDeletionView(store: store, day: day) }
@@ -196,7 +199,7 @@ struct HomeView: View {
         .alert("日期标题", isPresented: $editingDayTitle) {
             TextField("标题", text: $dayTitle)
             Button("取消", role: .cancel) {}
-            Button("保存") { Task { if var day = store.day { day.title = dayTitle; _ = await store.updateDay(day) } } }
+            Button("保存") { if var day = store.day { day.title = dayTitle; _ = store.saveDayInBackground(day) } }
         }
         .sheet(isPresented: Binding(get: { aiPresented && !sidebar }, set: { if !$0 { aiPlanner.close() } })) {
             AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { aiSettingsPresented = true })
@@ -268,6 +271,9 @@ struct HomeView: View {
             }
         }
         .alert("无法完成操作", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
+            if store.canResumeFailedSave {
+                Button("继续编辑") { store.resumeFailedSave() }
+            }
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
         .onChange(of: settings.planning) { _, _ in store.rebuildRoutes() }
@@ -438,7 +444,7 @@ struct HomeView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 if sidebar { togglePanel() }
-                else { store.beginAddingPlace(to: scope(destination).day) }
+                else { store.beginAddingPlace(to: scope(destination).day, tripID: scope(destination).trip?.id) }
             } label: {
                 toolbarActionIcon(sidebar ? "sidebar.left" : "magnifyingglass")
             }.accessibilityLabel(sidebar ? "收起行程" : "搜索地点")
@@ -602,7 +608,7 @@ struct HomeView: View {
                 Button { location.request { store.locating = UUID() } } label: {
                     toolbarActionIcon("location").frame(width: 44, height: 44)
                 }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
-                Button { store.beginAddingPlace(to: store.day) } label: {
+                Button { store.beginAddingPlace(to: store.day, tripID: store.tripID) } label: {
                     toolbarActionIcon("magnifyingglass").frame(width: 44, height: 44)
                 }.accessibilityLabel("搜索地点").accessibilityIdentifier("itinerary-search")
             }.buttonStyle(.plain).foregroundStyle(Theme.accent)

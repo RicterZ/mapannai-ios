@@ -9,7 +9,7 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
     @State private var deletion: Trip?
     private var years: [String] { Array(Set(store.trips.map { String($0.startDate.prefix(4)) })).sorted(by: >) }
     private var independent: [Marker] {
-        let assigned = Set(store.trips.flatMap { $0.days.flatMap(\.markerIds) })
+        let assigned = Set(store.trips.flatMap { ($0.markerIds ?? []) + $0.days.flatMap(\.markerIds) })
         return store.markers.filter { !assigned.contains($0.id) }
     }
     var body: some View {
@@ -83,7 +83,7 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(trip.name).font(.body).foregroundStyle(.primary).lineLimit(2)
                 Text("\(trip.startDate) – \(trip.endDate)").font(.footnote).foregroundStyle(.secondary)
-                Text("\(trip.days.count)天 · \(Set(trip.days.flatMap(\.markerIds)).count)个地点")
+                Text("\(trip.days.count)天 · \(Set(trip.days.flatMap(\.markerIds) + (trip.markerIds ?? [])).count)个地点")
                     .font(.footnote).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 2).contentShape(Rectangle())
@@ -94,6 +94,11 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
 struct JourneyDaysContents: View {
     @ObservedObject var store: AppStore
     let trip: Trip
+    private var unscheduledPlaces: [Marker] {
+        if store.tripPlacesPreview { return store.previewTripPlaces[trip.id] ?? [] }
+        let ids = Set(trip.markerIds ?? [])
+        return store.markers.filter { ids.contains($0.id) }
+    }
     @State private var draggingMarker: Marker?
     @State private var dragLocation: CGPoint = .zero
     @State private var dayDropFrames: [String: CGRect] = [:]
@@ -126,9 +131,9 @@ struct JourneyDaysContents: View {
                     }
 
             }
-            if store.tripPlacesPreview {
+            if !unscheduledPlaces.isEmpty || !store.demo {
                 Section {
-                    ForEach(store.previewTripPlaces[trip.id] ?? []) { marker in
+                    ForEach(unscheduledPlaces) { marker in
                         PlaceSelectionRow(marker: marker)
                             .contentShape(Rectangle())
                             .onTapGesture { store.focus(marker) }
@@ -153,8 +158,15 @@ struct JourneyDaysContents: View {
                                     }
                                     draggingMarker = nil; dropTargetDayID = nil
                                 })
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button {
+                                    if store.tripPlacesPreview { store.previewTripPlaces[trip.id]?.removeAll { $0.id == marker.id } }
+                                    else { _ = store.removeTripPlaceInBackground(marker.id, from: trip.id) }
+                                } label: { Image(systemName: "minus.circle") }
+                                .tint(.red).accessibilityLabel("从旅行移除").disabled(store.saving)
+                            }
                     }
-                    Button { store.beginAddingPlace() } label: {
+                    Button { store.beginAddingPlace(tripID: trip.id) } label: {
                         Label("添加地点", systemImage: "plus").fullRowActionLabel()
                     }.foregroundStyle(Theme.accent)
                 } header: {
@@ -203,14 +215,18 @@ struct JourneyDaysContents: View {
                 DayDeletionView(store: store, day: day)
             }
     }
-    /// Local design preview only; the server membership contract is not defined yet.
+    /// The day membership endpoint atomically removes the trip-only membership.
     private func assignPreviewPlaces(_ payloads: [String], to day: TripDay) -> Bool {
         let prefix = "trip-place/" + trip.id + "/"
         let ids = Set(payloads.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
-        let places = (store.previewTripPlaces[trip.id] ?? []).filter { ids.contains($0.id) }
+        let places = unscheduledPlaces.filter { ids.contains($0.id) }
         guard !places.isEmpty,
               let ti = store.trips.firstIndex(where: { $0.id == trip.id }),
               let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return false }
+        if !store.tripPlacesPreview {
+            guard places.count == 1 else { return false }
+            return store.addMarkerInBackground(places[0], to: day)
+        }
         withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) {
             for marker in places {
                 if !store.markers.contains(where: { $0.id == marker.id }) { store.markers.append(marker) }

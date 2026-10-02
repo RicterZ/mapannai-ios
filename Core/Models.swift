@@ -65,6 +65,7 @@ struct Trip: Codable, Identifiable, Hashable {
     var coverImage: String?
     var emoji: String?
     var days: [TripDay]
+    var markerIds: [String]? = nil
 }
 struct TripDay: Codable, Identifiable, Hashable {
     var id: String
