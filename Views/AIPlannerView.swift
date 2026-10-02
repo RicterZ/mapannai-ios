@@ -145,7 +145,11 @@ struct AIPlannerView: View {
             }
             .navigationTitle(planner.conversation?.title ?? "AI 助手").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                PanelCloseToolbarItem(identifier: "ai-close", placement: .topBarLeading) { planner.close() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { planner.close() } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("关闭")
+                        .accessibilityIdentifier("ai-close")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("新会话", systemImage: "plus") { planner.newConversation() }

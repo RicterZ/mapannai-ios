@@ -74,7 +74,7 @@ struct SettingsView: View {
                 .toolbar {
                     PanelCloseToolbarItem(identifier: "close-settings", disabled: checking) { dismiss() }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") {
+                        Button {
                             do {
                                 let normalized = url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : try Settings.normalizedURL(url)
                                 let reconnect = normalized != settings.baseURL || token.trimmingCharacters(in: .whitespacesAndNewlines) != settings.token
@@ -83,7 +83,9 @@ struct SettingsView: View {
                                 if reconnect { Task { await store.connect() } }
                                 dismiss()
                             } catch { localError = error.localizedDescription }
-                        }.disabled(store.saving || checking)
+                        } label: { Image(systemName: "checkmark") }
+                            .accessibilityLabel("完成")
+                            .disabled(store.saving || checking)
                     }
                 }
         }.onAppear { url = settings.baseURL; token = settings.token; consent = settings.privacyAccepted }

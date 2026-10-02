@@ -118,8 +118,13 @@ struct MarkerDetailView: View {
             .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: current.id)
             .navigationTitle("地点").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    PanelCloseToolbarItem(identifier: "close-marker-detail") { onClose() }
-                    ToolbarItem(placement: .confirmationAction) { Button("编辑") { editing = true } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button { onClose() } label: { Image(systemName: "xmark") }
+                            .accessibilityLabel("关闭")
+                            .accessibilityIdentifier("close-marker-detail")
+                    }
+                    ToolbarItem(placement: .confirmationAction) { Button { editing = true } label: { Image(systemName: "square.and.pencil") }
+                        .accessibilityLabel("编辑") }
                 }
                 .sheet(isPresented: $editing) { MarkerEditorView(store: store, initial: MarkerDraft(marker: current)) }
                 .alert("删除地点？", isPresented: $deleting) {
@@ -216,6 +221,7 @@ struct MarkerEditorView: View {
                 } else {
                     Label("添加封面图", systemImage: "photo")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .systemBackground))
                 }
             }.contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -255,12 +261,17 @@ struct MarkerEditorView: View {
             }
                 .navigationTitle(embedded || initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") {
-                        if embedded && hasChanges { confirmDiscard = true }
-                        else { closeEditor() }
-                    }.disabled(store.saving || uploading) }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button {
+                            if embedded && hasChanges { confirmDiscard = true }
+                            else { closeEditor() }
+                        } label: { Image(systemName: "xmark") }
+                            .disabled(store.saving || uploading)
+                            .accessibilityLabel("取消")
+                            .accessibilityIdentifier("cancel-marker-editor")
+                    }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("保存") { Task {
+                        Button { Task {
                             if initial.marker == nil {
                                 guard let lat = Double(latitude), let lng = Double(longitude) else { localError = "请输入有效经纬度"; return }
                                 draft.coordinates = Coordinate(latitude: lat, longitude: lng)
@@ -271,7 +282,9 @@ struct MarkerEditorView: View {
                                 else { localError = store.addPlaceError }
                             } else if await store.saveMarker(draft) { onSaved(); dismiss() }
                             else { localError = store.errorMessage }
-                        }}.disabled(store.saving || uploading || draft.title.isEmpty)
+                        }} label: { Image(systemName: "checkmark") }
+                            .accessibilityLabel("保存")
+                            .disabled(store.saving || uploading || draft.title.isEmpty)
                     }
                 }
         .fullScreenCover(isPresented: $noteEditorPresented) {

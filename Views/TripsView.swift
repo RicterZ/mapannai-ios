@@ -44,7 +44,7 @@ struct TripEditorView: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(store.saving) }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("保存") { Task {
+                        Button { Task {
                             guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "请输入旅行名称"; return }
                             guard trip != nil || start.dayString <= end.dayString else { error = "结束日期不能早于开始日期"; return }
                             // Bound creation to protect against accidental multi-year ranges.
@@ -59,7 +59,9 @@ struct TripEditorView: View {
                                 }
                             }
                             if ok { dismiss() } else { error = store.errorMessage }
-                        }}.disabled(store.saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }} label: { Image(systemName: "checkmark") }
+                            .accessibilityLabel("保存")
+                            .disabled(store.saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
         }.onAppear {
@@ -287,7 +289,7 @@ struct ChainEditorView: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(store.saving) }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("保存") { Task {
+                        Button { Task {
                             do {
                                 guard let latest = store.trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }), latest.chains == request.day.chains else {
                                     throw AppError.message("路线已更新，请关闭后重新编辑")
@@ -297,7 +299,9 @@ struct ChainEditorView: View {
                                 if updated == latest { dismiss(); return }
                                 if store.saveDayInBackground(updated) { dismiss() } else { error = store.errorMessage }
                             } catch { self.error = error.localizedDescription }
-                        }}.disabled(store.saving || (request.index == nil && ids.count < 2))
+                        }} label: { Image(systemName: "checkmark") }
+                            .accessibilityLabel("保存")
+                            .disabled(store.saving || (request.index == nil && ids.count < 2))
                     }
                 }
         }.onAppear { ids = request.ids }.interactiveDismissDisabled(store.saving)
