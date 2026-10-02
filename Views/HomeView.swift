@@ -261,6 +261,7 @@ struct HomeView: View {
         .onChange(of: store.draft?.id) { old, new in
             guard !store.placeSearchPresented else { return }
             if new != nil {
+                store.draftExpanded = false
                 let replacingDetail = store.selectedMarker != nil
                 mapDraftReady = !replacingDetail
                 mapEditorActive = true

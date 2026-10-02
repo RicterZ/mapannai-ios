@@ -508,7 +508,7 @@ struct DayMarkerPicker: View {
             }
         }
         .onChange(of: store.draft?.id) { old, new in
-            if old == nil && new != nil { onInput() }
+            if old == nil && new != nil { onSearch() }
             else if old != nil && new == nil { onSearch() }
         }
         .accessibilityIdentifier("add-place-search-panel")
@@ -519,7 +519,7 @@ struct DayMarkerPicker: View {
                 .accessibilityIdentifier("place-added-\(place.id)")
         } else {
             Button {
-                store.choose(place); store.prepareSearchPlaceAddition(place); onInput()
+                store.choose(place); store.prepareSearchPlaceAddition(place); onSearch()
             } label: {
                 if store.addingPlaceID == place.id { ProgressView().frame(width: 44, height: 44) }
                 else { Image(systemName: "plus.circle.fill").font(.title2).frame(width: 44, height: 44) }
