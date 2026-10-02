@@ -49,6 +49,17 @@ struct HomeView: View {
                 .onAppear { nativeJourneyPresented = true }
                 .task(id: settings.revision) {
                     await aiPlanner.configure(for: settings)
+                    #if DEBUG
+                    if store.demo && ProcessInfo.processInfo.arguments.contains("--ai-chat-preview") {
+                        aiPlanner.configuration = AIConfiguration(model: "preview")
+                        let messages = (1...16).flatMap { index in
+                            [AIMessage(role: "user", content: "第\(index)个问题：这一天怎么安排？"),
+                             AIMessage(role: "assistant", content: index == 16 ? "最新回复：当天行程已整理好。" : "建议先游览附近的地点，再沿路线前往下一站，留出休息时间。")]
+                        }
+                        let conversation = AIConversation(title: "行程规划", messages: messages)
+                        aiPlanner.conversations = [conversation]; aiPlanner.activeID = conversation.id
+                    }
+                    #endif
                     if ProcessInfo.processInfo.arguments.contains("--ai-planner-demo") { aiPlanner.presented = true }
                 }
                 .onReceive(aiPlanner.$presented.removeDuplicates()) { open in

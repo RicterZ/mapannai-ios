@@ -71,7 +71,7 @@ struct AIPlannerView: View {
                         .accessibilityIdentifier("ai-configuration-prompt")
                     } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: 8) {
                         if !planner.ready {
                             Text(planner.storageError ?? "正在读取会话…").foregroundStyle(.secondary)
                             if planner.storageError != nil {
@@ -80,22 +80,29 @@ struct AIPlannerView: View {
                         }
                         ForEach(Array((planner.conversation?.messages ?? []).enumerated()), id: \.offset) { _, message in
                             if ["user", "assistant"].contains(message.role), let content = message.content, !content.isEmpty {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(message.role == "user" ? "你" : "AI 助手").font(.caption).foregroundStyle(.secondary)
-                                    Text(.init(content)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                }
+                                AIMessageBubble(content: content, isUser: message.role == "user", maxWidth: geometry.size.width * 0.8)
                             }
                         }
-                        if !planner.partial.isEmpty { Text(.init(planner.partial)).textSelection(.enabled) }
+                        if !planner.partial.isEmpty { AIMessageBubble(content: planner.partial, isUser: false, maxWidth: geometry.size.width * 0.8) }
                         if planner.busy { HStack { ProgressView(); Text(planner.status).font(.footnote).foregroundStyle(.secondary) } }
                         if let error = planner.error { Text(error).foregroundStyle(.red).font(.footnote) }
                         if let error = planner.storageError { Text(error).foregroundStyle(.secondary).font(.footnote) }
                         Color.clear.frame(height: 1).id("ai-bottom")
-                    }.padding()
+                    }.padding(.horizontal, 16).padding(.vertical, 12)
                 }
+                .defaultScrollAnchor(.bottom)
+                .scrollClipDisabled()
+                .modifier(AIChatScrollEdges())
+                .scrollDismissesKeyboard(.interactively)
+                .onAppear { proxy.scrollTo("ai-bottom", anchor: .bottom) }
+                .onChange(of: planner.activeID) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
+                .onChange(of: planner.ready) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
+                .onChange(of: planner.conversation?.messages.count) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
+                .onChange(of: planner.partial) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
+                .onChange(of: inputFocused) { _, focused in if focused { proxy.scrollTo("ai-bottom", anchor: .bottom) } }
                     }
                 }
-                .onChange(of: planner.conversation?.messages.count) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     HStack(alignment: .bottom, spacing: 4) {
                         TextField("输入消息…", text: $text, axis: .vertical)
@@ -119,13 +126,21 @@ struct AIPlannerView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 4)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AIComposerLayout.inputCornerRadius, style: .continuous))
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AIComposerLayout.inputCornerRadius, style: .continuous))
                     .overlay { RoundedRectangle(cornerRadius: AIComposerLayout.inputCornerRadius, style: .continuous).strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 0.5) }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("ai-message-composer")
-                    .padding(.horizontal, AIComposerLayout.inset).padding(.top, 6)
-                    .padding(.bottom, max(0, AIComposerLayout.inset - geometry.safeAreaInsets.bottom))
-                    .background(.regularMaterial)
+                    .padding(.horizontal, AIComposerLayout.inset).padding(.vertical, 12)
+                    .background {
+                        Rectangle().fill(.regularMaterial)
+                            .mask(LinearGradient(stops: [.init(color: .clear, location: 0),
+                                                         .init(color: .black, location: 0.4),
+                                                         .init(color: .black, location: 1)],
+                                                 startPoint: .top, endPoint: .bottom))
+                            .padding(.top, -24)
+                            .ignoresSafeArea(edges: .bottom)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
             .navigationTitle(planner.conversation?.title ?? "AI 助手").navigationBarTitleDisplayMode(.inline)
@@ -134,11 +149,18 @@ struct AIPlannerView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("新会话", systemImage: "plus") { planner.newConversation() }
-                        ForEach(planner.conversations) { conversation in
-                            Button(conversation.title) { planner.activeID = conversation.id; planner.error = nil }
-                        }
                         if planner.conversation != nil {
-                            Button("删除当前会话", systemImage: "trash", role: .destructive) { deleteConfirmation = true }
+                            DestructiveMenuButton(title: "删除当前会话", systemImage: "trash") { deleteConfirmation = true }
+                        }
+                        if !planner.conversations.isEmpty {
+                            Divider()
+                            ForEach(planner.conversations) { conversation in
+                                Button(conversation.title, systemImage: conversation.id == planner.activeID
+                                       ? "checkmark.bubble" : "bubble.left") {
+                                    planner.activeID = conversation.id
+                                    planner.error = nil
+                                }
+                            }
                         }
                     } label: { Image(systemName: "bubble.left.and.bubble.right") }
                         .disabled(planner.busy).accessibilityLabel("会话记录").accessibilityIdentifier("ai-conversations")
@@ -156,5 +178,70 @@ struct AIPlannerView: View {
         }
         .accessibilityIdentifier("ai-planner-panel")
         }
+    }
+}
+
+private struct AIMessageBubble: View {
+    let content: String
+    let isUser: Bool
+    let maxWidth: CGFloat
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            if isUser { Spacer(minLength: 32) }
+            Group {
+                if isUser { Text(content) }
+                else { Text(.init(content)) }
+            }
+            .font(.body)
+            .textSelection(.enabled)
+            .foregroundStyle(isUser ? Color.white : Color.primary)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(isUser ? Color(uiColor: .systemBlue) : Color(uiColor: .systemGray5),
+                        in: AIMessageBubbleShape(isUser: isUser))
+            .frame(maxWidth: maxWidth, alignment: isUser ? .trailing : .leading)
+            .accessibilityIdentifier(isUser ? "ai-user-bubble" : "ai-assistant-bubble")
+            if !isUser { Spacer(minLength: 32) }
+        }.frame(maxWidth: .infinity)
+    }
+}
+
+private struct AIChatScrollEdges: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        } else {
+            content
+        }
+    }
+}
+
+/// A curved tail joins the lower corner without adding space to the text layout.
+private struct AIMessageBubbleShape: Shape {
+    let isUser: Bool
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(roundedRect: rect, cornerRadius: 20)
+        let x = rect.maxX
+        let y = rect.maxY
+        // Draw the outgoing tail; mirror the complete outline for incoming messages.
+        path.move(to: CGPoint(x: x - 8, y: y - 14))
+        path.addCurve(to: CGPoint(x: x - 6.5, y: y + 1),
+                      control1: CGPoint(x: x - 8.5, y: y - 7),
+                      control2: CGPoint(x: x - 8, y: y - 2))
+        // A short downward curl with minimal sideways displacement.
+        path.addCurve(to: CGPoint(x: x - 8, y: y + 2),
+                      control1: CGPoint(x: x - 5.8, y: y + 2.2),
+                      control2: CGPoint(x: x - 6.8, y: y + 2.8))
+        path.addCurve(to: CGPoint(x: x - 14, y: y - 4),
+                      control1: CGPoint(x: x - 10, y: y + 1),
+                      control2: CGPoint(x: x - 12, y: y - 1))
+        path.addLine(to: CGPoint(x: x - 19, y: y - 9))
+        path.closeSubpath()
+        if !isUser {
+            return path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1,
+                                                  tx: rect.minX + rect.maxX, ty: 0))
+        }
+        return path
     }
 }

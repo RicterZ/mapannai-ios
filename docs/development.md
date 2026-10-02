@@ -110,6 +110,8 @@ AltStore Classic 会以安装者的账号重新签名。它可能改变 Bundle I
 
 ## AI 助手
 
+聊天消息采用圆角气泡与 iMessage 风格的弯曲尾巴：用户消息为右侧蓝色气泡，助手消息为左侧系统灰色气泡；尾巴不改变文字布局与选择交互。
+
 设置页的“AI API 配置”可填写兼容 OpenAI 的模型 API 地址、Key 和模型名。配置按 MapAnNai 服务与凭据隔离，Key 仅存钥匙串；聊天记录存设备 Application Support，不同步到 Web。
 
 客户端只调用现有 `POST /api/ai/chat`，发送 settings/messages/context，并消费 NDJSON 的 delta、message、status、changed、complete、error 事件。系统提示词、旅行上下文补全与 MCP 工具由 MapAnNai Plus 服务器负责，iOS 不维护副本、不直连模型或执行工具。模型 API 配置会通过此请求交给用户连接的服务端。
