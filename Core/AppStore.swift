@@ -481,6 +481,7 @@ import SwiftUI
         pending.placeLookupFailed = false
         pending.resolvingPlace = true
         draft = pending
+        camera = CameraCommand(points: [coordinate], revealDraft: true)
         let draftID = pending.id
         Task {
             do {
@@ -791,9 +792,11 @@ struct CameraCommand: Identifiable {
     var points: [Coordinate]
     var singlePointZoom: Double = 15
     var detailLayout: MarkerDetailLayout? = nil
+    var revealDraft = false
     func viewportInsets(base: MapViewportInsets, height: Double, bottomSafeArea: Double,
                         bottomSheet: Bool) -> MapViewportInsets {
         var insets = base
+        if bottomSheet, revealDraft { insets.bottom = height * 0.5 + bottomSafeArea + 25 }
         if bottomSheet, let detailLayout {
             // The journey panel collapses when details open; its previous full height must not shift the camera.
             insets.bottom = detailLayout.occlusion(height: height, bottomSafeArea: bottomSafeArea) + 25

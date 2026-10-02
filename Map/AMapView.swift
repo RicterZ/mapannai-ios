@@ -99,8 +99,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 if draftPin == nil { draftPin = pin; map.addAnnotation(pin) }
                 if let view = map.view(for: pin) { styleDraftPin(view) }
             } else if let pin = draftPin {
-                map.removeAnnotation(pin)
                 draftPin = nil
+                if let view = map.view(for: pin), !UIAccessibility.isReduceMotionEnabled {
+                    UIView.animate(withDuration: 0.22, animations: {
+                        view.alpha = 0
+                        view.imageView.transform = CGAffineTransform(scaleX: 0.75, y: 0.75)
+                    }, completion: { [weak map] _ in map?.removeAnnotation(pin) })
+                } else { map.removeAnnotation(pin) }
             }
             let wanted = Set(store.mapMarkers.map(\.id))
             for id in Array(pins.keys) where !wanted.contains(id) { if let pin = pins.removeValue(forKey: id) { map.removeAnnotation(pin) } }
@@ -138,10 +143,21 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     let insets = padding(map, command: command)
                     let status = map.getMapStatus()!
                     status.centerCoordinate = coords[0]
-                    status.zoomLevel = CGFloat(command.zoomLevel ?? 15)
-                    status.screenAnchor = CGPoint(
-                        x: (map.bounds.width + insets.left - insets.right) / (2 * max(1, map.bounds.width)),
-                        y: (map.bounds.height + insets.top - insets.bottom) / (2 * max(1, map.bounds.height)))
+                    status.zoomLevel = command.revealDraft ? map.zoomLevel : CGFloat(command.zoomLevel ?? 15)
+                    if command.revealDraft {
+                        let visible = map.bounds.inset(by: insets).insetBy(dx: 22, dy: 44)
+                        let position = map.convert(coords[0], toPointTo: map)
+                        // Shift only enough to reveal the point, retaining its screen position otherwise.
+                        let target = CGPoint(x: min(max(position.x, visible.minX), visible.maxX),
+                                             y: min(max(position.y, visible.minY), visible.maxY))
+                        status.screenAnchor = CGPoint(x: target.x / max(1, map.bounds.width),
+                                                      y: target.y / max(1, map.bounds.height))
+                    }
+                    if !command.revealDraft {
+                        status.screenAnchor = CGPoint(
+                            x: (map.bounds.width + insets.left - insets.right) / (2 * max(1, map.bounds.width)),
+                            y: (map.bounds.height + insets.top - insets.bottom) / (2 * max(1, map.bounds.height)))
+                    }
                     let duration = CameraMotion.duration(
                         from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
                         to: command.points[0], currentZoom: Double(map.zoomLevel), targetZoom: command.zoomLevel,
@@ -656,13 +672,18 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 return
             }
             guard !mapTapClaimed else { return }
-            // Give the SDK POI callback priority before committing route navigation.
+            // Route navigation is decided by the SDK's map tap callback, not this gesture.
+        }
+        func mapView(_ mapView: MAMapView!, didSingleTappedAt coordinate: CLLocationCoordinate2D) {
+            guard !mapTapClaimed, mapTapAnnotation == nil, store.draft == nil else { return }
+            let tap = mapTapPoint ?? mapView.convert(coordinate, toPointTo: mapView)
+            cancelPendingMapTap()
             let work = DispatchWorkItem { [weak self, weak mapView] in
                 guard let self, let mapView, !self.mapTapClaimed, self.store.draft == nil else { return }
                 self.selectRoute(at: tap, mapView: mapView)
             }
             pendingRouteTap = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
         }
         private func selectRoute(at tap: CGPoint, mapView: MAMapView) {
             guard !store.placeSearchPresented, !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
