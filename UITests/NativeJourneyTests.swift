@@ -2,6 +2,19 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
+    @MainActor func testDeleteChainConfirmationActuallySubmitsDeletion() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let route = app.buttons["route-view-0"]
+        XCTAssertTrue(route.waitForExistence(timeout: 10))
+        route.press(forDuration: 0.7)
+        app.buttons["删除路线"].tap()
+        XCTAssertTrue(app.alerts["删除路线？"].waitForExistence(timeout: 5))
+        app.alerts["删除路线？"].buttons["删除"].tap()
+        // Read-only mode must reach the store and reject the write, not silently skip it.
+        XCTAssertTrue(app.alerts["无法完成操作"].waitForExistence(timeout: 5))
+        XCTAssertTrue(route.exists)
+    }
+
     @MainActor func testIndependentMarkerHasDeleteMenuAndReturnsToOverview() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--overlapping-routes-demo"]

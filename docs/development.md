@@ -116,7 +116,7 @@ AltStore Classic 会以安装者的账号重新签名。它可能改变 Bundle I
 
 客户端只调用现有 `POST /api/ai/chat`，发送 settings/messages/context，并消费 NDJSON 的 delta、message、status、changed、complete、error 事件。系统提示词、旅行上下文补全与 MCP 工具由 MapAnNai Plus 服务器负责，iOS 不维护副本、不直连模型或执行工具。模型 API 配置会通过此请求交给用户连接的服务端。
 
-地图右上角提供无文字的圆形 AI 图标入口，由 `AIPlannerStore.entryEnabled` 控制；本地 UI 验证可添加 `--demo --ai-planner-demo`，只读示例禁止发送规划请求。iPhone 使用原旅途 sheet 的半屏/全屏，关闭恢复原档位；iPad 宽窗口使用带滑入/滑出动画的右侧聊天区，入口图标切换开关，不显示下拉拖动条，留出地图空间，窄窗口使用底部面板。
+地图右上角提供无文字的圆形 AI 图标入口，由 `AIPlannerStore.entryEnabled` 控制；本地 UI 验证可添加 `--demo --ai-planner-demo`，只读示例禁止发送规划请求。iPhone 使用独立系统 sheet 的半屏/全屏，旅途页面与原档位保留；iPad 宽窗口使用带滑入/滑出动画的右侧聊天区，入口图标切换开关，不显示下拉拖动条，留出地图空间，窄窗口使用底部面板。
 
 只从实时 create_marker / plan_trip_day 工具结果中提取 status=created 的 ID。串行合并刷新后定位新地点，不打开地点详情；历史加载、失败结果、关闭助手和失效请求不触发定位，刷新期间用户主动镜头操作优先。停止可能无法撤销服务器已执行的写入，续聊补齐未知工具结果并交由服务器查询实际数据，不自动重试规划请求。
 

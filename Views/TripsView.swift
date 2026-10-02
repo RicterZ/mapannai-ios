@@ -220,10 +220,17 @@ struct DayContentsView: View {
         .sheet(isPresented: $deletingDay) { DayDeletionView(store: store, day: day) }
         .alert("删除路线？", isPresented: Binding(get: { deletingChain != nil }, set: { if !$0 { deletingChain = nil } })) {
             Button("取消", role: .cancel) { deletingChain = nil }
-            Button("删除", role: .destructive) { Task {
-                if let index = deletingChain, day.chains.indices.contains(index) { var copy = day; copy.chains.remove(at: index); _ = store.saveDayInBackground(copy) }
+            Button("删除", role: .destructive) {
+                guard let index = deletingChain else { return }
                 deletingChain = nil
-            } }
+                guard var latest = store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }),
+                      latest.chains.indices.contains(index), day.chains.indices.contains(index),
+                      latest.chains[index] == day.chains[index] else { return }
+                latest.chains.remove(at: index)
+                if store.saveDayInBackground(latest, animated: !reduceMotion) {
+                    collapsedRoutes = Set(collapsedRoutes.filter { $0 != index }.map { $0 > index ? $0 - 1 : $0 })
+                }
+            }
         } message: { Text("保留当天的地点，只删除这条访问顺序。") }
     }
     private func routeDistance(chain: [String], index: Int, position: Int) -> String? {

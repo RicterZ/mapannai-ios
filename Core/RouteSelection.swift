@@ -33,7 +33,7 @@ struct RouteMotionPath {
 }
 
 /// Progress is a segment and a fraction, not an elapsed-time percentage of the whole route.
-/// Reprojecting that segment preserves the location on zoom while keeping travel at 60pt/s.
+/// Reprojecting that segment preserves the location on zoom while keeping travel at 90pt/s.
 struct RouteMotionCursor {
     private var segment = 0
     private var fraction = 0.0
@@ -72,7 +72,7 @@ struct RouteMotionCursor {
 }
 
 final class RouteMotionAnimation {
-    static let pointsPerSecond = 60.0
+    static let pointsPerSecond = 90.0
     private var paths: [RouteMotionPath] = []
     private var cursors: [RouteMotionCursor] = []
     private var lastTimestamp: Double?
