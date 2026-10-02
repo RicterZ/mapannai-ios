@@ -94,6 +94,11 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
 struct JourneyDaysContents: View {
     @ObservedObject var store: AppStore
     let trip: Trip
+    @State private var draggingMarker: Marker?
+    @State private var dragLocation: CGPoint = .zero
+    @State private var dayDropFrames: [String: CGRect] = [:]
+    @State private var dropTargetDayID: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editing = false
     @State private var deletion: TripDay?
     var body: some View {
@@ -101,7 +106,15 @@ struct JourneyDaysContents: View {
             Group {
 
             ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, day in
-                NavigationLink(value: JourneyDestination.day(trip.id, day.id)) { dayRow(day, index: index) }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
+                NavigationLink(value: JourneyDestination.day(trip.id, day.id)) {
+                    dayRow(day, index: index)
+                        .contentShape(Rectangle())
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: TripDayDropFrames.self,
+                                value: [day.id: geometry.frame(in: .global)])
+                        })
+                }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
+                    .listRowBackground(dropTargetDayID == day.id ? Color(uiColor: .tertiarySystemFill) : Color(uiColor: .systemBackground))
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { deletion = day } label: { Image(systemName: "trash") }
                             .accessibilityLabel("删除")
@@ -116,8 +129,30 @@ struct JourneyDaysContents: View {
             if store.tripPlacesPreview {
                 Section {
                     ForEach(store.previewTripPlaces[trip.id] ?? []) { marker in
-                        Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }
-                            .buttonStyle(.plain)
+                        PlaceSelectionRow(marker: marker)
+                            .contentShape(Rectangle())
+                            .onTapGesture { store.focus(marker) }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityIdentifier("trip-unscheduled-\(marker.id)")
+                            .opacity(draggingMarker?.id == marker.id ? 0.3 : 1)
+                            .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 20) {
+                                draggingMarker = marker
+                            }
+                            .simultaneousGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                .onChanged { drag in
+                                    dragLocation = drag.location
+                                    guard draggingMarker?.id == marker.id else { return }
+                                    dropTargetDayID = dayDropFrames.first(where: { $0.value.contains(drag.location) })?.key
+                                }
+                                .onEnded { drag in
+                                    guard draggingMarker?.id == marker.id else { return }
+                                    if let id = dayDropFrames.first(where: { $0.value.contains(drag.location) })?.key,
+                                       let day = trip.days.first(where: { $0.id == id }) {
+                                        _ = assignPreviewPlaces(["trip-place/" + trip.id + "/" + marker.id], to: day)
+                                    }
+                                    draggingMarker = nil; dropTargetDayID = nil
+                                })
                     }
                     Button { store.beginAddingPlace() } label: {
                         Label("添加地点", systemImage: "plus").fullRowActionLabel()
@@ -149,11 +184,47 @@ struct JourneyDaysContents: View {
             }
             }.listRowBackground(Color(uiColor: .systemBackground))
         }
+            .onPreferenceChange(TripDayDropFrames.self) { dayDropFrames = $0 }
+            .overlay(alignment: .topLeading) {
+                GeometryReader { geometry in
+                if let draggingMarker {
+                    PlaceSelectionRow(marker: draggingMarker)
+                        .padding(12).frame(width: 240)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        .shadow(radius: 8, y: 3)
+                        .position(x: dragLocation.x - geometry.frame(in: .global).minX,
+                                  y: dragLocation.y - geometry.frame(in: .global).minY)
+                        .allowsHitTesting(false)
+                }
+                }.allowsHitTesting(false)
+            }
             .sheet(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: $deletion) { day in
                 DayDeletionView(store: store, day: day)
             }
     }
+    /// Local design preview only; the server membership contract is not defined yet.
+    private func assignPreviewPlaces(_ payloads: [String], to day: TripDay) -> Bool {
+        let prefix = "trip-place/" + trip.id + "/"
+        let ids = Set(payloads.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
+        let places = (store.previewTripPlaces[trip.id] ?? []).filter { ids.contains($0.id) }
+        guard !places.isEmpty,
+              let ti = store.trips.firstIndex(where: { $0.id == trip.id }),
+              let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return false }
+        withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) {
+            for marker in places {
+                if !store.markers.contains(where: { $0.id == marker.id }) { store.markers.append(marker) }
+                if !store.trips[ti].days[di].markerIds.contains(marker.id) {
+                    store.trips[ti].days[di].markerIds.append(marker.id)
+                }
+            }
+            store.previewTripPlaces[trip.id]?.removeAll { ids.contains($0.id) }
+            dropTargetDayID = nil
+        }
+        store.rebuildRoutes(preservingPlannedGeometry: true)
+        return true
+    }
+
     private func dayRow(_ day: TripDay, index: Int) -> some View {
         HStack(spacing: 12) {
             Circle().fill(Theme.color(day.colorIndex ?? 0)).frame(width: 8, height: 8)
@@ -170,4 +241,11 @@ struct JourneyDaysContents: View {
         }.padding(.vertical, 2).contentShape(Rectangle())
     }
 
+}
+
+private struct TripDayDropFrames: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
 }

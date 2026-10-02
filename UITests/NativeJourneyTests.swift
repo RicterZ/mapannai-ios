@@ -2,6 +2,24 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
+    @MainActor func testPreviewTripPlaceDragBecomesDayIsolatedPlace() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--trip-places-preview"]
+        app.launch()
+        let source = app.buttons["trip-unscheduled-preview-cafe"]
+        XCTAssertTrue(source.waitForExistence(timeout: 10))
+        let target = app.buttons["journey-day-day-1"]
+        source.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
+            forDuration: 1.5, thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)),
+            withVelocity: .slow, thenHoldForDuration: 1)
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !source.exists }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 5), .completed)
+        target.tap()
+        let isolated = app.buttons["day-marker-preview-cafe"]
+        if !isolated.waitForExistence(timeout: 3) { app.swipeUp() }
+        XCTAssertTrue(isolated.waitForExistence(timeout: 5))
+    }
+
     @MainActor func testMapLongPressReplacesDetailWithEditorAndCancelKeepsJourneyCompact() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let row = app.buttons["route-0-marker-demo-1"]
