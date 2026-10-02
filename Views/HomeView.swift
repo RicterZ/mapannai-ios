@@ -50,7 +50,10 @@ struct HomeView: View {
                         .presentationContentInteraction(.resizes)
                         .interactiveDismissDisabled()
                 }
-                .onAppear { nativeJourneyPresented = true }
+                .onAppear {
+                    nativeJourneyPresented = true
+                    if store.tripPlacesPreview { store.select(trip: store.trips.first, focus: false) }
+                }
                 .task {
                     guard !store.demo else { return }
                     location.requestStartupLocation { store.receiveStartupLocation($0) }

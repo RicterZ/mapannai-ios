@@ -113,6 +113,18 @@ struct JourneyDaysContents: View {
                     }
 
             }
+            if store.tripPlacesPreview {
+                Section {
+                    ForEach(store.previewTripPlaces[trip.id] ?? []) { marker in
+                        Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }
+                            .buttonStyle(.plain)
+                    }
+                    Button { store.beginAddingPlace() } label: {
+                        Label("添加地点", systemImage: "plus").fullRowActionLabel()
+                    }.foregroundStyle(Theme.accent)
+                } header: { Text("未安排日期") }
+                  footer: { Text("已收藏到这次旅行，之后可以安排到某一天。") }
+            }
             Section {
                 Button { Task {
                     let next = Calendar(identifier: .gregorian).date(byAdding: .day, value: 1, to: .fromDay(trip.endDate))!.dayString

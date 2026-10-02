@@ -330,7 +330,10 @@ struct DayMarkerPicker: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searched = false
     private var targetTitle: String { day == nil ? "搜索地点" : "搜索图标" }
-    private var targetSubtitle: String? { day == nil ? nil : "同时添加到今日行程" }
+    private var targetSubtitle: String? {
+        if day != nil { return "同时添加到今日行程" }
+        return store.tripPlacesPreview && store.trip != nil ? "同时添加到当前旅行" : nil
+    }
     var body: some View {
         ZStack(alignment: .top) {
         NavigationStack {

@@ -17,6 +17,8 @@ import SwiftUI
     @Published var draftExpanded = true
     @Published var selectedSearchPlaceID: String?
     @Published private(set) var placeSearchPresented = false
+    @Published var previewTripPlaces: [String: [Marker]] = [:]
+    var tripPlacesPreview: Bool { demo && ProcessInfo.processInfo.arguments.contains("--trip-places-preview") }
     @Published var addPlaceDay: TripDay?
     @Published var addPlaceError: String?
     @Published private(set) var addingPlaceID: String?
@@ -631,6 +633,18 @@ import SwiftUI
             addPlaceError = "目标日期已不存在，请返回行程重新选择。"; return false
         }
         if edited == nil && isPlaceAdded(place) { return true }
+        if tripPlacesPreview, target == nil, let tripID, suppliedClient == nil {
+            let value = edited ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+            let marker = savedMarker(for: place) ?? Marker(id: "preview-" + place.id, coordinates: value.coordinates,
+                content: MarkerContent(id: "preview-" + place.id, title: value.title, address: value.address,
+                    iconType: value.icon, markdownContent: value.html))
+            if !(previewTripPlaces[tripID] ?? []).contains(where: { $0.id == marker.id }) {
+                previewTripPlaces[tripID, default: []].append(marker)
+            }
+            createdSearchMarkers[place.id] = marker
+            addedPlaceIDs.insert(place.id)
+            return true
+        }
         guard !demo || suppliedClient != nil else {
             addPlaceError = "当前为只读示例，连接服务后可添加地点。"; return false
         }
@@ -759,6 +773,13 @@ import SwiftUI
         let days = [TripDay(id: "day-1", tripId: "demo-trip", date: "2026-10-01", title: "梧桐街区漫步", colorIndex: 0, markerIds: ["demo-0","demo-1","demo-2"], chains: [["demo-0","demo-1","demo-2"]]),
                     TripDay(id: "day-2", tripId: "demo-trip", date: "2026-10-02", title: "城市与旧时光", colorIndex: 1, markerIds: ["demo-2","demo-3","demo-4"], chains: [["demo-2","demo-3","demo-4"]])]
         trips = [Trip(id: "demo-trip", name: "上海 · 秋日散步", description: "示例行程", startDate: "2026-10-01", endDate: "2026-10-02", emoji: "🍂", days: days)]
+        if tripPlacesPreview {
+            previewTripPlaces["demo-trip"] = [
+                Marker(id: "preview-cafe", coordinates: Coordinate(latitude: 31.211, longitude: 121.434), content: MarkerContent(id: "preview-cafe", title: "街角咖啡馆", address: "上海市徐汇区 · 武康路", iconType: .food, markdownContent: "")),
+                Marker(id: "preview-bookshop", coordinates: Coordinate(latitude: 31.216, longitude: 121.442), content: MarkerContent(id: "preview-bookshop", title: "梧桐下的书店", address: "上海市静安区 · 安福路", iconType: .landmark, markdownContent: ""))
+            ]
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--overlapping-routes-demo") {
             trips[0].days[1].markerIds = ["demo-0", "demo-1", "demo-2"]
             trips[0].days[1].chains = [["demo-0", "demo-1", "demo-2"]]
