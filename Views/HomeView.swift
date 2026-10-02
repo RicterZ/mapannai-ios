@@ -138,12 +138,12 @@ struct HomeView: View {
                     DayMarkerPicker(store: store, day: store.addPlaceDay, compact: !sidebar && sheetDetent == .compact,
                         onInput: { if !sidebar { setJourneyDetent(.full) } },
                         onSearch: { if !sidebar { setJourneyDetent(.half) } })
-                        .transition(AppMotion.workspaceTransition(edge: .bottom, reduceMotion: reduceMotion))
+                        .transition(.opacity)
                         .zIndex(1)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: store.placeSearchPresented)
+            .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.placeSearchPresented)
             .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: aiPresented)
         }
         .accessibilityElement(children: .contain)
@@ -250,7 +250,8 @@ struct HomeView: View {
                 if open {
                     searchReturnDetent = sheetDetent
                     searchReturnExpanded = expanded
-                    sheetDetent = .half; expanded = true
+                    if sheetDetent == .compact { sheetDetent = .half }
+                    expanded = true
                 } else {
                     sheetDetent = searchReturnDetent ?? .half
                     expanded = searchReturnExpanded
