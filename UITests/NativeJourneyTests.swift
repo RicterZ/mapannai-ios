@@ -2,9 +2,9 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
-    @MainActor func testOfflineRouteSecondToThirdKeepsUniqueRowsAndNumbers() {
+    @MainActor func testLocalOrdinalsUpdateBeforeDelayedRouteGeometry() {
         let app = XCUIApplication()
-        app.launchArguments = ["--demo", "--trip-places-preview"]
+        app.launchArguments = ["--demo", "--trip-places-preview", "--delayed-route-build-preview"]
         app.launch()
         let source = app.buttons["trip-unscheduled-preview-cafe"]
         XCTAssertTrue(source.waitForExistence(timeout: 10))

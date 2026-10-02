@@ -955,6 +955,11 @@ struct TripSaveDraft: Identifiable {
         routeError = nil; routeProgress = ""
         routeTask = Task {
             defer { if self.routeGeneration == generation { routeProgress = "" } }
+            #if DEBUG
+            if demo, ProcessInfo.processInfo.arguments.contains("--delayed-route-build-preview") {
+                do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            }
+            #endif
             guard var segments = try? await routeProcessing.build(days: days, markers: snapshotMarkers,
                                                                   selectedTrip: selectedTrip, previous: previous,
                                                                   preserve: preservingPlannedGeometry),

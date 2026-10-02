@@ -141,15 +141,7 @@ struct DayContentsView: View {
                             let position = slot.position
                             if let marker = store.markers.first(where: { $0.id == id }) {
                                 VStack(spacing: 0) {
-                                    Button { store.focus(marker) } label: {
-                                        HStack(spacing: 12) {
-                                            Text("\(position + 1)").font(.subheadline).monospacedDigit()
-                                                .foregroundStyle(.secondary).frame(minWidth: 18)
-                                            PlaceSelectionRow(marker: marker)
-                                        }.contentShape(Rectangle())
-                                    }.buttonStyle(.automatic).foregroundStyle(.primary)
-                                        .accessibilityIdentifier("route-\(index)-marker-\(id)")
-                                        .accessibilityValue("\(position + 1)")
+                                    RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker)
                                     if position + 1 < chain.count, let distance = routeDistance(chain: chain, index: index, position: position + 1) {
                                         HStack(spacing: 8) {
                                             Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
@@ -332,6 +324,33 @@ struct DayContentsView: View {
     }
 
 }
+/// Observe optimistic local membership directly, independently of the parent
+/// row's captured position and later route geometry/distance publications.
+private struct RoutePlaceSelectionButton: View {
+    @ObservedObject var store: AppStore
+    let dayID: String
+    let routeIndex: Int
+    let marker: Marker
+    private var ordinal: String {
+        guard let day = store.trips.lazy.flatMap(\.days).first(where: { $0.id == dayID }),
+              day.chains.indices.contains(routeIndex),
+              let position = day.chains[routeIndex].firstIndex(of: marker.id) else { return "" }
+        return String(position + 1)
+    }
+    var body: some View {
+        Button { store.focus(marker) } label: {
+            HStack(spacing: 12) {
+                Text(ordinal).font(.subheadline).monospacedDigit()
+                    .foregroundStyle(.secondary).frame(minWidth: 18)
+                    .accessibilityIdentifier("route-\(routeIndex)-ordinal-\(marker.id)")
+                PlaceSelectionRow(marker: marker)
+            }.contentShape(Rectangle())
+        }.buttonStyle(.automatic).foregroundStyle(.primary)
+            .accessibilityIdentifier("route-\(routeIndex)-marker-\(marker.id)")
+            .accessibilityValue(ordinal)
+    }
+}
+
 /// A slot changes identity when its contents or ordinal change. Native list drag
 /// snapshots must not retain the old content/number at a newly occupied position.
 private struct RoutePlaceSlot: Identifiable {
