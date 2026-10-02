@@ -175,7 +175,7 @@ struct DayContentsView: View {
                                 .onDrag {
                                     guard !store.saving else { return NSItemProvider() }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    return NSItemProvider(object: ("day-place/" + day.id + "/" + id + "/" + String(index)) as NSString)
+                                    return NativePlaceItemProvider(payload: "day-place/" + day.id + "/" + id + "/" + String(index))
                                 }
                                 .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id) }
 
@@ -202,7 +202,7 @@ struct DayContentsView: View {
                                 .onDrag {
                                     guard !store.saving else { return NSItemProvider() }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    return NSItemProvider(object: ("day-place/" + day.id + "/" + id) as NSString)
+                                    return NativePlaceItemProvider(payload: "day-place/" + day.id + "/" + id)
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button {
@@ -554,6 +554,17 @@ struct DayMarkerPicker: View {
     }
 }
 
+/// Keep in-app drag data available synchronously; loading the provider can wait
+/// until after UIKit's landing animation, leaving the destination briefly empty.
+final class NativePlaceItemProvider: NSItemProvider {
+    let payload: String
+    init(payload: String) {
+        self.payload = payload
+        super.init()
+        registerObject(NSString(string: payload), visibility: .all)
+    }
+}
+
 /// Attach UIKit drop handling to the native list, whose SwiftUI rows are reused.
 struct NativePlaceListDrop: UIViewRepresentable {
     let frames: [String: CGRect]
@@ -634,12 +645,8 @@ struct NativePlaceListDrop: UIViewRepresentable {
             if let destination = coordinator.destinationIndexPath {
                 for item in coordinator.items { coordinator.drop(item.dragItem, toItemAt: destination) }
             }
-            let prefix = parent.prefix, accept = parent.accept
-            coordinator.session.loadObjects(ofClass: NSString.self) { objects in
-                guard let text = objects.first as? String, text.hasPrefix(prefix) else { return }
-                accept(String(text.dropFirst(prefix.count)), target)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            }
+            acceptDrop(coordinator.session, target: target)
+
         }
         func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
             session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
@@ -650,7 +657,16 @@ struct NativePlaceListDrop: UIViewRepresentable {
         func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
             guard let target = target(session) else { return }
             parent.onTarget(nil)
+            acceptDrop(session, target: target)
+        }
+        private func acceptDrop(_ session: UIDropSession, target: String) {
             let prefix = parent.prefix, accept = parent.accept
+            if let provider = session.items.first?.itemProvider as? NativePlaceItemProvider {
+                guard provider.payload.hasPrefix(prefix) else { return }
+                accept(String(provider.payload.dropFirst(prefix.count)), target)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                return
+            }
             session.loadObjects(ofClass: NSString.self) { objects in
                 guard let text = objects.first as? String, text.hasPrefix(prefix) else { return }
                 accept(String(text.dropFirst(prefix.count)), target)

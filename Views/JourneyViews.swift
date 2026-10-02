@@ -140,7 +140,7 @@ struct JourneyDaysContents: View {
                             .onDrag {
                                 guard !store.saving else { return NSItemProvider() }
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                return NSItemProvider(object: ("trip-place/" + trip.id + "/" + marker.id) as NSString)
+                                return NativePlaceItemProvider(payload: "trip-place/" + trip.id + "/" + marker.id)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button {
