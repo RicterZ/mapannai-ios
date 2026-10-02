@@ -83,6 +83,10 @@ struct DayContentsView: View {
     @State private var deletingDay = false
     @State private var deletingChain: Int?
     @State private var collapsedRoutes: Set<Int> = []
+    @State private var draggingPlace: Marker?
+    @State private var dragPoint: CGPoint = .zero
+    @State private var routeFrames: [Int: CGRect] = [:]
+    @State private var targetRoute: Int?
     var body: some View {
         List {
             Group {
@@ -129,6 +133,11 @@ struct DayContentsView: View {
                         .accessibilityValue(collapsedRoutes.contains(index) ? "已收起" : "已展开")
                         .accessibilityIdentifier("route-toggle-\(index)")
                     }
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: DayRouteDropFrames.self,
+                            value: [index: geometry.frame(in: .global)])
+                    })
+                    .listRowBackground(targetRoute == index ? Color(uiColor: .tertiarySystemFill) : Color(uiColor: .systemBackground))
                     .contextMenu {
                         Button("编辑路线", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
                         DestructiveMenuButton(title: "删除路线", systemImage: "trash") { deletingChain = index }
@@ -185,16 +194,38 @@ struct DayContentsView: View {
                 Section {
                     ForEach(unlinked, id: \.self) { id in
                         if let marker = store.markers.first(where: { $0.id == id }) {
-                            Button { store.focus(marker) } label: { PlaceSelectionRow(marker: marker) }
-                                .buttonStyle(.plain).accessibilityIdentifier("day-marker-\(id)")
+                            PlaceSelectionRow(marker: marker)
+                                .contentShape(Rectangle())
+                                .onTapGesture { if draggingPlace == nil { store.focus(marker) } }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityIdentifier("day-marker-\(id)")
+                                .opacity(draggingPlace?.id == id ? 0.3 : 1)
+                                .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 20) {
+                                    guard !store.saving else { return }
+                                    draggingPlace = marker
+                                }
+                                .simultaneousGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                    .onChanged { drag in
+                                        dragPoint = drag.location
+                                        guard draggingPlace?.id == id else { return }
+                                        targetRoute = routeFrames.first(where: { $0.value.contains(drag.location) })?.key
+                                    }
+                                    .onEnded { drag in
+                                        guard draggingPlace?.id == id else { return }
+                                        if let index = routeFrames.first(where: { $0.value.contains(drag.location) })?.key {
+                                            appendIsolatedPlace(id, to: index)
+                                        }
+                                        draggingPlace = nil; targetRoute = nil
+                                    })
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button {
                                         Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
                                     } label: { Image(systemName: "trash") }
                                     .accessibilityLabel("删除").tint(.red).disabled(store.saving)
                                 }
-                                .contextMenu {
-                                    DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day, animated: !reduceMotion) } }
+                                .accessibilityAction(named: "从当天移除") {
+                                    Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
                                 }
                         }
                     }
@@ -212,6 +243,19 @@ struct DayContentsView: View {
 
             }.listRowBackground(Color(uiColor: .systemBackground))
                 .listRowSeparator(.hidden)
+        }
+        .onPreferenceChange(DayRouteDropFrames.self) { routeFrames = $0 }
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                if let draggingPlace {
+                    PlaceSelectionRow(marker: draggingPlace)
+                        .padding(12).frame(width: 240)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        .shadow(radius: 8, y: 3)
+                        .position(x: dragPoint.x - geometry.frame(in: .global).minX,
+                                  y: dragPoint.y - geometry.frame(in: .global).minY)
+                }
+            }.allowsHitTesting(false)
         }
         .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
         .alert("日期标题", isPresented: $editingTitle) {
@@ -235,6 +279,22 @@ struct DayContentsView: View {
             }
         } message: { Text("保留当天的地点，只删除这条访问顺序。") }
     }
+    private func appendIsolatedPlace(_ id: String, to index: Int) {
+        guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
+              let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
+        var current = store.trips[ti].days[di]
+        guard current.chains.indices.contains(index), day.chains.indices.contains(index),
+              current.chains[index] == day.chains[index], current.markerIds.contains(id),
+              !current.chains.flatMap({ $0 }).contains(id) else { return }
+        current.chains[index].append(id)
+        if store.tripPlacesPreview {
+            withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { store.trips[ti].days[di] = current }
+            store.rebuildRoutes(preservingPlannedGeometry: true)
+        } else {
+            _ = store.saveDayInBackground(current, animated: !reduceMotion)
+        }
+    }
+
     private func routeDistance(chain: [String], index: Int, position: Int) -> String? {
         #if DEBUG
         if store.demo, ProcessInfo.processInfo.arguments.contains("--route-distance-preview"), position > 0, position < chain.count {
@@ -473,5 +533,12 @@ struct DayMarkerPicker: View {
                 .accessibilityLabel(day == nil ? "保存地点：\(place.name)" : "加入当天：\(place.name)")
                 .accessibilityIdentifier("add-search-place-\(place.id)")
         }
+    }
+}
+
+private struct DayRouteDropFrames: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

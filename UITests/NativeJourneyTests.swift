@@ -18,6 +18,13 @@ final class NativeJourneyTests: XCTestCase {
         let isolated = app.buttons["day-marker-preview-cafe"]
         if !isolated.waitForExistence(timeout: 3) { app.swipeUp() }
         XCTAssertTrue(isolated.waitForExistence(timeout: 5))
+        let route = app.buttons["route-view-0"]
+        if !route.isHittable { app.swipeDown() }
+        isolated.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
+            forDuration: 1.5, thenDragTo: route.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)),
+            withVelocity: .slow, thenHoldForDuration: 1)
+        XCTAssertTrue(app.buttons["route-0-marker-preview-cafe"].waitForExistence(timeout: 5))
+        XCTAssertFalse(isolated.exists)
     }
 
     @MainActor func testMapLongPressReplacesDetailWithEditorAndCancelKeepsJourneyCompact() {
