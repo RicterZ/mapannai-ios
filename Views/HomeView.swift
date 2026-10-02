@@ -183,7 +183,9 @@ struct HomeView: View {
         .fullScreenCover(isPresented: $noteComposerPreview) {
             NoteComposerPreview(placeName: "武康大楼", address: "上海市徐汇区淮海中路1850号")
         }
-        .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
+        .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.hidden) }
         .sheet(item: $editingTrip) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
         .sheet(isPresented: $deletingPanelDay) {
             if let day = store.day { DayDeletionView(store: store, day: day) }

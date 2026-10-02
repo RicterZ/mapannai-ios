@@ -69,7 +69,9 @@ struct JourneyOverviewContents<SettingsContent: View>: View {
                     markerDeletion = nil
                 }
             } message: { Text("会从所有每日行程和路线中移除这个地点。") }
-            .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
+            .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.hidden) }
             .sheet(item: $editing) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
             .sheet(item: $deletion) { trip in
                 TripDeletionView(store: store, trip: trip)
