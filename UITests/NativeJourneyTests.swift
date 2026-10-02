@@ -28,8 +28,19 @@ final class NativeJourneyTests: XCTestCase {
         let inserted = app.buttons["route-0-marker-preview-cafe"]
         XCTAssertLessThan(inserted.frame.minY, app.buttons["route-0-marker-demo-1"].frame.minY)
         XCTAssertGreaterThan(inserted.frame.minY, app.buttons["route-0-marker-demo-0"].frame.minY)
-        inserted.swipeLeft()
-        app.buttons["移出路线"].tap()
+        let last = app.buttons["route-0-marker-demo-2"]
+        inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
+            forDuration: 1.5, thenDragTo: last.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.8)),
+            withVelocity: .slow, thenHoldForDuration: 1)
+        let reordered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            inserted.frame.minY > last.frame.minY
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [reordered], timeout: 5), .completed)
+        let pool = app.buttons["day-search-add-place"]
+        if !pool.isHittable { app.swipeUp() }
+        inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
+            forDuration: 1.5, thenDragTo: pool.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)),
+            withVelocity: .slow, thenHoldForDuration: 1)
         XCTAssertTrue(app.buttons["day-marker-preview-cafe"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["route-0-marker-preview-cafe"].exists)
         XCTAssertTrue(app.buttons["route-0-marker-demo-0"].exists)

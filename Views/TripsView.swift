@@ -172,10 +172,13 @@ struct DayContentsView: View {
                                     } label: { Image(systemName: "trash") }
                                     .accessibilityLabel("移出路线").buttonStyle(.automatic).tint(.red).disabled(store.saving)
                                 }
-                                .contextMenu {
-                                    Button("编辑路线", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
-                                    DestructiveMenuButton(title: "移出路线", systemImage: "minus.circle") { makeDayPlaceUnplanned(id) }
+                                .onDrag {
+                                    guard !store.saving else { return NSItemProvider() }
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    return NSItemProvider(object: ("day-place/" + day.id + "/" + id + "/" + String(index)) as NSString)
                                 }
+                                .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id) }
+
                             }
                         }
                     }
@@ -184,8 +187,7 @@ struct DayContentsView: View {
             }
             let linked = Set(day.chains.flatMap { $0 })
             let unlinked = day.markerIds.filter { !linked.contains($0) }
-            if !unlinked.isEmpty {
-                Section {
+            Section {
                     ForEach(unlinked, id: \.self) { id in
                         if let marker = store.markers.first(where: { $0.id == id }) {
                             PlaceSelectionRow(marker: marker)
@@ -194,6 +196,9 @@ struct DayContentsView: View {
                                 .accessibilityElement(children: .combine)
                                 .accessibilityAddTraits(.isButton)
                                 .accessibilityIdentifier("day-marker-\(id)")
+                                .background(GeometryReader { geometry in
+                                    Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global)])
+                                })
                                 .onDrag {
                                     guard !store.saving else { return NSItemProvider() }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -210,14 +215,21 @@ struct DayContentsView: View {
                                 }
                         }
                     }
-                }
+                Button { store.beginAddingPlace(to: day) } label: { Label("添加地点", systemImage: "plus").fullRowActionLabel() }
+                    .buttonStyle(.plain).foregroundStyle(Theme.accent).accessibilityIdentifier("day-search-add-place")
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global)])
+                    })
+            } header: {
+                Text("未收入路线").font(.subheadline.weight(.regular)).foregroundStyle(.secondary).textCase(nil)
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global)])
+                    })
             }
             Section {
                 Button { chainEditor = ChainEditRequest(day: day, index: nil, ids: []) } label: {
                     Label("新建路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath").fullRowActionLabel()
                 }.buttonStyle(.plain).foregroundStyle(Theme.accent)
-                Button { store.beginAddingPlace(to: day) } label: { Label("添加地点", systemImage: "plus").fullRowActionLabel() }
-                    .buttonStyle(.plain).foregroundStyle(Theme.accent).accessibilityIdentifier("day-search-add-place")
             } header: {
                 Color.clear.frame(height: 8).accessibilityHidden(true)
             }.font(.body)
@@ -227,11 +239,16 @@ struct DayContentsView: View {
         }
         .onPreferenceChange(NativeRouteFrames.self) { nativeRouteFrames = $0 }
         .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/") { id, route in
+            let payload = id.split(separator: "/")
+            guard let marker = payload.first else { return }
+            let markerID = String(marker)
+            if route == "unplanned" { makeDayPlaceUnplanned(markerID); return }
+            let source = payload.count > 1 ? Int(payload[1]) : nil
             let parts = route.split(separator: "/")
             guard let first = parts.first, let index = Int(first) else { return }
             let position = parts.count > 1 ? Int(parts[1]) : nil
             let insertion = position.map { $0 + (parts.last == "after" ? 1 : 0) }
-            appendIsolatedPlace(id, to: index, at: insertion)
+            moveDayPlace(markerID, from: source, to: index, at: insertion)
         })
         .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
         .alert("日期标题", isPresented: $editingTitle) {
@@ -270,14 +287,24 @@ struct DayContentsView: View {
         }
     }
 
-    private func appendIsolatedPlace(_ id: String, to index: Int, at insertion: Int? = nil) {
+    private func moveDayPlace(_ id: String, from source: Int?, to index: Int, at insertion: Int? = nil) {
         guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
               let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
         var current = store.trips[ti].days[di]
-        guard current.chains.indices.contains(index), day.chains.indices.contains(index),
-              current.chains[index] == day.chains[index], current.markerIds.contains(id),
-              !current.chains.flatMap({ $0 }).contains(id) else { return }
-        current.chains[index].insert(id, at: min(current.chains[index].count, max(0, insertion ?? current.chains[index].count)))
+        guard !store.saving, current.chains.indices.contains(index),
+              current.chains == day.chains, current.markerIds.contains(id) else { return }
+        let previous = current.chains
+        var destination = min(current.chains[index].count, max(0, insertion ?? current.chains[index].count))
+        if let source {
+            guard current.chains.indices.contains(source), let old = current.chains[source].firstIndex(of: id) else { return }
+            current.chains[source].remove(at: old)
+            if source == index, old < destination { destination -= 1 }
+        }
+        if !current.chains[index].contains(id) {
+            current.chains[index].insert(id, at: min(destination, current.chains[index].count))
+        }
+        current.chains.removeAll(where: { $0.isEmpty })
+        guard current.chains != previous else { return }
         if store.tripPlacesPreview {
             withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { store.trips[ti].days[di] = current }
             store.rebuildRoutes(preservingPlannedGeometry: true)
