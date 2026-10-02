@@ -590,6 +590,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
         var parent: NativePlaceListDrop
         weak var host: UIView?
         var dragFrames: [String: CGRect]?
+        var nativeRowTargets: [IndexPath: String] = [:]
         var lastPoint: CGPoint?
         var lastTarget: String?
         var interaction: UIDropInteraction?
@@ -623,24 +624,57 @@ struct NativePlaceListDrop: UIViewRepresentable {
             return match.key
         }
         func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool {
-            if dragFrames == nil { dragFrames = parent.frames }
+            if dragFrames == nil {
+                dragFrames = parent.frames
+                nativeRowTargets = [:]
+                if let window = collectionView.window {
+                    if let pool = parent.frames["unplanned"] {
+                        for path in collectionView.indexPathsForVisibleItems {
+                            if let cell = collectionView.cellForItem(at: path) {
+                                let point = cell.convert(CGPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: window)
+                                if pool.contains(point) { nativeRowTargets[path] = "unplanned" }
+                            }
+                        }
+                    }
+                    for (key, frame) in parent.frames where key != "unplanned" {
+                        let point = collectionView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
+                        if let path = collectionView.indexPathForItem(at: point) { nativeRowTargets[path] = key }
+                    }
+                }
+            }
             return session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
             let point = host?.window.map { session.location(in: $0) }
             let stationary = point.flatMap { point in lastPoint.map { hypot(point.x - $0.x, point.y - $0.y) < 4 } } ?? false
-            let target = stationary ? lastTarget : (target(session) ?? lastTarget)
+            // UIKit's destination drives its visible insertion gap. Use that same
+            // boundary for the model instead of independently splitting frozen rows.
+            let nativeTarget = destinationIndexPath.flatMap { insertionTarget(at: $0) }
+            let target = nativeTarget ?? (stationary ? lastTarget : target(session))
             if let target { lastTarget = target }
             if !stationary { lastPoint = point }
             DispatchQueue.main.async { self.parent.onTarget(target) }
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
         }
+        private func insertionTarget(at path: IndexPath) -> String? {
+            guard parent.prefix.hasPrefix("day-place/") else { return nil }
+            if let key = nativeRowTargets[path] {
+                let parts = key.split(separator: "/")
+                return parts.count == 2 && Int(parts[1]) != nil ? key + "/before" : key
+            }
+            // The insertion boundary after the final item has no cell of its own.
+            if path.item > 0, let key = nativeRowTargets[IndexPath(item: path.item - 1, section: path.section)],
+               let position = key.split(separator: "/").last, Int(position) != nil {
+                return key + "/after"
+            }
+            return nil
+        }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
-            parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil
+            parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            guard let target = lastTarget ?? target(coordinator.session) else { return }
+            guard let target = coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0) }) ?? lastTarget ?? target(coordinator.session) else { return }
             parent.onTarget(nil)
             if let destination = coordinator.destinationIndexPath {
                 for item in coordinator.items { coordinator.drop(item.dragItem, toItemAt: destination) }
