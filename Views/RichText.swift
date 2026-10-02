@@ -79,6 +79,33 @@ struct HTMLReader: UIViewRepresentable {
     func toggleBold() { toggle(.traitBold) }
     func toggleItalic() { toggle(.traitItalic) }
     func insertBullet() { textView?.insertText("\n• "); changed = true }
+    func insertNumberedItem() { textView?.insertText("\n1. "); changed = true }
+    func toggleUnderline() {
+        guard let view = textView else { return }
+        let range = view.selectedRange
+        let current = (view.typingAttributes[.underlineStyle] as? Int) ?? 0
+        let value = current == 0 ? NSUnderlineStyle.single.rawValue : 0
+        if range.length == 0 { view.typingAttributes[.underlineStyle] = value }
+        else {
+            let text = NSMutableAttributedString(attributedString: view.attributedText)
+            text.addAttribute(.underlineStyle, value: value, range: range)
+            view.attributedText = text; view.selectedRange = range
+        }
+        changed = true
+    }
+    func setHeading(_ heading: Bool) {
+        guard let view = textView else { return }
+        let range = (view.text as NSString).paragraphRange(for: view.selectedRange)
+        let font = heading ? UIFont.preferredFont(forTextStyle: .title2) : NoteEditorTypography.bodyFont
+        if range.length > 0 {
+            let text = NSMutableAttributedString(attributedString: view.attributedText)
+            text.addAttribute(.font, value: font, range: range)
+            view.attributedText = text; view.selectedRange = NSRange(location: min(view.selectedRange.location, text.length), length: 0)
+        }
+        view.typingAttributes[.font] = font
+        changed = true
+    }
+
     func exportHTML(original: String) -> String {
         guard changed, let view = textView else { return original }
         guard let data = try? view.attributedText.data(from: NSRange(location: 0, length: view.attributedText.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.html]),

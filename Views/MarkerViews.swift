@@ -162,7 +162,10 @@ struct MarkerEditorView: View {
                     ForEach(MarkerIcon.allCases) { icon in
                         Button {
                             var transaction = Transaction(); transaction.disablesAnimations = true
-                            withTransaction(transaction) { draft.icon = icon }
+                            withTransaction(transaction) {
+                                draft.icon = icon
+                                if store.draft?.id == initial.id { store.draft?.icon = icon }
+                            }
                         } label: { Label(icon.label, systemImage: icon.symbol) }
                             .accessibilityIdentifier("marker-icon-option-\(icon.rawValue)")
                     }
@@ -170,12 +173,18 @@ struct MarkerEditorView: View {
                     HStack(spacing: 4) {
                         Image(systemName: draft.icon.symbol).font(.system(size: 20))
                         Image(systemName: "chevron.down").font(.caption2)
-                    }.frame(width: 44, height: 44)
+                    }.frame(width: 44, height: 32)
                 }.buttonStyle(.borderless).accessibilityLabel("地点类型：\(draft.icon.label)")
                     .accessibilityIdentifier("marker-icon-picker")
-                TextField("地点名称", text: $draft.title).font(.body).frame(minHeight: 44)
+                TextField("地点名称", text: $draft.title).font(.body)
             }.transaction { $0.animation = nil }
-            if !draft.address.isEmpty { LabeledContent("地址", value: draft.address) }
+            if !draft.address.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("地址")
+                    Text(draft.address).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
             if store.draft?.id == initial.id && store.draft?.resolvingPlace == true {
                 HStack { ProgressView(); Text("获取地点信息…").foregroundStyle(.secondary) }
             }
@@ -227,7 +236,7 @@ struct MarkerEditorView: View {
     }
     @ViewBuilder var body: some View {
         if embedded { editorContent }
-        else { NavigationStack { editorContent }.modifier(IPadMarkerDialogPresentation()) }
+        else { NavigationStack { editorContent }.modifier(IPadMarkerDialogPresentation(allowsBackgroundInteraction: initial.marker == nil)) }
     }
     private var editorContent: some View {
             GeometryReader { geometry in
@@ -280,6 +289,15 @@ struct MarkerEditorView: View {
                 if draft.title.isEmpty { draft.title = latest.title }
                 if draft.address.isEmpty { draft.address = latest.address }
             }
+        }
+        .onChange(of: store.draft?.coordinates) { _, coordinate in
+            guard let latest = store.draft, latest.id == initial.id, let coordinate,
+                  coordinate != draft.coordinates else { return }
+            draft.coordinates = coordinate
+            draft.title = latest.title
+            draft.address = latest.address
+            latitude = String(coordinate.latitude)
+            longitude = String(coordinate.longitude)
         }
         .onChange(of: store.draft?.title) { _, value in
             guard store.draft?.id == initial.id, draft.title.isEmpty, let value else { return }
@@ -435,5 +453,172 @@ private struct MarkerSheetResize: UIViewRepresentable {
                 else { sheet.animateChanges(changes) }
             }
         }
+    }
+}
+
+
+/// Local-only layout preview. Photo selection does not upload or write server data.
+struct NoteComposerPreview: View {
+    let placeName: String
+    let address: String
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var editor = RichEditorController()
+    @State private var selection: [PhotosPickerItem] = []
+    @State private var photos: [UIImage] = []
+    @State private var discard = false
+    @State private var photoError: String?
+    private let sampleHTML = "<p><b>武康路散步记录</b></p><p>午后漫步武康路，在街角喝一杯咖啡。</p><p>• 上午光线柔和，适合拍照<br>• 附近的小店值得慢慢逛</p><p>下次再留一个不赶时间的下午。</p>"
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                RichEditor(controller: editor, initialHTML: sampleHTML)
+                    .accessibilityIdentifier("note-composer-text")
+                    .padding(.horizontal, 6)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(photos.enumerated()), id: \.offset) { index, image in
+                            Image(uiImage: image).resizable().scaledToFill()
+                                .frame(width: 92, height: 92).clipped()
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(alignment: .topTrailing) {
+                                    Button { photos.remove(at: index) } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.55))
+                                            .frame(width: 32, height: 32)
+                                    }.accessibilityLabel("移除第\(index + 1)张图片")
+                                }
+                        }
+                        PhotosPicker(selection: $selection, maxSelectionCount: max(1, 9 - photos.count), matching: .images) {
+                            Image(systemName: "plus").font(.system(size: 28, weight: .light))
+                                .foregroundStyle(.secondary).frame(width: 92, height: 92)
+                                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(uiColor: .separator), style: StrokeStyle(lineWidth: 1, dash: [4])))
+                        }.disabled(photos.count >= 9).accessibilityLabel("添加图片，可多选")
+                    }.padding(.horizontal, 16).padding(.vertical, 12)
+                }.scrollIndicators(.hidden)
+                if let photoError { Text(photoError).font(.footnote).foregroundStyle(.red).padding(.horizontal, 16) }
+                HStack {
+                    Label {
+                        Text(placeName)
+                    } icon: {
+                        NoteLocationPin().fill(style: FillStyle(eoFill: true))
+                            .frame(width: 14, height: 19)
+                    }
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                        .accessibilityLabel("当前地点：\(placeName)，\(address)")
+                    Spacer()
+                }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)
+            }
+            .background(Color(uiColor: .systemBackground))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 0) {
+                        formatButton("粗体", symbol: "bold") { editor.toggleBold() }
+                        formatButton("斜体", symbol: "italic") { editor.toggleItalic() }
+                        Menu {
+                            Button("标题", systemImage: "textformat.size.larger") { editor.setHeading(true) }
+                            Button("正文", systemImage: "textformat") { editor.setHeading(false) }
+                        } label: { Image(systemName: "textformat.size").frame(maxWidth: .infinity, minHeight: 48) }
+                            .accessibilityLabel("标题与正文")
+                        formatButton("下划线", symbol: "underline") { editor.toggleUnderline() }
+                        formatButton("项目列表", symbol: "list.bullet") { editor.insertBullet() }
+                        formatButton("编号列表", symbol: "list.number") { editor.insertNumberedItem() }
+                    }.font(.system(size: 20)).tint(Color(uiColor: .label)).buttonStyle(.plain)
+                        .padding(.horizontal, 8)
+                }.background(Color(uiColor: .systemBackground))
+            }
+            .navigationTitle("编写笔记").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { if editor.changed { discard = true } else { dismiss() } } label: {
+                        Image(systemName: "xmark")
+                    }.accessibilityLabel("退出笔记编辑")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "checkmark").fontWeight(.semibold)
+                    }.accessibilityLabel("保存笔记")
+                }
+            }
+            .confirmationDialog("放弃修改？", isPresented: $discard) {
+                Button("放弃修改", role: .destructive) { dismiss() }
+                Button("继续编辑", role: .cancel) {}
+            }
+            .task {
+                photos = [samplePhoto(alternate: false), samplePhoto(alternate: true)]
+                try? await Task.sleep(for: .milliseconds(400))
+                editor.textView?.becomeFirstResponder()
+            }
+            .onChange(of: selection) { _, items in
+                Task {
+                    photoError = nil
+                    for item in items {
+                        do {
+                            if let data = try await item.loadTransferable(type: Data.self) {
+                                let compressed = try await Task.detached(priority: .userInitiated) {
+                                    try MarkerImageCompression.jpeg(from: data)
+                                }.value
+                                if let image = UIImage(data: compressed), photos.count < 9 { photos.append(image) }
+                            }
+                        } catch { photoError = "无法读取部分图片，请重新选择。" }
+                    }
+                    selection = []
+                }
+            }
+        }
+    }
+    private func formatButton(_ label: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).frame(maxWidth: .infinity, minHeight: 48) }
+            .accessibilityLabel(label)
+    }
+    private func samplePhoto(alternate: Bool) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 240, height: 240)).image { context in
+            let cg = context.cgContext
+            UIColor(red: 0.80, green: 0.88, blue: 0.91, alpha: 1).setFill()
+            cg.fill(CGRect(x: 0, y: 0, width: 240, height: 240))
+            UIColor(red: 0.82, green: 0.76, blue: 0.65, alpha: 1).setFill()
+            cg.fill(CGRect(x: 0, y: 190, width: 240, height: 50))
+            for column in 0..<4 {
+                let x = CGFloat(column * 60)
+                UIColor(red: alternate ? 0.68 : 0.74, green: 0.57, blue: 0.44, alpha: 1).setFill()
+                cg.fill(CGRect(x: x + 4, y: 55 + CGFloat(column * 8), width: 54, height: 135))
+                UIColor(red: 0.25, green: 0.32, blue: 0.35, alpha: 1).setFill()
+                for row in 0..<4 {
+                    cg.fill(CGRect(x: x + 13, y: 70 + CGFloat(row * 28 + column * 8), width: 12, height: 18))
+                    cg.fill(CGRect(x: x + 37, y: 70 + CGFloat(row * 28 + column * 8), width: 12, height: 18))
+                }
+            }
+            UIColor(red: 0.32, green: 0.47, blue: 0.32, alpha: 1).setFill()
+            cg.fillEllipse(in: CGRect(x: alternate ? 145 : -20, y: -25, width: 115, height: 140))
+        }
+    }
+}
+
+
+private struct NoteLocationPin: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width
+        let h = rect.height
+        path.move(to: CGPoint(x: w / 2, y: h))
+        path.addCurve(to: CGPoint(x: 0, y: h * 0.37),
+                      control1: CGPoint(x: w * 0.38, y: h * 0.83),
+                      control2: CGPoint(x: 0, y: h * 0.62))
+        path.addCurve(to: CGPoint(x: w / 2, y: 0),
+                      control1: CGPoint(x: 0, y: h * 0.16),
+                      control2: CGPoint(x: w * 0.22, y: 0))
+        path.addCurve(to: CGPoint(x: w, y: h * 0.37),
+                      control1: CGPoint(x: w * 0.78, y: 0),
+                      control2: CGPoint(x: w, y: h * 0.16))
+        path.addCurve(to: CGPoint(x: w / 2, y: h),
+                      control1: CGPoint(x: w, y: h * 0.62),
+                      control2: CGPoint(x: w * 0.62, y: h * 0.83))
+        path.closeSubpath()
+        path.addEllipse(in: CGRect(x: w * 0.29, y: h * 0.20, width: w * 0.42, height: w * 0.42))
+        return path
     }
 }

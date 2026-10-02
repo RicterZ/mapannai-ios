@@ -8,7 +8,7 @@ MapAnNai iOS is the native iPhone and iPad client for MapAnNai Plus. Save restau
 
 ## Features
 
-- **Save places and travel notes**: Search for places or long-press the map to add them. Keep travel tips, booking details, and memories with each place.
+- **Save places and travel notes**: Search for places, tap a map POI, or long-press the map to add a place. Keep travel tips, booking details, and memories with each place.
 - **Plan each day**: Create a trip and add places to its daily itinerary. Add or remove days, shift your travel dates, and reuse places you have already saved. When deleting a trip or day, optionally remove its exclusive places while keeping shared places.
 - **Arrange visits your way**: Create multiple routes within a day and change the visit order to organize different activities.
 - **See the whole plan on a map**: View all places, a trip overview, or daily routes. Colors distinguish days; tap a place or route to see its itinerary.
@@ -21,7 +21,7 @@ Use the chat icon at the top right of the map to plan with the AI assistant. Con
 ## Plan your first trip
 
 1. Connect to your MapAnNai Plus server in the app's settings.
-2. Search or long-press the map to save places, with notes and photos.
+2. Search, tap a map POI, or long-press the map to save places, with notes and photos.
 3. Tap Add Trip in My Trips or the ＋ on the collapsed panel, add places to each day, and arrange their visit order within routes.
 4. Open the day's itinerary while traveling to check places, read your notes, or start navigation. Tap a route title to view it on the map; use its right-hand arrow to show or hide its places.
 

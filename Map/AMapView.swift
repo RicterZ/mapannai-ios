@@ -25,6 +25,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
     static func dismantleUIView(_ map: MAMapView, coordinator: Coordinator) {
         coordinator.stopSelectionAnimation()
         coordinator.cancelRouteUpdates()
+        coordinator.cancelPendingMapTap()
         coordinator.cancelPOIRefresh()
         map.delegate = nil; map.showsUserLocation = false
     }
@@ -55,6 +56,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         weak var map: MAMapView?
         var pins: [String: Pin] = [:]
         var searchPins: [String: SearchPin] = [:]
+        private var draftPin: MAPointAnnotation?
         var lines: [String: (MAPolyline, MAPolyline)] = [:]
         var overlayStyle: [ObjectIdentifier: (UIColor, Bool)] = [:]
         var lastRoutes: [String: RouteOverlayGeometry] = [:]
@@ -80,11 +82,25 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var selectionRoutes: [DisplayRoute] = []
         private let motion = RouteMotionAnimation()
         private var motionDots: [CAShapeLayer] = []
+        private var pendingRouteTap: DispatchWorkItem?
+        private var mapTapPoint: CGPoint?
+        private var mapTapClaimed = false
         private var filteringSearchPOIs = false
         private var renderedCoordinates: [String: [Coordinate]] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
             updateRouteSelection(map)
+            if let draft = store.draft, draft.marker == nil, !store.placeSearchPresented {
+                let point = Coordinates.gcj(draft.coordinates)
+                let pin = draftPin ?? MAPointAnnotation()
+                pin.coordinate = CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+                pin.title = draft.title
+                if draftPin == nil { draftPin = pin; map.addAnnotation(pin) }
+                if let view = map.view(for: pin) { styleDraftPin(view) }
+            } else if let pin = draftPin {
+                map.removeAnnotation(pin)
+                draftPin = nil
+            }
             let wanted = Set(store.mapMarkers.map(\.id))
             for id in Array(pins.keys) where !wanted.contains(id) { if let pin = pins.removeValue(forKey: id) { map.removeAnnotation(pin) } }
             for marker in store.mapMarkers {
@@ -162,6 +178,14 @@ struct AMapNativeRenderer: UIViewRepresentable {
             return UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
         }
         func mapView(_ mapView: MAMapView!, viewFor annotation: MAAnnotation!) -> MAAnnotationView! {
+            if let pin = draftPin, annotation === pin {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "draft-location")
+                    ?? MAAnnotationView(annotation: pin, reuseIdentifier: "draft-location")!
+                view.annotation = pin
+                view.canShowCallout = false
+                styleDraftPin(view)
+                return view
+            }
             if let pin = annotation as? SearchPin {
                 let view = mapView.dequeueReusableAnnotationView(withIdentifier: "search-result") ?? MAAnnotationView(annotation: pin, reuseIdentifier: "search-result")!
                 view.annotation = pin; view.canShowCallout = false
@@ -397,6 +421,39 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.isAccessibilityElement = true; view.accessibilityLabel = "搜索结果\(pin.number)：\(pin.place.name)"
             view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
         }
+        private func styleDraftPin(_ view: MAAnnotationView) {
+            let symbol = store.draft?.icon == .location ? "mappin" : (store.draft?.icon.symbol ?? "mappin")
+            let key = "draft-" + symbol
+            if pinImages[key] == nil {
+                pinImages[key] = UIGraphicsImageRenderer(size: CGSize(width: 44, height: 48)).image { context in
+                    let cg = context.cgContext
+                    let shape = UIBezierPath(ovalIn: CGRect(x: 6, y: 3, width: 32, height: 32))
+                    shape.move(to: CGPoint(x: 17, y: 32))
+                    shape.addQuadCurve(to: CGPoint(x: 22, y: 40), controlPoint: CGPoint(x: 20, y: 36))
+                    shape.addQuadCurve(to: CGPoint(x: 27, y: 32), controlPoint: CGPoint(x: 24, y: 36))
+                    shape.close()
+                    cg.saveGState()
+                    cg.setShadow(offset: CGSize(width: 0, height: 2), blur: 3,
+                                 color: UIColor.black.withAlphaComponent(0.2).cgColor)
+                    UIColor.white.setFill()
+                    shape.fill()
+                    cg.restoreGState()
+                    UIColor.systemBlue.setFill()
+                    UIBezierPath(ovalIn: CGRect(x: 8, y: 5, width: 28, height: 28)).fill()
+                    if let icon = UIImage(systemName: symbol,
+                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium))?
+                        .withTintColor(.white, renderingMode: .alwaysOriginal) {
+                        let size = icon.size
+                        icon.draw(in: CGRect(x: 22 - size.width / 2, y: 19 - size.height / 2,
+                                             width: size.width, height: size.height))
+                    }
+                }
+            }
+            view.image = pinImages[key]
+            // The tip (22, 40) is the selected geographic point.
+            view.centerOffset = CGPoint(x: 0, y: -16)
+            view.zIndex = 1000
+        }
         private func markerImage(_ pin: Pin, dot: Bool, selected: Bool) -> UIImage {
             let key = "\(pin.marker.icon.rawValue)-\(dot)-\(selected)"
             if let image = pinImages[key] { return image }
@@ -511,8 +568,44 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 store.focus(pin.marker); mapView.deselectAnnotation(pin, animated: false)
             }
         }
+        func cancelPendingMapTap() {
+            pendingRouteTap?.cancel()
+            pendingRouteTap = nil
+        }
+        private func annotationAt(_ tap: CGPoint, map: MAMapView) -> MAAnnotationView? {
+            (Array(pins.values).compactMap { map.view(for: $0) }
+                + Array(searchPins.values).compactMap { map.view(for: $0) })
+                .filter { !$0.isHidden && $0.alpha > 0 && $0.bounds.insetBy(
+                    dx: min(0, ($0.bounds.width - 44) / 2),
+                    dy: min(0, ($0.bounds.height - 44) / 2)).contains($0.convert(tap, from: map)) }
+                .sorted {
+                    let leftSaved = $0.annotation is Pin
+                    let rightSaved = $1.annotation is Pin
+                    return leftSaved != rightSaved ? leftSaved : $0.zIndex > $1.zIndex
+                }.first
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            if gestureRecognizer is UITapGestureRecognizer, let map {
+                cancelPendingMapTap()
+                mapTapPoint = touch.location(in: map)
+                mapTapClaimed = false
+            }
+            return true
+        }
+        func mapView(_ mapView: MAMapView!, didTouchPois pois: [Any]!) {
+            guard !store.placeSearchPresented, store.draft?.marker == nil,
+                  let poi = (pois ?? []).compactMap({ $0 as? MATouchPoi }).first else { return }
+            if let tap = mapTapPoint, annotationAt(tap, map: mapView) != nil { return }
+            mapTapClaimed = true
+            cancelPendingMapTap()
+            let coordinate = Coordinates.wgs(Coordinate(latitude: poi.coordinate.latitude,
+                                                        longitude: poi.coordinate.longitude))
+            store.create(at: coordinate, poiName: poi.name)
+        }
         func mapView(_ mapView: MAMapView!, didLongPressedAt coordinate: CLLocationCoordinate2D) {
-            store.create(at: Coordinates.wgs(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)))
+            cancelPendingMapTap()
+            store.create(at: Coordinates.wgs(Coordinate(latitude: coordinate.latitude,
+                                                       longitude: coordinate.longitude)))
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
         @objc func routeTapped(_ gesture: UITapGestureRecognizer) {
@@ -520,12 +613,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let tap = gesture.location(in: mapView)
             // Use the visible annotation views: no SDK coordinate projection or delayed
             // didSelect callback is needed to acknowledge a marker tap.
-            let annotations: [MAAnnotationView] = (Array(searchPins.values).compactMap { mapView.view(for: $0) }
-                + Array(pins.values).compactMap { mapView.view(for: $0) })
-                .filter { !$0.isHidden && $0.alpha > 0 && $0.bounds.insetBy(dx: min(0, ($0.bounds.width-44)/2),
-                    dy: min(0, ($0.bounds.height-44)/2)).contains($0.convert(tap, from: mapView)) }
-                .sorted { $0.zIndex > $1.zIndex }
-            if let view = annotations.first {
+            cancelPendingMapTap()
+            if let view = annotationAt(tap, map: mapView) {
+                mapTapClaimed = true
                 if let pin = view.annotation as? SearchPin {
                     store.choose(pin.place, fromMap: true); styleSearch(view, pin: pin)
                 } else if let pin = view.annotation as? Pin {
@@ -533,6 +623,16 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 return
             }
+            guard !mapTapClaimed else { return }
+            // Give the SDK POI callback priority before committing route navigation.
+            let work = DispatchWorkItem { [weak self, weak mapView] in
+                guard let self, let mapView, !self.mapTapClaimed, self.store.draft == nil else { return }
+                self.selectRoute(at: tap, mapView: mapView)
+            }
+            pendingRouteTap = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        }
+        private func selectRoute(at tap: CGPoint, mapView: MAMapView) {
             guard !store.placeSearchPresented, !MapZoomPresentation.isCompact(Double(mapView.zoomLevel)) else { return }
             let radius = RouteSelection.hitRadius
             let ground = [CGPoint(x: tap.x-radius, y: tap.y-radius), CGPoint(x: tap.x+radius, y: tap.y-radius),
@@ -689,14 +789,14 @@ struct PreviewMap: View {
                 else if let route = candidates.first { store.selectRoute(route) }
                 else { store.routeCandidates = [] }
             })
+            .onLongPressGesture {
+                store.create(at: Coordinate(latitude: 31.219, longitude: 121.443))
+            }
             .simultaneousGesture(MagnifyGesture().updating($magnification) { value, state, _ in
                 state = value.magnification
             }.onEnded { value in
                 previewZoom = min(20, max(3, previewZoom + log2(max(0.01, value.magnification))))
             })
-            .onLongPressGesture {
-                store.create(at: Coordinate(latitude: 31.219, longitude: 121.443))
-            }
         }
     }
 }

@@ -658,10 +658,15 @@ final class LongPressLookupTests: XCTestCase {
         store.create(at: Coordinate(latitude: 31, longitude: 121))
         XCTAssertFalse(store.draftExpanded, "Map long press opens at the medium detent")
         let oldID = store.draft?.id
+        store.draft?.html = "<p>保留笔记</p>"
         let chosen = Coordinate(latitude: 32, longitude: 122)
         store.create(at: chosen)
-        XCTAssertEqual(store.draft?.id, oldID, "An open draft must not be replaced by another map press")
-        // Dismiss and reopen before the first lookup returns to exercise stale-response isolation.
+        XCTAssertEqual(store.draft?.id, oldID, "Changing location preserves the editor identity")
+        XCTAssertEqual(store.draft?.coordinates, chosen)
+        XCTAssertEqual(store.draft?.html, "<p>保留笔记</p>")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(store.draft?.title, "地点32.0")
+        // Dismiss and reopen to exercise stale-response isolation.
         store.draft = nil
         store.create(at: chosen)
         XCTAssertNotEqual(store.draft?.id, oldID)
@@ -671,6 +676,17 @@ final class LongPressLookupTests: XCTestCase {
         XCTAssertEqual(store.draft?.address, "查询地址")
         XCTAssertEqual(store.draft?.coordinates, chosen)
         XCTAssertFalse(store.draft?.resolvingPlace ?? true)
+    }
+    @MainActor func testSelectedPOINameSurvivesLookupAndSwitchingLocation() async throws {
+        let store = AppStore(settings: Settings(), demo: false, services: PlaceLookupMock())
+        store.create(at: Coordinate(latitude: 31, longitude: 121), poiName: "旧POI")
+        let id = store.draft?.id
+        store.create(at: Coordinate(latitude: 32, longitude: 122), poiName: "洗车服务")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(store.draft?.id, id)
+        XCTAssertEqual(store.draft?.title, "洗车服务")
+        XCTAssertEqual(store.draft?.coordinates, Coordinate(latitude: 32, longitude: 122))
+        XCTAssertEqual(store.draft?.address, "查询地址")
     }
     @MainActor func testLookupFailureKeepsEditableDraft() async throws {
         let store = AppStore(settings: Settings(), demo: false, services: PlaceLookupMock(fails: true))

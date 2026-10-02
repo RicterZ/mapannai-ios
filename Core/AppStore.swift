@@ -439,29 +439,33 @@ import SwiftUI
     }
     func fly(_ points: [Coordinate]) { if !points.isEmpty { camera = CameraCommand(points: points) } }
     func create(at coordinate: Coordinate, poiName: String? = nil) {
-        guard coordinate.isValid, draft == nil else { return }
+        guard coordinate.isValid, draft?.marker == nil, !saving else { return }
+        if draft?.coordinates == coordinate { return }
         if placeSearchPresented {
             let place = Place(id: UUID().uuidString, name: "", address: "", coordinates: coordinate)
             searchResults.append(place); editingSearchPlaceID = place.id
         }
         selectedSearchPlaceID = nil; draftExpanded = false
         let selectedName = poiName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        var pending = MarkerDraft(coordinates: coordinate)
-        if !selectedName.isEmpty { pending.title = selectedName }
+        var pending = draft ?? MarkerDraft(coordinates: coordinate)
+        pending.coordinates = coordinate
+        pending.title = selectedName
+        pending.address = ""
+        pending.placeLookupFailed = false
         pending.resolvingPlace = true
         draft = pending
         let draftID = pending.id
         Task {
             do {
                 let place = try await mapServices.details(at: coordinate)
-                guard self.draft?.id == draftID else { return }
+                guard self.draft?.id == draftID, self.draft?.coordinates == coordinate else { return }
                 if selectedName.isEmpty, self.draft?.title == pending.title {
                     self.draft?.title = place.name
                 }
                 if self.draft?.address == pending.address { self.draft?.address = place.address }
                 self.draft?.resolvingPlace = false
             } catch {
-                guard self.draft?.id == draftID else { return }
+                guard self.draft?.id == draftID, self.draft?.coordinates == coordinate else { return }
                 self.draft?.resolvingPlace = false
                 self.draft?.placeLookupFailed = true
             }

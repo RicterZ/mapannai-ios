@@ -10,6 +10,7 @@ struct HomeView: View {
     @State private var aiSheetDetent: PresentationDetent = .medium
     @State private var aiSettingsPresented = false
     @State private var showSettings = false
+    @State private var noteComposerPreview = false
     @State private var creatingTrip = false
     @State private var editingTrip: Trip?
     @State private var editingDayTitle = false
@@ -52,6 +53,7 @@ struct HomeView: View {
                 .task(id: settings.revision) {
                     await aiPlanner.configure(for: settings)
                     #if DEBUG
+                    if store.demo && ProcessInfo.processInfo.arguments.contains("--note-composer-preview") { noteComposerPreview = true }
                     if store.demo && ProcessInfo.processInfo.arguments.contains("--ai-chat-preview") {
                         aiPlanner.configuration = AIConfiguration(model: "preview")
                         let messages = (1...16).flatMap { index in
@@ -171,6 +173,9 @@ struct HomeView: View {
 
     private func modalContent<Content: View>(_ content: Content, sidebar: Bool = false) -> some View {
         content
+        .fullScreenCover(isPresented: $noteComposerPreview) {
+            NoteComposerPreview(placeName: "武康大楼", address: "上海市徐汇区淮海中路1850号")
+        }
         .sheet(isPresented: $creatingTrip) { TripEditorView(store: store, trip: nil).presentationDragIndicator(.visible) }
         .sheet(item: $editingTrip) { TripEditorView(store: store, trip: $0).presentationDragIndicator(.visible) }
         .sheet(isPresented: $deletingPanelDay) {
@@ -185,7 +190,7 @@ struct HomeView: View {
             AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { aiSettingsPresented = true })
                 .presentationDetents([.medium, .large], selection: $aiSheetDetent)
                 .presentationDragIndicator(UIDevice.current.userInterfaceIdiom == .pad ? .hidden : .visible)
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                .presentationBackgroundInteraction(.enabled)
                 .sheet(isPresented: $aiSettingsPresented) {
                     SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible)
                 }
@@ -221,7 +226,7 @@ struct HomeView: View {
                     .presentationDetents([.medium, .large], selection: Binding(
                         get: { store.draftExpanded ? .large : .medium },
                         set: { store.draftExpanded = $0 == .large }))
-                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                    .presentationBackgroundInteraction(.enabled)
                     .presentationDragIndicator(.visible)
             }
         }
