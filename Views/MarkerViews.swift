@@ -537,7 +537,7 @@ struct NoteComposerPreview: View {
                     }
                         .font(.subheadline).foregroundStyle(.secondary)
                         .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                        .background(Color(uiColor: .secondarySystemBackground), in: CompactCapsuleShape())
                         .accessibilityLabel("当前地点：\(placeName)，\(address)")
                     Spacer()
                 }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)

@@ -13,10 +13,8 @@ struct JourneySheetBackground: View {
             let expansion = JourneyPresentation.expandedProgress(height: geometry.visibleHeight,
                 compactHeight: JourneyPresentation.compactHeight)
             ZStack {
-                if #available(iOS 26.0, *), usesCompactGlass {
-                    Color.clear
-                        .ignoresSafeArea()
-                        .glassEffect(.regular, in: Capsule())
+                if usesCompactGlass {
+                    compactSurface
                         .opacity(1 - expansion)
                 }
                 Rectangle().fill(.regularMaterial)
@@ -25,14 +23,19 @@ struct JourneySheetBackground: View {
                         .opacity(0.18 + 0.82 * progress)
                 }
                 .ignoresSafeArea()
-                .opacity(usesCompactGlass && isGlassAvailable ? expansion : 1)
+                .opacity(usesCompactGlass ? expansion : 1)
             }
         }
         .allowsHitTesting(false)
     }
-    private var isGlassAvailable: Bool {
-        if #available(iOS 26.0, *) { return true }
-        return false
+    @ViewBuilder private var compactSurface: some View {
+        if #available(iOS 26.0, *) {
+            Color.clear
+                .ignoresSafeArea()
+                .glassEffect(.regular, in: CompactCapsuleShape())
+        } else {
+            CompactCapsuleShape().fill(.regularMaterial).ignoresSafeArea()
+        }
     }
 }
 

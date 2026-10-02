@@ -1,13 +1,20 @@
 import SwiftUI
 import UIKit
 
+/// Shrink only the painted capsule. Layout, centers and hit targets stay unchanged.
+struct CompactCapsuleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        Capsule().path(in: rect.insetBy(dx: 0, dy: min(2, rect.height * 0.5)))
+    }
+}
+
 /// Native grouped glass on current systems; material keeps the same capsule on iOS 17–25.
 struct NativeNavigationSurface: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: .capsule)
+            content.glassEffect(.regular, in: CompactCapsuleShape())
         } else {
-            content.background(.regularMaterial, in: Capsule())
+            content.background(.regularMaterial, in: CompactCapsuleShape())
         }
     }
 }
