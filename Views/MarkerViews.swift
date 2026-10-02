@@ -151,6 +151,7 @@ struct MarkerEditorView: View {
     @State private var localError: String?
     @State private var latitude = ""
     @State private var longitude = ""
+    @State private var noteEditorPresented = false
     @State private var confirmDiscard = false
     init(store: AppStore, initial: MarkerDraft, embedded: Bool = false, onSaved: @escaping () -> Void = {}) {
         self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; _draft = State(initialValue: initial)
@@ -243,11 +244,12 @@ struct MarkerEditorView: View {
                 Form {
                     Section { editorFields }
                     Section { coverPicker } header: { Text("封面") }
-                    Section {
-                        RichEditor(controller: rich, initialHTML: draft.html)
-                            .frame(height: max(160, geometry.size.height - 416))
-                            .accessibilityIdentifier("marker-note-editor")
-                    } header: { noteToolbar }
+                    Section("地点笔记") {
+                        Button { noteEditorPresented = true } label: {
+                            Label(NoteContent.hasContent(draft.html) ? "编辑笔记" : "编写笔记", systemImage: "square.and.pencil")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }.accessibilityIdentifier("marker-note-editor")
+                    }
                     if let localError { Section { Text(localError).foregroundStyle(.red) } }
                 }.scrollDismissesKeyboard(.interactively)
             }
@@ -263,7 +265,7 @@ struct MarkerEditorView: View {
                                 guard let lat = Double(latitude), let lng = Double(longitude) else { localError = "请输入有效经纬度"; return }
                                 draft.coordinates = Coordinate(latitude: lat, longitude: lng)
                             }
-                            draft.html = rich.exportHTML(original: initial.html)
+                            draft.html = rich.exportHTML(original: draft.html)
                             if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
                                 if await store.addSearchPlace(place, edited: draft) { onSaved(); closeEditor() }
                                 else { localError = store.addPlaceError }
@@ -272,6 +274,12 @@ struct MarkerEditorView: View {
                         }}.disabled(store.saving || uploading || draft.title.isEmpty)
                     }
                 }
+        .fullScreenCover(isPresented: $noteEditorPresented) {
+            NoteComposerPreview(placeName: draft.title, address: draft.address,
+                initialHTML: draft.html, preview: false,
+                uploadPhoto: { data in try await store.api.uploadImage(data) },
+                onSave: { html in draft.html = html })
+        }
         .navigationBarBackButtonHidden(embedded)
         .confirmationDialog("放弃修改？", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("放弃修改", role: .destructive) { closeEditor() }
@@ -279,7 +287,7 @@ struct MarkerEditorView: View {
         }
         .onDisappear {
             if embedded, store.draft?.id == initial.id {
-                draft.html = rich.exportHTML(original: initial.html)
+                draft.html = rich.exportHTML(original: draft.html)
                 store.draft = draft
             }
         }
@@ -328,7 +336,7 @@ struct MarkerEditorView: View {
         }.interactiveDismissDisabled(store.saving || uploading)
     }
     private var hasChanges: Bool {
-        draft.title != initial.title || draft.icon != initial.icon || draft.headerImage != initial.headerImage
+        draft.title != initial.title || draft.icon != initial.icon || draft.headerImage != initial.headerImage || draft.html != initial.html
             || rich.changed || latitude != String(initial.coordinates.latitude) || longitude != String(initial.coordinates.longitude)
     }
     private func closeEditor() {
@@ -457,14 +465,20 @@ private struct MarkerSheetResize: UIViewRepresentable {
 }
 
 
-/// Local-only layout preview. Photo selection does not upload or write server data.
+/// Native note composer. Sample content is only enabled by the debug preview entry.
 struct NoteComposerPreview: View {
     let placeName: String
     let address: String
+    var initialHTML = ""
+    var preview = true
+    var uploadPhoto: ((Data) async throws -> String)?
+    var onSave: ((String) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @StateObject private var editor = RichEditorController()
     @State private var selection: [PhotosPickerItem] = []
     @State private var photos: [UIImage] = []
+    @State private var photoURLs: [String] = []
+    @State private var loadingPhotos = false
     @State private var discard = false
     @State private var photoError: String?
     private let sampleHTML = "<p><b>武康路散步记录</b></p><p>午后漫步武康路，在街角喝一杯咖啡。</p><p>• 上午光线柔和，适合拍照<br>• 附近的小店值得慢慢逛</p><p>下次再留一个不赶时间的下午。</p>"
@@ -472,7 +486,7 @@ struct NoteComposerPreview: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                RichEditor(controller: editor, initialHTML: sampleHTML)
+                RichEditor(controller: editor, initialHTML: preview ? sampleHTML : initialHTML)
                     .accessibilityIdentifier("note-composer-text")
                     .padding(.horizontal, 6)
                 ScrollView(.horizontal) {
@@ -482,7 +496,10 @@ struct NoteComposerPreview: View {
                                 .frame(width: 92, height: 92).clipped()
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .overlay(alignment: .topTrailing) {
-                                    Button { photos.remove(at: index) } label: {
+                                    Button {
+                                        photos.remove(at: index)
+                                        if photoURLs.indices.contains(index) { photoURLs.remove(at: index) }
+                                    } label: {
                                         Image(systemName: "xmark.circle.fill")
                                             .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.55))
                                             .frame(width: 32, height: 32)
@@ -494,7 +511,7 @@ struct NoteComposerPreview: View {
                                 .foregroundStyle(.secondary).frame(width: 92, height: 92)
                                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
                                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(uiColor: .separator), style: StrokeStyle(lineWidth: 1, dash: [4])))
-                        }.disabled(photos.count >= 9).accessibilityLabel("添加图片，可多选")
+                        }.disabled(photos.count >= 9 || loadingPhotos).accessibilityLabel("添加图片，可多选")
                     }.padding(.horizontal, 16).padding(.vertical, 12)
                 }.scrollIndicators(.hidden)
                 if let photoError { Text(photoError).font(.footnote).foregroundStyle(.red).padding(.horizontal, 16) }
@@ -534,27 +551,39 @@ struct NoteComposerPreview: View {
             .navigationTitle("编写笔记").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { if editor.changed { discard = true } else { dismiss() } } label: {
+                    Button { if editor.changed || !photos.isEmpty { discard = true } else { dismiss() } } label: {
                         Image(systemName: "xmark")
-                    }.accessibilityLabel("退出笔记编辑")
+                    }.disabled(loadingPhotos).accessibilityLabel("退出笔记编辑")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { dismiss() } label: {
+                    Button {
+                        var html = editor.exportHTML(original: preview ? sampleHTML : initialHTML)
+                        let images = photoURLs.map { "<p><img src=\"\($0.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;"))\" /></p>" }.joined()
+                        if let end = html.range(of: "</body>", options: .caseInsensitive) {
+                            html.insert(contentsOf: images, at: end.lowerBound)
+                        } else { html += images }
+                        onSave?(html)
+                        dismiss()
+                    } label: {
                         Image(systemName: "checkmark").fontWeight(.semibold)
-                    }.accessibilityLabel("保存笔记")
+                    }.disabled(loadingPhotos).accessibilityLabel("保存笔记")
                 }
             }
+            .interactiveDismissDisabled(loadingPhotos)
             .confirmationDialog("放弃修改？", isPresented: $discard) {
                 Button("放弃修改", role: .destructive) { dismiss() }
                 Button("继续编辑", role: .cancel) {}
             }
             .task {
-                photos = [samplePhoto(alternate: false), samplePhoto(alternate: true)]
+                if preview { photos = [samplePhoto(alternate: false), samplePhoto(alternate: true)] }
                 try? await Task.sleep(for: .milliseconds(400))
                 editor.textView?.becomeFirstResponder()
             }
             .onChange(of: selection) { _, items in
                 Task {
+                    guard !items.isEmpty, !loadingPhotos else { return }
+                    loadingPhotos = true
+                    defer { loadingPhotos = false; selection = [] }
                     photoError = nil
                     for item in items {
                         do {
@@ -562,9 +591,15 @@ struct NoteComposerPreview: View {
                                 let compressed = try await Task.detached(priority: .userInitiated) {
                                     try MarkerImageCompression.jpeg(from: data)
                                 }.value
-                                if let image = UIImage(data: compressed), photos.count < 9 { photos.append(image) }
+                                if let image = UIImage(data: compressed), photos.count < 9 {
+                                    if !preview, let uploadPhoto {
+                                        let url = try await uploadPhoto(compressed)
+                                        photoURLs.append(url)
+                                    }
+                                    photos.append(image)
+                                }
                             }
-                        } catch { photoError = "无法读取部分图片，请重新选择。" }
+                        } catch { photoError = "部分图片未能添加：\(error.localizedDescription)" }
                     }
                     selection = []
                 }
