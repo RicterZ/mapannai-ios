@@ -1,4 +1,6 @@
 import SwiftUI
+import UniformTypeIdentifiers
+import UIKit
 
 struct TripEditorView: View {
     @ObservedObject var store: AppStore
@@ -76,11 +78,9 @@ struct DayContentsView: View {
     @State private var title = ""
     @State private var deletingDay = false
     @State private var deletingChain: Int?
+    @State private var insertionTarget: String?
+    @State private var nativeRouteFrames: [String: CGRect] = [:]
     @State private var collapsedRoutes: Set<Int> = []
-    @State private var draggingPlace: Marker?
-    @State private var dragPoint: CGPoint = .zero
-    @State private var routeFrames: [Int: CGRect] = [:]
-    @State private var targetRoute: Int?
     var body: some View {
         List {
             Group {
@@ -128,10 +128,8 @@ struct DayContentsView: View {
                         .accessibilityIdentifier("route-toggle-\(index)")
                     }
                     .background(GeometryReader { geometry in
-                        Color.clear.preference(key: DayRouteDropFrames.self,
-                            value: [index: geometry.frame(in: .global)])
+                        Color.clear.preference(key: NativeRouteFrames.self, value: ["\(index)/header": geometry.frame(in: .global)])
                     })
-                    .listRowBackground(targetRoute == index ? Color(uiColor: .tertiarySystemFill) : Color(uiColor: .systemBackground))
                     .contextMenu {
                         Button("编辑路线", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
                         DestructiveMenuButton(title: "删除路线", systemImage: "trash") { deletingChain = index }
@@ -164,6 +162,19 @@ struct DayContentsView: View {
                                         Color.clear.frame(height: 13.5).accessibilityHidden(true)
                                     }
                                 }
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: NativeRouteFrames.self, value: ["\(index)/\(position)": geometry.frame(in: .global)])
+                    })
+                                .overlay(alignment: .top) {
+                                    if insertionTarget == "\(index)/\(position)/before" {
+                                        Rectangle().fill(Theme.accent).frame(height: 2).allowsHitTesting(false)
+                                    }
+                                }
+                                .overlay(alignment: .bottom) {
+                                    if insertionTarget == "\(index)/\(position)/after" {
+                                        Rectangle().fill(Theme.accent).frame(height: 2).allowsHitTesting(false)
+                                    }
+                                }
                                 .listRowSeparator(.hidden, edges: .all)
                                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -190,28 +201,15 @@ struct DayContentsView: View {
                         if let marker = store.markers.first(where: { $0.id == id }) {
                             PlaceSelectionRow(marker: marker)
                                 .contentShape(Rectangle())
-                                .onTapGesture { if draggingPlace == nil { store.focus(marker) } }
+                                .onTapGesture { store.focus(marker) }
                                 .accessibilityElement(children: .combine)
                                 .accessibilityAddTraits(.isButton)
                                 .accessibilityIdentifier("day-marker-\(id)")
-                                .opacity(draggingPlace?.id == id ? 0.3 : 1)
-                                .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 20) {
-                                    guard !store.saving else { return }
-                                    draggingPlace = marker
+                                .onDrag {
+                                    guard !store.saving else { return NSItemProvider() }
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    return NSItemProvider(object: ("day-place/" + day.id + "/" + id) as NSString)
                                 }
-                                .simultaneousGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                                    .onChanged { drag in
-                                        dragPoint = drag.location
-                                        guard draggingPlace?.id == id else { return }
-                                        targetRoute = routeFrames.first(where: { $0.value.contains(drag.location) })?.key
-                                    }
-                                    .onEnded { drag in
-                                        guard draggingPlace?.id == id else { return }
-                                        if let index = routeFrames.first(where: { $0.value.contains(drag.location) })?.key {
-                                            appendIsolatedPlace(id, to: index)
-                                        }
-                                        draggingPlace = nil; targetRoute = nil
-                                    })
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button {
                                         Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
@@ -238,19 +236,17 @@ struct DayContentsView: View {
             }.listRowBackground(Color(uiColor: .systemBackground))
                 .listRowSeparator(.hidden)
         }
-        .onPreferenceChange(DayRouteDropFrames.self) { routeFrames = $0 }
-        .overlay(alignment: .topLeading) {
-            GeometryReader { geometry in
-                if let draggingPlace {
-                    PlaceSelectionRow(marker: draggingPlace)
-                        .padding(12).frame(width: 240)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                        .shadow(radius: 8, y: 3)
-                        .position(x: dragPoint.x - geometry.frame(in: .global).minX,
-                                  y: dragPoint.y - geometry.frame(in: .global).minY)
-                }
-            }.allowsHitTesting(false)
-        }
+        .onPreferenceChange(NativeRouteFrames.self) { nativeRouteFrames = $0 }
+        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/", onTarget: { target in
+            guard insertionTarget != target else { return }
+            withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { insertionTarget = target }
+        }) { id, route in
+            let parts = route.split(separator: "/")
+            guard let first = parts.first, let index = Int(first) else { return }
+            let position = parts.count > 1 ? Int(parts[1]) : nil
+            let insertion = position.map { $0 + (parts.last == "after" ? 1 : 0) }
+            appendIsolatedPlace(id, to: index, at: insertion)
+        })
         .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
         .alert("日期标题", isPresented: $editingTitle) {
             TextField("例如：梧桐街区漫步", text: $title)
@@ -273,14 +269,14 @@ struct DayContentsView: View {
             }
         } message: { Text("保留当天的地点，只删除这条访问顺序。") }
     }
-    private func appendIsolatedPlace(_ id: String, to index: Int) {
+    private func appendIsolatedPlace(_ id: String, to index: Int, at insertion: Int? = nil) {
         guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
               let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
         var current = store.trips[ti].days[di]
         guard current.chains.indices.contains(index), day.chains.indices.contains(index),
               current.chains[index] == day.chains[index], current.markerIds.contains(id),
               !current.chains.flatMap({ $0 }).contains(id) else { return }
-        current.chains[index].append(id)
+        current.chains[index].insert(id, at: min(current.chains[index].count, max(0, insertion ?? current.chains[index].count)))
         if store.tripPlacesPreview {
             withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { store.trips[ti].days[di] = current }
             store.rebuildRoutes(preservingPlannedGeometry: true)
@@ -530,9 +526,114 @@ struct DayMarkerPicker: View {
     }
 }
 
-private struct DayRouteDropFrames: PreferenceKey {
-    static let defaultValue: [Int: CGRect] = [:]
-    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+/// Attach UIKit drop handling to the native list, whose SwiftUI rows are reused.
+struct NativePlaceListDrop: UIViewRepresentable {
+    let frames: [String: CGRect]
+    let prefix: String
+    var onTarget: (String?) -> Void = { _ in }
+    let accept: (String, String) -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIView(context: Context) -> UIView { UIView() }
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.parent = self
+        DispatchQueue.main.async {
+            var ancestor: UIView? = view
+            while let current = ancestor {
+                if let list = context.coordinator.findList(current) {
+                    context.coordinator.attach(list); break
+                }
+                ancestor = current.superview
+            }
+        }
+    }
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) { coordinator.detach() }
+    final class Coordinator: NSObject, UIDropInteractionDelegate, UICollectionViewDropDelegate {
+        var parent: NativePlaceListDrop
+        weak var host: UIView?
+        var dragFrames: [String: CGRect]?
+        var lastPoint: CGPoint?
+        var lastTarget: String?
+        var interaction: UIDropInteraction?
+        weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
+        init(_ parent: NativePlaceListDrop) { self.parent = parent }
+        func findList(_ view: UIView) -> UIView? {
+            if view is UICollectionView || view is UITableView { return view }
+            for child in view.subviews { if let found = findList(child) { return found } }
+            return nil
+        }
+        func attach(_ view: UIView) {
+            guard host !== view else { return }
+            detach()
+            if let list = view as? UICollectionView {
+                originalDropDelegate = list.dropDelegate
+                list.dropDelegate = self; host = list
+                return
+            }
+            let interaction = UIDropInteraction(delegate: self)
+            view.addInteraction(interaction); host = view; self.interaction = interaction
+        }
+        func detach() { if let list = host as? UICollectionView, list.dropDelegate === self { list.dropDelegate = originalDropDelegate }; if let interaction { host?.removeInteraction(interaction) }; interaction = nil; host = nil }
+        func target(_ session: UIDropSession) -> String? {
+            guard let host, let window = host.window else { return nil }
+            let point = session.location(in: window)
+            guard let match = (dragFrames ?? parent.frames).sorted(by: { $0.key.split(separator: "/").count > $1.key.split(separator: "/").count }).first(where: { $0.value.contains(point) }) else { return nil }
+            let parts = match.key.split(separator: "/")
+            if parts.count == 2, Int(parts[1]) != nil {
+                return match.key + (point.y < match.value.midY ? "/before" : "/after")
+            }
+            return match.key
+        }
+        func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool {
+            if dragFrames == nil { dragFrames = parent.frames }
+            return session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
+        }
+        func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
+                            withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
+            let point = host?.window.map { session.location(in: $0) }
+            let stationary = point.flatMap { point in lastPoint.map { hypot(point.x - $0.x, point.y - $0.y) < 4 } } ?? false
+            let target = stationary ? lastTarget : (target(session) ?? lastTarget)
+            if let target { lastTarget = target }
+            if !stationary { lastPoint = point }
+            DispatchQueue.main.async { self.parent.onTarget(target) }
+            return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
+        }
+        func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
+            parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil
+        }
+        func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
+            guard let target = lastTarget ?? target(coordinator.session) else { return }
+            parent.onTarget(nil)
+            if let destination = coordinator.destinationIndexPath {
+                for item in coordinator.items { coordinator.drop(item.dragItem, toItemAt: destination) }
+            }
+            let prefix = parent.prefix, accept = parent.accept
+            coordinator.session.loadObjects(ofClass: NSString.self) { objects in
+                guard let text = objects.first as? String, text.hasPrefix(prefix) else { return }
+                accept(String(text.dropFirst(prefix.count)), target)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }
+        func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+            session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
+        }
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+            UIDropProposal(operation: target(session) == nil ? .cancel : .move)
+        }
+        func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+            guard let target = target(session) else { return }
+            parent.onTarget(nil)
+            let prefix = parent.prefix, accept = parent.accept
+            session.loadObjects(ofClass: NSString.self) { objects in
+                guard let text = objects.first as? String, text.hasPrefix(prefix) else { return }
+                accept(String(text.dropFirst(prefix.count)), target)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }
+    }
+}
+private struct NativeRouteFrames: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $0.union($1) })
     }
 }

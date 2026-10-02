@@ -1,4 +1,6 @@
 import SwiftUI
+import UniformTypeIdentifiers
+import UIKit
 
 struct JourneyOverviewContents<SettingsContent: View>: View {
     @ObservedObject var store: AppStore
@@ -99,10 +101,7 @@ struct JourneyDaysContents: View {
         let ids = Set(trip.markerIds ?? [])
         return store.markers.filter { ids.contains($0.id) }
     }
-    @State private var draggingMarker: Marker?
-    @State private var dragLocation: CGPoint = .zero
-    @State private var dayDropFrames: [String: CGRect] = [:]
-    @State private var dropTargetDayID: String?
+    @State private var nativeDayFrames: [String: CGRect] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editing = false
     @State private var deletion: TripDay?
@@ -115,11 +114,9 @@ struct JourneyDaysContents: View {
                     dayRow(day, index: index)
                         .contentShape(Rectangle())
                         .background(GeometryReader { geometry in
-                            Color.clear.preference(key: TripDayDropFrames.self,
-                                value: [day.id: geometry.frame(in: .global)])
+                            Color.clear.preference(key: NativeDayFrames.self, value: [day.id: geometry.frame(in: .global)])
                         })
                 }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
-                    .listRowBackground(dropTargetDayID == day.id ? Color(uiColor: .tertiarySystemFill) : Color(uiColor: .systemBackground))
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { deletion = day } label: { Image(systemName: "trash") }
                             .accessibilityLabel("删除")
@@ -140,24 +137,11 @@ struct JourneyDaysContents: View {
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isButton)
                             .accessibilityIdentifier("trip-unscheduled-\(marker.id)")
-                            .opacity(draggingMarker?.id == marker.id ? 0.3 : 1)
-                            .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 20) {
-                                draggingMarker = marker
+                            .onDrag {
+                                guard !store.saving else { return NSItemProvider() }
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                return NSItemProvider(object: ("trip-place/" + trip.id + "/" + marker.id) as NSString)
                             }
-                            .simultaneousGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                                .onChanged { drag in
-                                    dragLocation = drag.location
-                                    guard draggingMarker?.id == marker.id else { return }
-                                    dropTargetDayID = dayDropFrames.first(where: { $0.value.contains(drag.location) })?.key
-                                }
-                                .onEnded { drag in
-                                    guard draggingMarker?.id == marker.id else { return }
-                                    if let id = dayDropFrames.first(where: { $0.value.contains(drag.location) })?.key,
-                                       let day = trip.days.first(where: { $0.id == id }) {
-                                        _ = assignPreviewPlaces(["trip-place/" + trip.id + "/" + marker.id], to: day)
-                                    }
-                                    draggingMarker = nil; dropTargetDayID = nil
-                                })
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button {
                                     if store.tripPlacesPreview { store.previewTripPlaces[trip.id]?.removeAll { $0.id == marker.id } }
@@ -196,20 +180,12 @@ struct JourneyDaysContents: View {
             }
             }.listRowBackground(Color(uiColor: .systemBackground))
         }
-            .onPreferenceChange(TripDayDropFrames.self) { dayDropFrames = $0 }
-            .overlay(alignment: .topLeading) {
-                GeometryReader { geometry in
-                if let draggingMarker {
-                    PlaceSelectionRow(marker: draggingMarker)
-                        .padding(12).frame(width: 240)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                        .shadow(radius: 8, y: 3)
-                        .position(x: dragLocation.x - geometry.frame(in: .global).minX,
-                                  y: dragLocation.y - geometry.frame(in: .global).minY)
-                        .allowsHitTesting(false)
+            .onPreferenceChange(NativeDayFrames.self) { nativeDayFrames = $0 }
+            .background(NativePlaceListDrop(frames: nativeDayFrames, prefix: "trip-place/" + trip.id + "/") { id, dayID in
+                if let day = trip.days.first(where: { $0.id == dayID }) {
+                    _ = assignPreviewPlaces(["trip-place/" + trip.id + "/" + id], to: day)
                 }
-                }.allowsHitTesting(false)
-            }
+            })
             .sheet(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: $deletion) { day in
                 DayDeletionView(store: store, day: day)
@@ -235,7 +211,6 @@ struct JourneyDaysContents: View {
                 }
             }
             store.previewTripPlaces[trip.id]?.removeAll { ids.contains($0.id) }
-            dropTargetDayID = nil
         }
         store.rebuildRoutes(preservingPlannedGeometry: true)
         return true
@@ -259,9 +234,9 @@ struct JourneyDaysContents: View {
 
 }
 
-private struct TripDayDropFrames: PreferenceKey {
+private struct NativeDayFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+        value.merge(nextValue(), uniquingKeysWith: { $0.union($1) })
     }
 }
