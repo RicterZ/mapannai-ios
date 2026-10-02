@@ -78,7 +78,6 @@ struct DayContentsView: View {
     @State private var title = ""
     @State private var deletingDay = false
     @State private var deletingChain: Int?
-    @State private var insertionTarget: String?
     @State private var nativeRouteFrames: [String: CGRect] = [:]
     @State private var collapsedRoutes: Set<Int> = []
     var body: some View {
@@ -165,27 +164,17 @@ struct DayContentsView: View {
                     .background(GeometryReader { geometry in
                         Color.clear.preference(key: NativeRouteFrames.self, value: ["\(index)/\(position)": geometry.frame(in: .global)])
                     })
-                                .overlay(alignment: .top) {
-                                    if insertionTarget == "\(index)/\(position)/before" {
-                                        Rectangle().fill(Theme.accent).frame(height: 2).allowsHitTesting(false)
-                                    }
-                                }
-                                .overlay(alignment: .bottom) {
-                                    if insertionTarget == "\(index)/\(position)/after" {
-                                        Rectangle().fill(Theme.accent).frame(height: 2).allowsHitTesting(false)
-                                    }
-                                }
                                 .listRowSeparator(.hidden, edges: .all)
                                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button {
-                                        Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
+                                        makeDayPlaceUnplanned(id)
                                     } label: { Image(systemName: "trash") }
-                                    .accessibilityLabel("删除").buttonStyle(.automatic).tint(.red).disabled(store.saving)
+                                    .accessibilityLabel("移出路线").buttonStyle(.automatic).tint(.red).disabled(store.saving)
                                 }
                                 .contextMenu {
                                     Button("编辑路线", systemImage: "arrow.up.arrow.down") { chainEditor = ChainEditRequest(day: day, index: index, ids: chain) }
-                                    DestructiveMenuButton(title: "从当天移除", systemImage: "minus.circle") { Task { await store.removeMarker(id, from: day, animated: !reduceMotion) } }
+                                    DestructiveMenuButton(title: "移出路线", systemImage: "minus.circle") { makeDayPlaceUnplanned(id) }
                                 }
                             }
                         }
@@ -237,10 +226,7 @@ struct DayContentsView: View {
                 .listRowSeparator(.hidden)
         }
         .onPreferenceChange(NativeRouteFrames.self) { nativeRouteFrames = $0 }
-        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/", onTarget: { target in
-            guard insertionTarget != target else { return }
-            withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { insertionTarget = target }
-        }) { id, route in
+        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/") { id, route in
             let parts = route.split(separator: "/")
             guard let first = parts.first, let index = Int(first) else { return }
             let position = parts.count > 1 ? Int(parts[1]) : nil
@@ -269,6 +255,21 @@ struct DayContentsView: View {
             }
         } message: { Text("保留当天的地点，只删除这条访问顺序。") }
     }
+    private func makeDayPlaceUnplanned(_ id: String) {
+        guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
+              let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }),
+              !store.saving else { return }
+        var current = store.trips[ti].days[di]
+        // Keep day membership, remove every route reference so the place becomes isolated.
+        current.chains = current.chains.map { $0.filter { $0 != id } }.filter { !$0.isEmpty }
+        if store.tripPlacesPreview {
+            withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { store.trips[ti].days[di] = current }
+            store.rebuildRoutes(preservingPlannedGeometry: true)
+        } else {
+            _ = store.saveDayInBackground(current, animated: !reduceMotion)
+        }
+    }
+
     private func appendIsolatedPlace(_ id: String, to index: Int, at insertion: Int? = nil) {
         guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
               let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }

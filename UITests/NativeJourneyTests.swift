@@ -28,6 +28,12 @@ final class NativeJourneyTests: XCTestCase {
         let inserted = app.buttons["route-0-marker-preview-cafe"]
         XCTAssertLessThan(inserted.frame.minY, app.buttons["route-0-marker-demo-1"].frame.minY)
         XCTAssertGreaterThan(inserted.frame.minY, app.buttons["route-0-marker-demo-0"].frame.minY)
+        inserted.swipeLeft()
+        app.buttons["移出路线"].tap()
+        XCTAssertTrue(app.buttons["day-marker-preview-cafe"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["route-0-marker-preview-cafe"].exists)
+        XCTAssertTrue(app.buttons["route-0-marker-demo-0"].exists)
+        XCTAssertTrue(app.buttons["route-0-marker-demo-1"].exists)
     }
 
     @MainActor func testMapLongPressReplacesDetailWithEditorAndCancelKeepsJourneyCompact() {
