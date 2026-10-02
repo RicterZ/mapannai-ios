@@ -238,11 +238,13 @@ struct DayContentsView: View {
                 .listRowSeparator(.hidden)
         }
         .onPreferenceChange(NativeRouteFrames.self) { nativeRouteFrames = $0 }
-        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/") { id, route in
+        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/", sourceTargets: Dictionary(uniqueKeysWithValues: day.chains.enumerated().flatMap { route, ids in
+            ids.enumerated().map { position, id in (id + "/" + String(route), "\(route)/\(position)") }
+        })) { id, route in
             let payload = id.split(separator: "/")
             guard let marker = payload.first else { return }
             let markerID = String(marker)
-            if route == "unplanned" { makeDayPlaceUnplanned(markerID); return }
+            if route == "unplanned" { makeDayPlaceUnplanned(markerID, animated: false); return }
             let source = payload.count > 1 ? Int(payload[1]) : nil
             let parts = route.split(separator: "/")
             guard let first = parts.first, let index = Int(first) else { return }
@@ -272,7 +274,7 @@ struct DayContentsView: View {
             }
         } message: { Text("保留当天的地点，只删除这条访问顺序。") }
     }
-    private func makeDayPlaceUnplanned(_ id: String) {
+    private func makeDayPlaceUnplanned(_ id: String, animated: Bool = true) {
         guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
               let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }),
               !store.saving else { return }
@@ -280,10 +282,10 @@ struct DayContentsView: View {
         // Keep day membership, remove every route reference so the place becomes isolated.
         current.chains = current.chains.map { $0.filter { $0 != id } }.filter { !$0.isEmpty }
         if store.tripPlacesPreview {
-            withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { store.trips[ti].days[di] = current }
+            withAnimation(animated ? AppMotion.listMutation(reduceMotion: reduceMotion) : nil) { store.trips[ti].days[di] = current }
             store.rebuildRoutes(preservingPlannedGeometry: true)
         } else {
-            _ = store.saveDayInBackground(current, animated: !reduceMotion)
+            _ = store.saveDayInBackground(current, animated: animated && !reduceMotion)
         }
     }
 
@@ -306,10 +308,11 @@ struct DayContentsView: View {
         current.chains.removeAll(where: { $0.isEmpty })
         guard current.chains != previous else { return }
         if store.tripPlacesPreview {
-            withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) { store.trips[ti].days[di] = current }
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) { store.trips[ti].days[di] = current }
             store.rebuildRoutes(preservingPlannedGeometry: true)
         } else {
-            _ = store.saveDayInBackground(current, animated: !reduceMotion)
+            _ = store.saveDayInBackground(current, animated: false)
         }
     }
 
@@ -569,6 +572,7 @@ final class NativePlaceItemProvider: NSItemProvider {
 struct NativePlaceListDrop: UIViewRepresentable {
     let frames: [String: CGRect]
     let prefix: String
+    var sourceTargets: [String: String] = [:]
     var onTarget: (String?) -> Void = { _ in }
     let accept: (String, String) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -650,14 +654,31 @@ struct NativePlaceListDrop: UIViewRepresentable {
             let stationary = point.flatMap { point in lastPoint.map { hypot(point.x - $0.x, point.y - $0.y) < 4 } } ?? false
             // UIKit's destination drives its visible insertion gap. Use that same
             // boundary for the model instead of independently splitting frozen rows.
-            let nativeTarget = destinationIndexPath.flatMap { insertionTarget(at: $0) }
+            let nativeTarget = livePoolTarget(session) ?? destinationIndexPath.flatMap { insertionTarget(at: $0, session: session) }
             let target = nativeTarget ?? (stationary ? lastTarget : target(session))
             if let target { lastTarget = target }
             if !stationary { lastPoint = point }
             DispatchQueue.main.async { self.parent.onTarget(target) }
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
         }
-        private func insertionTarget(at path: IndexPath) -> String? {
+        private func livePoolTarget(_ session: UIDropSession) -> String? {
+            guard let window = host?.window, let pool = parent.frames["unplanned"],
+                  pool.contains(session.location(in: window)) else { return nil }
+            return "unplanned"
+        }
+        private func insertionTarget(at destination: IndexPath, session: UIDropSession) -> String? {
+            var path = destination
+            // UIKit reports a final index for moves within the same section,
+            // after removing the source. Our model accepts a pre-removal boundary.
+            if let payload = (session.items.first?.itemProvider as? NativePlaceItemProvider)?.payload {
+                let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
+                if parts.count == 2, let sourceRouteKey = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])],
+                   let source = nativeRowTargets.first(where: { entry in
+                       entry.value == sourceRouteKey
+                   })?.key, source.section == path.section, source.item < path.item {
+                    path = IndexPath(item: path.item + 1, section: path.section)
+                }
+            }
             guard parent.prefix.hasPrefix("day-place/") else { return nil }
             if let key = nativeRowTargets[path] {
                 let parts = key.split(separator: "/")
@@ -674,10 +695,14 @@ struct NativePlaceListDrop: UIViewRepresentable {
             parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            guard let target = coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0) }) ?? lastTarget ?? target(coordinator.session) else { return }
+            guard let target = livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
             parent.onTarget(nil)
-            if let destination = coordinator.destinationIndexPath {
-                for item in coordinator.items { coordinator.drop(item.dragItem, toItemAt: destination) }
+            if let destination = coordinator.destinationIndexPath,
+               let attributes = collectionView.layoutAttributesForItem(at: destination) {
+                // SwiftUI owns the data source; toItemAt hides a reused destination
+                // cell until landing completes. Animate the preview independently.
+                let previewTarget = UIDragPreviewTarget(container: collectionView, center: attributes.center)
+                for item in coordinator.items { coordinator.drop(item.dragItem, to: previewTarget) }
             }
             acceptDrop(coordinator.session, target: target)
 

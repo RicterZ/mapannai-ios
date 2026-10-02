@@ -36,6 +36,12 @@ final class NativeJourneyTests: XCTestCase {
             inserted.frame.minY < last.frame.minY
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [reordered], timeout: 5), .completed)
+        let finalRow = app.buttons["route-0-marker-demo-2"]
+        inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
+            forDuration: 1.5, thenDragTo: finalRow.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.2)),
+            withVelocity: .slow, thenHoldForDuration: 1)
+        XCTAssertGreaterThan(inserted.frame.minY, app.buttons["route-0-marker-demo-1"].frame.minY)
+        XCTAssertLessThan(inserted.frame.minY, finalRow.frame.minY)
         let pool = app.buttons["day-search-add-place"]
         if !pool.isHittable { app.swipeUp() }
         inserted.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
