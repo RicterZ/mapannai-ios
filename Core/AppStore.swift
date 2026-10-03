@@ -540,6 +540,9 @@ struct TripSaveDraft: Identifiable {
         let body: [String: Any] = ["title": day.title ?? "", "emoji": day.emoji ?? "", "markerIds": day.markerIds, "chains": day.chains]
         return await perform { try await $0.mutate(Self.dayPath(day), method: "PUT", body: body) }
     }
+    private var routeDropClickDeadline: Date = .distantPast
+    var canActivateRouteRow: Bool { Date.now >= routeDropClickDeadline }
+    func finishRouteDrop() { routeDropClickDeadline = .now.addingTimeInterval(0.35) }
     func saveRouteSchedule(_ request: RouteScheduleRequest, patch: [String: Any], using suppliedClient: APIClient? = nil) async -> Bool {
         guard let latest = trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }),
               latest.chains == request.day.chains,
@@ -598,9 +601,15 @@ struct TripSaveDraft: Identifiable {
         return true
     }
     @discardableResult
-    func saveDayInBackground(_ day: TripDay, animated: Bool = true) -> Bool {
-        persistDayInBackground(day, animated: animated) { client in
-            try await client.mutate(Self.dayPath(day), method: "PUT", body: ["title": day.title ?? "", "emoji": day.emoji ?? "", "markerIds": day.markerIds, "chains": day.chains])
+    func saveDayInBackground(_ day: TripDay, animated: Bool = true, using suppliedClient: APIClient? = nil) -> Bool {
+        guard let previous = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return false }
+        let write: RouteOrderWrite
+        do { write = try RouteOrderWrite(previous: previous, updated: day) }
+        catch { report(error); return false }
+        let revision = connectionRevision
+        return persistDayInBackground(day, animated: animated, using: suppliedClient) { client in
+            let confirmed: TripDay = try await client.request(write.path, method: write.method, body: write.body)
+            await self.acceptRouteSchedule(confirmed, revision: revision)
         }
     }
     private func persistDayInBackground(_ day: TripDay, animated: Bool, using suppliedClient: APIClient? = nil, operation: @escaping (APIClient) async throws -> Void) -> Bool {
@@ -644,8 +653,7 @@ struct TripSaveDraft: Identifiable {
     }
     func removeMarker(_ markerID: String, from day: TripDay, animated: Bool = true) async {
         guard var latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return }
-        latest.markerIds.removeAll { $0 == markerID }
-        latest.chains = latest.chains.map { $0.filter { $0 != markerID } }.filter { !$0.isEmpty }
+        latest = latest.removing(markerID)
         _ = persistDayInBackground(latest, animated: animated) {
             try await $0.mutate(Self.dayPath(day) + "/markers", method: "DELETE", body: ["markerId": markerID])
         }

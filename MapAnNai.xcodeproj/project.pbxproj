@@ -16,6 +16,7 @@
 		0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */; };
 		0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */; };
 		1090057AE077861B9DFB1180 /* MarkerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425DF5BCBE1273228F07E613 /* MarkerViews.swift */; };
+		1813F5E4A7C7AA606B7E96E7 /* DirectedRouteMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */; };
 		18DC608C17CAC7B4854B1504 /* MapLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */; };
 		22412999EF9F454257D4C2AA /* MapServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE1B1BE0D10CFCEBB91BDC15 /* MapServices.swift */; };
 		23CC06614DFD047642FEFB5F /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F55A919B31EC92357E58F47 /* HomeView.swift */; };
@@ -178,6 +179,7 @@
 		AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerEditorTests.swift; sourceTree = "<group>"; };
 		B6BCC61DF450ED6A22EB583F /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B973E28C01628D63740B3A0C /* RouteScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteScheduleView.swift; sourceTree = "<group>"; };
+		BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectedRouteMoveTests.swift; sourceTree = "<group>"; };
 		C335E3944995E33E94762A45 /* SearchSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSelectionTests.swift; sourceTree = "<group>"; };
 		C93BEB8BDCD7B18AE3AF5CAC /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerRepositoryTests.swift; sourceTree = "<group>"; };
@@ -273,6 +275,7 @@
 				CEB25B1C797DC9C67FC988C2 /* ConcurrencyTests.swift */,
 				8ED85B293D18534AAB521985 /* CoreTests.swift */,
 				908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */,
+				BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */,
 				629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */,
 				CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */,
 				FDB69B65CFD0B0604D5476A1 /* RouteRedrawTests.swift */,
@@ -532,6 +535,7 @@
 				094AD351688781CAF39E4064 /* ConcurrencyTests.swift in Sources */,
 				F454FB7809C094724227F0B8 /* CoreTests.swift in Sources */,
 				39485F3DE95106F278FE9E42 /* DayCameraTests.swift in Sources */,
+				1813F5E4A7C7AA606B7E96E7 /* DirectedRouteMoveTests.swift in Sources */,
 				0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */,
 				77E5FBF26CBA7D5C9FA81B1C /* MarkerRepositoryTests.swift in Sources */,
 				A9F6407DE636ABED000B181E /* RouteRedrawTests.swift in Sources */,

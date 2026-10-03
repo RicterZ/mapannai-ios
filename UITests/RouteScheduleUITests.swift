@@ -25,4 +25,34 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertEqual(service.value as? String, "未设置")
         XCTAssertFalse(app.buttons["schedule-clear"].exists)
     }
+    @MainActor func testDirectedTransportDisconnectsAndRestoresImmediatelyAfterDrop() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--trip-places-preview", "--transport-schedule-preview", "--delayed-route-build-preview"]
+        app.launch()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 10)); day.tap()
+        let a = app.buttons["route-0-marker-demo-0"]
+        let b = app.buttons["route-0-marker-demo-1"]
+        let c = app.buttons["route-0-marker-demo-2"]
+        XCTAssertTrue(b.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["10号线"].exists)
+        b.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
+            thenDragTo: c.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.8)), withVelocity: .slow, thenHoldForDuration: 1)
+        XCTAssertEqual(b.value as? String, "3")
+        XCTAssertEqual(c.value as? String, "2")
+        XCTAssertFalse(app.staticTexts["10号线"].exists)
+        XCTAssertTrue((app.buttons["route-0-schedule-demo-1"].value as? String)?.contains("10:45") == true)
+        let disconnected = XCTAttachment(screenshot: app.screenshot())
+        disconnected.name = "松手立即断开有向边，游览时间保留"; disconnected.lifetime = .keepAlways; add(disconnected)
+        b.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
+            thenDragTo: c.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.1)), withVelocity: .slow, thenHoldForDuration: 1)
+        XCTAssertEqual(b.value as? String, "2")
+        XCTAssertEqual(c.value as? String, "3")
+        XCTAssertTrue(app.staticTexts["10号线"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-demo-1").count, 1)
+        XCTAssertEqual(a.value as? String, "1")
+        let restored = XCTAttachment(screenshot: app.screenshot())
+        restored.name = "拖回原有方向立即恢复交通"; restored.lifetime = .keepAlways; add(restored)
+    }
+
 }

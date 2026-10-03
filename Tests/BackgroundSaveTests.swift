@@ -221,3 +221,62 @@ final class BackgroundSaveTests: XCTestCase {
         XCTAssertEqual(store.tripSaveRecovery?.emoji, value.emoji)
     }
 }
+
+extension BackgroundSaveTests {
+    @MainActor func testRouteDropPublishesVisitsAndEdgesBeforeDelayedAPIReturns() async throws {
+        let store = store()
+        let route = RouteChain(id: "route", stops: [
+            ChainStop(id: "a", markerId: "ma", startTime: "09:30"),
+            ChainStop(id: "b", markerId: "mb", startTime: "10:00"),
+            ChainStop(id: "c", markerId: "mc")],
+            legs: [ChainLeg(fromStopId: "a", toStopId: "b", mode: .train, serviceNumber: "G123")])
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-03", markerIds: ["ma", "mb", "mc"], chains: [["ma", "mb", "mc"]], routeChains: [route])
+        store.trips = [Trip(id: "trip", name: "测试", startDate: day.date, endDate: day.date, days: [day])]
+        var changed = day; changed.setRouteOrders([["ma", "mc", "mb"]])
+        let response = try JSONEncoder().encode(changed)
+        DelayedSaveProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/api/trips/trip/days/day/chains/route")
+            return (200, response)
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.saveDayInBackground(changed, animated: false, using: client()))
+        XCTAssertTrue(store.saving)
+        XCTAssertEqual(store.trips[0].days[0], changed)
+        XCTAssertEqual(store.trips[0].days[0].routeChains?[0].stops[2].startTime, "10:00")
+        XCTAssertTrue(store.trips[0].days[0].routeChains?[0].legs.isEmpty == true)
+        XCTAssertEqual(store.trips[0].days[0].routeChains?[0].inactiveLegs?.first?.serviceNumber, "G123")
+        XCTAssertFalse(store.saveDayInBackground(day, using: client())) // Writes stay serial.
+        try await settle(store)
+        XCTAssertEqual(store.trips[0].days[0], changed)
+    }
+    @MainActor func testFailedRouteDropRestoresVisitsActiveAndInactiveEdges() async throws {
+        let store = store()
+        let route = RouteChain(id: "route", stops: [ChainStop(id: "a", markerId: "ma"), ChainStop(id: "b", markerId: "mb"), ChainStop(id: "c", markerId: "mc")], legs: [ChainLeg(fromStopId: "a", toStopId: "b", mode: .bus, serviceNumber: "101")])
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-03", markerIds: ["ma", "mb", "mc"], chains: [["ma", "mb", "mc"]], routeChains: [route])
+        store.trips = [Trip(id: "trip", name: "测试", startDate: day.date, endDate: day.date, days: [day])]
+        var changed = day; changed.setRouteOrders([["mb", "ma", "mc"]])
+        DelayedSaveProtocol.handler = { _ in (500, Data(#"{"error":"路线保存失败"}"#.utf8)) }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.saveDayInBackground(changed, animated: false, using: client()))
+        XCTAssertEqual(store.trips[0].days[0], changed)
+        try await settle(store)
+        XCTAssertEqual(store.trips[0].days[0], day)
+        XCTAssertEqual(store.errorMessage, "路线保存失败")
+    }
+    @MainActor func testServerAssignedVisitIDsAreAdoptedWithoutWaitingForRefresh() async throws {
+        let store = store()
+        let route = RouteChain(id: "route", stops: [ChainStop(id: "a", markerId: "ma"), ChainStop(id: "b", markerId: "mb")], legs: [])
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-03", markerIds: ["ma", "mb", "mc"], chains: [["ma", "mb"]], routeChains: [route])
+        store.trips = [Trip(id: "trip", name: "测试", startDate: day.date, endDate: day.date, days: [day])]
+        var changed = day; changed.setRouteOrders([["ma", "mc", "mb"]])
+        var confirmed = changed; confirmed.routeChains?[0].stops[1].id = "server-visit-c"
+        let response = try JSONEncoder().encode(confirmed)
+        DelayedSaveProtocol.handler = { _ in (200, response) }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.saveDayInBackground(changed, animated: false, using: client()))
+        try await settle(store)
+        XCTAssertEqual(store.trips[0].days[0].routeChains?[0].stops[1].id, "server-visit-c")
+        XCTAssertEqual(store.trips[0].days[0].chains, changed.chains)
+    }
+}

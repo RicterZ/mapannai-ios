@@ -39,9 +39,9 @@ SDK 由 `Scripts/fetch-sdk.py` 下载固定官方版本，无需 CocoaPods。`Ve
 
 ## 交通与游览安排
 
-TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与相邻 legs；旧服务缺失字段时保留现有距离展示。日详情相邻地点间展示交通摘要并进入原生 Form，交通出发时间与时长位于摘要右上角，距离和备注显示在下方；地点名称行右上角显示游览时间与时长，未设置显示时钟和 --:--；点击该区域或地点长按菜单可编辑游览安排，备注单独显示在地址下方。线路/车次号单独使用 serviceNumber；时间按行程当地 HH:mm 存储，durationMinutes 为用户计划分钟数。
+TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与相邻 legs；旧服务缺失字段时保留现有距离展示。日详情相邻地点间展示交通摘要并进入原生 Form，交通出发时间与时长位于摘要右上角，距离和备注显示在下方；地点名称行右上角显示游览时间与时长，未设置显示时钟和 --:--；点击该区域可编辑游览安排，备注单独显示在地址下方。线路/车次号单独使用 serviceNumber；时间按行程当地 HH:mm 存储，durationMinutes 为用户计划分钟数。
 
-保存调用 PATCH /api/trips/:id/days/:dayId/chains/:chainId，仅发送 stops 或 legs 元数据，空字段显式 null，清除交通使用 remove=true。服务端返回完整 TripDay 后立即更新本地；不重新寻路，不修改规划模式。提交前校验路线快照，切换服务器拒绝旧结果。拖动导致本地 chains 与 routeChains 顺序不匹配时暂时隐藏安排，待服务端刷新后恢复，避免旧交通错配。
+保存调用 PATCH /api/trips/:id/days/:dayId/chains/:chainId，仅发送 stops 或 legs 元数据，空字段显式 null，清除交通使用 remove=true。服务端返回完整 TripDay 后立即更新本地；不重新寻路，不修改规划模式。提交前校验路线快照，切换服务器拒绝旧结果。拖动松手同步更新 chains、访问及有向边；同路线中仍按原方向相邻的边生效，断开的边存入 inactiveLegs，恢复原方向相邻时重新生效。跨路线产生新访问，不继承游览安排；移出路线清理涉及该访问的边。计划时间不自动重排。单路线排序使用稳定 chainId PATCH，其他变更使用现有整日 PUT；对服务端旧接口无法明确安排归属的移动在提交前拒绝，避免错配。服务响应的访问 ID 直接提交，不等待刷新。地点拖动预览只含地点和序号，不含交通块，避免地点长按菜单与拖动竞争；松手后短暂屏蔽点击以防误开表单。
 
 只读设计预览参数 --demo --trip-places-preview --transport-schedule-preview 展示地铁、车次、时间与备注；不写入生产数据。
 

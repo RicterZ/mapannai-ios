@@ -87,7 +87,7 @@ struct TripDay: Codable, Identifiable, Hashable {
     func removing(_ markerID: String) -> TripDay {
         var copy = self
         copy.markerIds.removeAll { $0 == markerID }
-        copy.chains = chains.map { $0.filter { $0 != markerID } }.filter { !$0.isEmpty }
+        copy.setRouteOrders(chains.map { $0.filter { $0 != markerID } })
         return copy
     }
     func replacingChain(at index: Int?, with ids: [String]) throws -> TripDay {
@@ -96,8 +96,8 @@ struct TripDay: Codable, Identifiable, Hashable {
         for id in ids where !copy.markerIds.contains(id) { copy.markerIds.append(id) }
         if let index {
             guard copy.chains.indices.contains(index) else { throw AppError.message("路线已发生变化，请重新打开") }
-            copy.chains[index] = ids
-        } else { copy.chains.append(ids) }
+            var orders = copy.chains; orders[index] = ids; copy.setRouteOrders(orders)
+        } else { copy.setRouteOrders(copy.chains + [ids]) }
         return copy
     }
 }
@@ -117,11 +117,11 @@ struct RouteEditSession: Equatable {
         }
         if let index, !latest.chains.indices.contains(index) { throw AppError.message("路线已发生变化，请取消编辑后重试") }
         if let index, ids.isEmpty {
-            var updated = latest; updated.chains.remove(at: index); return updated
+            var updated = latest; updated.removeRoute(at: index); return updated
         }
         // Existing single-stop routes are valid; new routes still need two stops.
         if let index, ids.count == 1 {
-            var updated = latest; updated.chains[index] = ids; return updated
+            var updated = latest; var orders = updated.chains; orders[index] = ids; updated.setRouteOrders(orders); return updated
         }
         return try latest.replacingChain(at: index, with: ids)
     }

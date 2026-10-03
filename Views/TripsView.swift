@@ -153,23 +153,24 @@ struct DayContentsView: View {
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(.leading, 78).padding(.bottom, 5)
                                         }
-                                        if position + 1 < chain.count {
-                                            RouteTransportRow(leg: route.leg(at: position), distance: routeDistance(chain: chain, index: index, position: position + 1)) {
-                                                openSchedule(route, position: position, transport: true)
-                                            }.accessibilityIdentifier("route-\(index)-transport-\(position)")
+                                    }
+
+                                    if position + 1 < chain.count {
+                                        Group {
+                                            if let route = day.scheduledRoute(at: index) {
+                                                RouteTransportRow(leg: route.leg(at: position), distance: routeDistance(chain: chain, index: index, position: position + 1)) {
+                                                    openSchedule(route, position: position, transport: true)
+                                                }.accessibilityIdentifier("route-\(index)-transport-\(position)")
+                                            } else if let distance = routeDistance(chain: chain, index: index, position: position + 1) {
+                                                HStack(spacing: 8) {
+                                                    Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
+                                                    Text(distance).font(.caption).foregroundStyle(.secondary).fixedSize()
+                                                    Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
+                                                }.frame(height: 13.5).accessibilityElement(children: .combine)
+                                                    .accessibilityIdentifier("route-\(index)-distance-\(position + 1)")
+                                            } else { Color.clear.frame(height: 13.5).accessibilityHidden(true) }
                                         }
-                                    } else if position + 1 < chain.count, let distance = routeDistance(chain: chain, index: index, position: position + 1) {
-                                        HStack(spacing: 8) {
-                                            Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
-                                            Text(distance).font(.caption).foregroundStyle(.secondary).fixedSize()
-                                                .background(Color(uiColor: .systemBackground))
-                                            Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
-                                        }
-                                        .frame(height: 13.5)
-                                        .accessibilityElement(children: .combine)
-                                        .accessibilityIdentifier("route-\(index)-distance-\(position + 1)")
-                                    } else {
-                                        Color.clear.frame(height: 13.5).accessibilityHidden(true)
+
                                     }
                                 }
                     .background(GeometryReader { geometry in
@@ -187,15 +188,20 @@ struct DayContentsView: View {
                                     guard !store.saving else { return NSItemProvider() }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                     return NativePlaceItemProvider(payload: "day-place/" + day.id + "/" + id + "/" + String(index))
-                                }
-                                .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id) }
-                                .contextMenu {
-                                    if let route = day.scheduledRoute(at: index) {
-                                        Button("游览安排", systemImage: "clock") { openSchedule(route, position: position, transport: false) }
-                                        if position + 1 < chain.count { Button("交通安排", systemImage: "tram") { openSchedule(route, position: position, transport: true) } }
+                                } preview: {
+                                    VStack(spacing: 0) {
+                                        RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker, stop: day.scheduledRoute(at: index)?.stops[position])
+                                        if let note = day.scheduledRoute(at: index)?.stops[position].note, !note.isEmpty {
+                                            Text(note).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.leading, 78).padding(.bottom, 5)
+                                        }
                                     }
-                                    Button("移出路线", systemImage: "minus.circle") { makeDayPlaceUnplanned(id) }
+                                    .frame(width: nativeRouteFrames["\(index)/\(position)"]?.width)
+                                    .background(Color(uiColor: .systemBackground))
                                 }
+
+                                .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id) }
 
                             }
                         }
@@ -256,7 +262,7 @@ struct DayContentsView: View {
                 .listRowSeparator(.hidden)
         }
         .onPreferenceChange(NativeRouteFrames.self) { nativeRouteFrames = $0 }
-        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/", sourceTargets: Dictionary(uniqueKeysWithValues: day.chains.enumerated().flatMap { route, ids in
+        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/", onDrop: { store.finishRouteDrop() }, sourceTargets: Dictionary(uniqueKeysWithValues: day.chains.enumerated().flatMap { route, ids in
             ids.enumerated().map { position, id in (id + "/" + String(route), "\(route)/\(position)") }
         })) { id, route in
             let payload = id.split(separator: "/")
@@ -286,7 +292,7 @@ struct DayContentsView: View {
                 guard var latest = store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }),
                       latest.chains.indices.contains(index), day.chains.indices.contains(index),
                       latest.chains[index] == day.chains[index] else { return }
-                latest.chains.remove(at: index)
+                latest.removeRoute(at: index)
                 if store.saveDayInBackground(latest, animated: !reduceMotion) {
                     collapsedRoutes = Set(collapsedRoutes.filter { $0 != index }.map { $0 > index ? $0 - 1 : $0 })
                 }
@@ -299,7 +305,7 @@ struct DayContentsView: View {
               !store.saving else { return }
         var current = store.trips[ti].days[di]
         // Keep day membership, remove every route reference so the place becomes isolated.
-        current.chains = current.chains.map { $0.filter { $0 != id } }.filter { !$0.isEmpty }
+        current.setRouteOrders(current.chains.map { $0.filter { $0 != id } })
         if store.tripPlacesPreview {
             withAnimation(animated ? AppMotion.listMutation(reduceMotion: reduceMotion) : nil) { store.trips[ti].days[di] = current }
             store.rebuildRoutes(preservingPlannedGeometry: true)
@@ -315,16 +321,17 @@ struct DayContentsView: View {
         guard !store.saving, current.chains.indices.contains(index),
               current.chains == day.chains, current.markerIds.contains(id) else { return }
         let previous = current.chains
+        var orders = current.chains
         var destination = min(current.chains[index].count, max(0, insertion ?? current.chains[index].count))
         if let source {
             guard current.chains.indices.contains(source), let old = current.chains[source].firstIndex(of: id) else { return }
-            current.chains[source].remove(at: old)
+            orders[source].remove(at: old)
             if source == index, old < destination { destination -= 1 }
         }
-        if !current.chains[index].contains(id) {
-            current.chains[index].insert(id, at: min(destination, current.chains[index].count))
+        if !orders[index].contains(id) {
+            orders[index].insert(id, at: min(destination, orders[index].count))
         }
-        current.chains.removeAll(where: { $0.isEmpty })
+        current.setRouteOrders(orders)
         guard current.chains != previous else { return }
         if store.tripPlacesPreview {
             var transaction = Transaction(); transaction.disablesAnimations = true
@@ -336,7 +343,7 @@ struct DayContentsView: View {
     }
 
     private func openSchedule(_ route: RouteChain, position: Int, transport: Bool) {
-        guard route.stops.indices.contains(position), !transport || route.stops.indices.contains(position + 1) else { return }
+        guard store.canActivateRouteRow, route.stops.indices.contains(position), !transport || route.stops.indices.contains(position + 1) else { return }
         let names = Dictionary(store.markers.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
         scheduleEditor = RouteScheduleRequest(day: day, route: route, position: position, isTransport: transport,
             fromTitle: names[route.stops[position].markerId] ?? "地点",
@@ -371,15 +378,25 @@ private struct RoutePlaceSelectionButton: View {
         return String(position + 1)
     }
     var body: some View {
+        if stop == nil {
+            Button { if store.canActivateRouteRow { store.focus(marker) } } label: {
+                HStack(spacing: 12) {
+                    RouteOrdinalLabel(store: store, dayID: dayID, routeIndex: routeIndex, markerID: marker.id)
+                        .frame(width: 18).fixedSize(horizontal: false, vertical: true)
+                    PlaceSelectionRow(marker: marker)
+                }.contentShape(Rectangle())
+            }.buttonStyle(.automatic).foregroundStyle(.primary)
+                .accessibilityIdentifier("route-\(routeIndex)-marker-\(marker.id)").accessibilityValue(ordinal)
+        } else {
         HStack(spacing: 12) {
             RouteOrdinalLabel(store: store, dayID: dayID, routeIndex: routeIndex, markerID: marker.id)
                 .frame(width: 18).fixedSize(horizontal: false, vertical: true)
-            Button { store.focus(marker) } label: {
+            Button { if store.canActivateRouteRow { store.focus(marker) } } label: {
                 MapMarkerCircle(icon: marker.icon).frame(width: 36, height: 36)
             }.buttonStyle(.plain).accessibilityLabel(marker.title)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .top, spacing: 8) {
-                    Button { store.focus(marker) } label: {
+                    Button { if store.canActivateRouteRow { store.focus(marker) } } label: {
                         Text(marker.title).font(.body).foregroundStyle(.primary)
                             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain)
@@ -393,10 +410,11 @@ private struct RoutePlaceSelectionButton: View {
                             }.font(.caption).foregroundStyle(.secondary).fixedSize()
                         }.buttonStyle(.plain).accessibilityLabel("编辑游览安排")
                             .accessibilityIdentifier("route-\(routeIndex)-schedule-\(marker.id)")
+                            .accessibilityValue(stop.summary)
                     }
                 }
                 if let address = marker.content.address, !address.isEmpty {
-                    Button { store.focus(marker) } label: {
+                    Button { if store.canActivateRouteRow { store.focus(marker) } } label: {
                         Text(address).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain)
@@ -404,6 +422,7 @@ private struct RoutePlaceSelectionButton: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 6)
     }
+        }
 }
 
 /// The dragged cell may stay retained by UIKit while SwiftUI moves its hosting
@@ -690,6 +709,7 @@ final class NativePlaceItemProvider: NSItemProvider {
 struct NativePlaceListDrop: UIViewRepresentable {
     let frames: [String: CGRect]
     let prefix: String
+    var onDrop: () -> Void = {}
     var sourceTargets: [String: String] = [:]
     var onTarget: (String?) -> Void = { _ in }
     let accept: (String, String) -> Void
@@ -780,12 +800,23 @@ struct NativePlaceListDrop: UIViewRepresentable {
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
         }
         private func livePoolTarget(_ session: UIDropSession) -> String? {
-            guard let window = host?.window, let pool = parent.frames["unplanned"],
-                  pool.contains(session.location(in: window)) else { return nil }
-            return "unplanned"
+            guard let window = host?.window else { return nil }
+            let point = session.location(in: window)
+            if parent.frames["unplanned"]?.contains(point) == true || dragFrames?["unplanned"]?.contains(point) == true { return "unplanned" }
+            // Native insertion pushes the pool below the pointer. Keep its original
+            // region eligible, translated with a stable header to account for scrolling.
+            if let pool = dragFrames?["unplanned"],
+               let anchor = dragFrames?.keys.sorted().first(where: { $0.hasSuffix("/header") }),
+               let original = dragFrames?[anchor], let current = parent.frames[anchor],
+               pool.offsetBy(dx: current.minX - original.minX, dy: current.minY - original.minY).contains(point) {
+                return "unplanned"
+            }
+            return nil
         }
         private func insertionTarget(at destination: IndexPath, session: UIDropSession) -> String? {
             var path = destination
+            if parent.prefix.hasPrefix("day-place/"), let list = host as? UICollectionView,
+               destination.section == list.numberOfSections - 2 { return "unplanned" }
             // UIKit reports a final index for moves within the same section,
             // after removing the source. Our model accepts a pre-removal boundary.
             if let payload = localPayload(session) {
@@ -800,8 +831,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
             guard parent.prefix.hasPrefix("day-place/") else { return nil }
             if let key = nativeRowTargets[path] {
                 let parts = key.split(separator: "/")
-                return parts.count == 2 && Int(parts[1]) != nil ? key + "/before" : key
+                    return parts.count == 2 && Int(parts[1]) != nil ? key + "/before" : key
             }
+            // A drop after the pool's last cell has no destination cell. It still
+            // belongs to the pool, including when auto-scroll moved it above the finger.
+            if path.item > 0, nativeRowTargets[IndexPath(item: path.item - 1, section: path.section)] == "unplanned" { return "unplanned" }
             // The insertion boundary after the final item has no cell of its own.
             if path.item > 0, let key = nativeRowTargets[IndexPath(item: path.item - 1, section: path.section)],
                let position = key.split(separator: "/").last, Int(position) != nil {
@@ -849,6 +883,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             return payload
         }
         private func acceptDrop(_ session: UIDropSession, target: String) {
+            parent.onDrop()
             let prefix = parent.prefix, accept = parent.accept
             if let payload = localPayload(session) {
                 accept(String(payload.dropFirst(prefix.count)), target)
