@@ -628,10 +628,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
         var nativeRowTargets: [IndexPath: String] = [:]
         var lastPoint: CGPoint?
         var lastTarget: String?
-        var dragOrdinalOverlay: UILabel?
-        var dragOrdinalOffset: CGPoint?
-        var activeDropSession: UIDropSession?
-        var dragDisplayLink: CADisplayLink?
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
@@ -691,54 +687,10 @@ struct NativePlaceListDrop: UIViewRepresentable {
             // boundary for the model instead of independently splitting frozen rows.
             let nativeTarget = livePoolTarget(session) ?? destinationIndexPath.flatMap { insertionTarget(at: $0, session: session) }
             let target = nativeTarget ?? (stationary ? lastTarget : target(session))
-            activeDropSession = session
-            if dragDisplayLink == nil {
-                let link = CADisplayLink(target: self, selector: #selector(updateDragDisplayLink))
-                link.add(to: .main, forMode: .common)
-                dragDisplayLink = link
-            }
-            updateDragOrdinalOverlay(session, target: target)
             if let target { lastTarget = target }
             if !stationary { lastPoint = point }
             DispatchQueue.main.async { self.parent.onTarget(target) }
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
-        }
-        @objc private func updateDragDisplayLink() {
-            guard let session = activeDropSession else { return }
-            updateDragOrdinalOverlay(session, target: lastTarget)
-        }
-        private func updateDragOrdinalOverlay(_ session: UIDropSession, target: String?) {
-            guard let window = host?.window, let payload = localPayload(session) else { return }
-            let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
-            guard parts.count == 2, let sourceKey = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])],
-                  let originalPosition = Int(sourceKey.split(separator: "/").last ?? ""),
-                  let sourceFrame = (dragFrames ?? parent.frames)[sourceKey] else { return }
-            let point = session.location(in: window)
-            if dragOrdinalOffset == nil {
-                dragOrdinalOffset = CGPoint(x: sourceFrame.minX + 20 - point.x, y: sourceFrame.minY - point.y)
-            }
-            if dragOrdinalOverlay == nil {
-                let label = UILabel(frame: .zero)
-                label.textAlignment = .center
-                label.font = .monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize, weight: .regular)
-                label.textColor = .secondaryLabel
-                label.backgroundColor = .systemBackground
-                label.layer.cornerRadius = 2; label.clipsToBounds = true
-                window.addSubview(label); dragOrdinalOverlay = label
-            }
-            var ordinal = String(originalPosition + 1)
-            if target == "unplanned" { ordinal = "" }
-            else if let target {
-                let pieces = target.split(separator: "/")
-                if pieces.count >= 2, let route = Int(pieces[0]), let position = Int(pieces[1]) {
-                    let boundary = position + (pieces.last == "after" ? 1 : 0)
-                    let removedBefore = Int(parts[1]) == route && originalPosition < boundary
-                    ordinal = String(boundary + 1 - (removedBefore ? 1 : 0))
-                }
-            }
-            guard let label = dragOrdinalOverlay, let offset = dragOrdinalOffset else { return }
-            label.text = ordinal
-            label.frame = CGRect(x: point.x + offset.x, y: point.y + offset.y, width: 24, height: max(28, sourceFrame.height - 13.5))
         }
         private func livePoolTarget(_ session: UIDropSession) -> String? {
             guard let window = host?.window, let pool = parent.frames["unplanned"],
@@ -772,8 +724,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
-            dragOrdinalOverlay?.removeFromSuperview(); dragOrdinalOverlay = nil; dragOrdinalOffset = nil
-            activeDropSession = nil; dragDisplayLink?.invalidate(); dragDisplayLink = nil
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             guard let target = livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
