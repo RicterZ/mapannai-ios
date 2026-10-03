@@ -786,13 +786,24 @@ struct NativePlaceListDrop: UIViewRepresentable {
             }
             return session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
         }
+        /// Pool-to-route drops have no source index to preserve. Resolve from the
+        /// current visible route area, including margins, traffic and insertion gaps.
+        private func isolatedRouteTarget(_ session: UIDropSession) -> String? {
+            guard parent.prefix.hasPrefix("day-place/"), let payload = localPayload(session),
+                  payload.dropFirst(parent.prefix.count).split(separator: "/").count == 1,
+                  let host, let window = host.window else { return nil }
+            let point = session.location(in: window)
+            let bounds = host.convert(host.bounds, to: window)
+            guard point.x >= bounds.minX, point.x <= bounds.maxX else { return nil }
+            return NativeRouteDropGeometry.target(at: point, frames: parent.frames)
+        }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
             let point = host?.window.map { session.location(in: $0) }
             let stationary = point.flatMap { point in lastPoint.map { hypot(point.x - $0.x, point.y - $0.y) < 4 } } ?? false
             // UIKit's destination drives its visible insertion gap. Use that same
             // boundary for the model instead of independently splitting frozen rows.
-            let nativeTarget = livePoolTarget(session) ?? destinationIndexPath.flatMap { insertionTarget(at: $0, session: session) }
+            let nativeTarget = isolatedRouteTarget(session) ?? livePoolTarget(session) ?? destinationIndexPath.flatMap { insertionTarget(at: $0, session: session) }
             let target = nativeTarget ?? (stationary ? lastTarget : target(session))
             if let target { lastTarget = target }
             if !stationary { lastPoint = point }
@@ -848,7 +859,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            guard let target = livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
+            guard let target = isolatedRouteTarget(coordinator.session) ?? livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
             parent.onTarget(nil)
             acceptDrop(coordinator.session, target: target)
             // The native lifted snapshot contains the old ordinal. A day move
@@ -902,5 +913,30 @@ private struct NativeRouteFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { $0.union($1) })
+    }
+}
+
+/// Horizontal card margins are valid too. Within a route, every vertical gap
+/// belongs to its nearest visit boundary; only the header appends to the end.
+enum NativeRouteDropGeometry {
+    static func target(at point: CGPoint, frames: [String: CGRect]) -> String? {
+        let routes = Set(frames.keys.compactMap { Int($0.split(separator: "/").first ?? "") })
+        for route in routes.sorted() {
+            let prefix = String(route) + "/"
+            let entries = frames.filter { $0.key.hasPrefix(prefix) }
+            guard let top = entries.values.map(\.minY).min(), let bottom = entries.values.map(\.maxY).max(),
+                  point.y >= top - 8, point.y <= bottom + 8 else { continue }
+            if let header = entries[prefix + "header"], point.y <= header.maxY { return prefix + "header" }
+            let rows = entries.compactMap { key, frame -> (Int, CGRect)? in
+                guard let position = Int(key.dropFirst(prefix.count)) else { return nil }
+                return (position, frame)
+            }.sorted { $0.0 < $1.0 }
+            for (position, frame) in rows {
+                if point.y < frame.midY { return prefix + String(position) + "/before" }
+            }
+            if let last = rows.last { return prefix + String(last.0) + "/after" }
+            return prefix + "header"
+        }
+        return nil
     }
 }

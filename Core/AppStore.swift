@@ -1079,6 +1079,10 @@ struct TripSaveDraft: Identifiable {
             trips[0].days[0].routeChains = [RouteChain(id: "preview-route", stops: stops,
                 legs: [ChainLeg(fromStopId: stops[0].id, toStopId: stops[1].id, mode: .subway,
                     serviceNumber: "10号线", startTime: "10:30", durationMinutes: 15, note: "陕西南路站 · 往虹桥火车站方向")])]
+            if ProcessInfo.processInfo.arguments.contains("--isolated-transport-drag-preview") {
+                trips[0].days[0].markerIds.append("demo-3")
+            }
+
         }
         #endif
         if ProcessInfo.processInfo.arguments.contains("--overlapping-routes-demo") {

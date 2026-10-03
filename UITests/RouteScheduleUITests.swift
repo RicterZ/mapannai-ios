@@ -55,4 +55,20 @@ final class RouteScheduleUITests: XCTestCase {
         restored.name = "拖回原有方向立即恢复交通"; restored.lifetime = .keepAlways; add(restored)
     }
 
+    @MainActor func testIsolatedPlaceDropsIntoScheduledRouteAfterScrolling() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--trip-places-preview", "--transport-schedule-preview", "--isolated-transport-drag-preview"]
+        app.launch()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 10)); day.tap()
+        app.swipeUp()
+        let source = app.buttons["day-marker-demo-3"]
+        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        let target = app.buttons["route-0-marker-demo-1"]
+        source.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
+            thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 1)
+        XCTAssertTrue(app.buttons["route-0-marker-demo-3"].waitForExistence(timeout: 5))
+        XCTAssertFalse(source.exists)
+    }
+
 }
