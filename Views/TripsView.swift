@@ -143,18 +143,15 @@ struct DayContentsView: View {
                             let position = slot.position
                             if let marker = store.markers.first(where: { $0.id == id }) {
                                 VStack(spacing: 0) {
-                                    RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker)
+                                    RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker, stop: day.scheduledRoute(at: index)?.stops[position]) {
+                                        if let route = day.scheduledRoute(at: index) { openSchedule(route, position: position, transport: false) }
+                                    }
                                     if let route = day.scheduledRoute(at: index) {
                                         let stop = route.stops[position]
-                                        if !stop.summary.isEmpty || stop.note != nil {
-                                            Button { openSchedule(route, position: position, transport: false) } label: {
-                                                HStack(spacing: 5) {
-                                                    Image(systemName: "clock")
-                                                    Text(stop.summary.isEmpty ? "游览安排" : stop.summary).monospacedDigit()
-                                                    if let note = stop.note { Text(note).lineLimit(1) }
-                                                    Spacer()
-                                                }.font(.footnote).foregroundStyle(.secondary).padding(.leading, 28).padding(.bottom, 5)
-                                            }.buttonStyle(.plain).accessibilityLabel("编辑游览安排")
+                                        if let note = stop.note, !note.isEmpty {
+                                            Text(note).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.leading, 78).padding(.bottom, 5)
                                         }
                                         if position + 1 < chain.count {
                                             RouteTransportRow(leg: route.leg(at: position), distance: routeDistance(chain: chain, index: index, position: position + 1)) {
@@ -365,6 +362,8 @@ private struct RoutePlaceSelectionButton: View {
     let dayID: String
     let routeIndex: Int
     let marker: Marker
+    var stop: ChainStop? = nil
+    var editSchedule: () -> Void = {}
     private var ordinal: String {
         guard let day = store.trips.lazy.flatMap(\.days).first(where: { $0.id == dayID }),
               day.chains.indices.contains(routeIndex),
@@ -372,16 +371,38 @@ private struct RoutePlaceSelectionButton: View {
         return String(position + 1)
     }
     var body: some View {
-        Button { store.focus(marker) } label: {
-            HStack(spacing: 12) {
-                RouteOrdinalLabel(store: store, dayID: dayID, routeIndex: routeIndex, markerID: marker.id)
-                    .frame(width: 18)
-                    .fixedSize(horizontal: false, vertical: true)
-                PlaceSelectionRow(marker: marker)
-            }.contentShape(Rectangle())
-        }.buttonStyle(.automatic).foregroundStyle(.primary)
-            .accessibilityIdentifier("route-\(routeIndex)-marker-\(marker.id)")
-            .accessibilityValue(ordinal)
+        HStack(spacing: 12) {
+            RouteOrdinalLabel(store: store, dayID: dayID, routeIndex: routeIndex, markerID: marker.id)
+                .frame(width: 18).fixedSize(horizontal: false, vertical: true)
+            Button { store.focus(marker) } label: {
+                MapMarkerCircle(icon: marker.icon).frame(width: 36, height: 36)
+            }.buttonStyle(.plain).accessibilityLabel(marker.title)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top, spacing: 8) {
+                    Button { store.focus(marker) } label: {
+                        Text(marker.title).font(.body).foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .accessibilityIdentifier("route-\(routeIndex)-marker-\(marker.id)")
+                        .accessibilityValue(ordinal)
+                    if let stop {
+                        Button(action: editSchedule) {
+                            HStack(spacing: 4) {
+                                if stop.summary.isEmpty { Image(systemName: "clock") }
+                                Text(stop.summary.isEmpty ? "--:--" : stop.summary).monospacedDigit()
+                            }.font(.caption).foregroundStyle(.secondary).fixedSize()
+                        }.buttonStyle(.plain).accessibilityLabel("编辑游览安排")
+                            .accessibilityIdentifier("route-\(routeIndex)-schedule-\(marker.id)")
+                    }
+                }
+                if let address = marker.content.address, !address.isEmpty {
+                    Button { store.focus(marker) } label: {
+                        Text(address).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(.vertical, 6)
     }
 }
 

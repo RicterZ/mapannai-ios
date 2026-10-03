@@ -39,7 +39,7 @@ SDK 由 `Scripts/fetch-sdk.py` 下载固定官方版本，无需 CocoaPods。`Ve
 
 ## 交通与游览安排
 
-TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与相邻 legs；旧服务缺失字段时保留现有距离展示。日详情相邻地点间展示交通摘要并进入原生 Form，地点长按菜单可编辑游览安排。线路/车次号单独使用 serviceNumber；时间按行程当地 HH:mm 存储，durationMinutes 为用户计划分钟数。
+TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与相邻 legs；旧服务缺失字段时保留现有距离展示。日详情相邻地点间展示交通摘要并进入原生 Form，地点名称行右上角显示游览时间与时长，未设置显示时钟和 --:--；点击该区域或地点长按菜单可编辑游览安排，备注单独显示在地址下方。线路/车次号单独使用 serviceNumber；时间按行程当地 HH:mm 存储，durationMinutes 为用户计划分钟数。
 
 保存调用 PATCH /api/trips/:id/days/:dayId/chains/:chainId，仅发送 stops 或 legs 元数据，空字段显式 null，清除交通使用 remove=true。服务端返回完整 TripDay 后立即更新本地；不重新寻路，不修改规划模式。提交前校验路线快照，切换服务器拒绝旧结果。拖动导致本地 chains 与 routeChains 顺序不匹配时暂时隐藏安排，待服务端刷新后恢复，避免旧交通错配。
 
