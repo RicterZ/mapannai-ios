@@ -733,8 +733,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
         weak var host: UIView?
         var dragFrames: [String: CGRect]?
         var nativeRowTargets: [IndexPath: String] = [:]
-        var lastPoint: CGPoint?
-        var lastTarget: String?
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
@@ -786,27 +784,30 @@ struct NativePlaceListDrop: UIViewRepresentable {
             }
             return session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
         }
-        /// Pool-to-route drops have no source index to preserve. Resolve from the
-        /// current visible route area, including margins, traffic and insertion gaps.
-        private func isolatedRouteTarget(_ session: UIDropSession) -> String? {
-            guard parent.prefix.hasPrefix("day-place/"), let payload = localPayload(session),
-                  payload.dropFirst(parent.prefix.count).split(separator: "/").count == 1,
-                  let host, let window = host.window else { return nil }
+        /// Every day-place drag uses this resolver, regardless of its source.
+        /// Native insertion remains authoritative; live geometry covers missing
+        /// indices after scrolling and the card margins/traffic/gaps.
+        private func resolvedTarget(_ session: UIDropSession, destination: IndexPath?) -> String? {
+            guard parent.prefix.hasPrefix("day-place/"), let host, let window = host.window else {
+                return target(session)
+            }
             let point = session.location(in: window)
             let bounds = host.convert(host.bounds, to: window)
-            guard point.x >= bounds.minX, point.x <= bounds.maxX else { return nil }
-            return NativeRouteDropGeometry.target(at: point, frames: parent.frames)
+            if let pool = livePoolTarget(session) { return pool }
+            guard bounds.contains(point) else { return nil }
+            let geometric = NativeRouteDropGeometry.target(at: point, frames: parent.frames)
+            let native = destination.flatMap { insertionTarget(at: $0, session: session) }
+            if native == "unplanned" { return "unplanned" }
+            if let geometric {
+                let route = geometric.split(separator: "/").first
+                if let native, native.split(separator: "/").first == route { return native }
+                return geometric
+            }
+            return native ?? target(session)
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
-            let point = host?.window.map { session.location(in: $0) }
-            let stationary = point.flatMap { point in lastPoint.map { hypot(point.x - $0.x, point.y - $0.y) < 4 } } ?? false
-            // UIKit's destination drives its visible insertion gap. Use that same
-            // boundary for the model instead of independently splitting frozen rows.
-            let nativeTarget = isolatedRouteTarget(session) ?? livePoolTarget(session) ?? destinationIndexPath.flatMap { insertionTarget(at: $0, session: session) }
-            let target = nativeTarget ?? (stationary ? lastTarget : target(session))
-            if let target { lastTarget = target }
-            if !stationary { lastPoint = point }
+            let target = resolvedTarget(session, destination: destinationIndexPath)
             DispatchQueue.main.async { self.parent.onTarget(target) }
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
         }
@@ -842,7 +843,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             guard parent.prefix.hasPrefix("day-place/") else { return nil }
             if let key = nativeRowTargets[path] {
                 let parts = key.split(separator: "/")
-                    return parts.count == 2 && Int(parts[1]) != nil ? key + "/before" : key
+                return parts.count == 2 && Int(parts[1]) != nil ? key + "/before" : key
             }
             // A drop after the pool's last cell has no destination cell. It still
             // belongs to the pool, including when auto-scroll moved it above the finger.
@@ -856,10 +857,10 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
-            parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
+            parent.onTarget(nil); dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            guard let target = isolatedRouteTarget(coordinator.session) ?? livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
+            guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
             parent.onTarget(nil)
             acceptDrop(coordinator.session, target: target)
             // The native lifted snapshot contains the old ordinal. A day move
@@ -878,10 +879,10 @@ struct NativePlaceListDrop: UIViewRepresentable {
             session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
         }
         func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
-            UIDropProposal(operation: target(session) == nil ? .cancel : .move)
+            UIDropProposal(operation: resolvedTarget(session, destination: nil) == nil ? .cancel : .move)
         }
         func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
-            guard let target = target(session) else { return }
+            guard let target = resolvedTarget(session, destination: nil) else { return }
             parent.onTarget(nil)
             acceptDrop(session, target: target)
         }
