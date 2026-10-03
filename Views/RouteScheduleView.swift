@@ -143,7 +143,7 @@ struct RouteTransportRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: leg?.mode.symbol ?? "arrow.down").frame(width: 18)
-                    Text(leg?.mode.label ?? "添加交通安排")
+                    Text(leg?.mode.label ?? "无交通安排")
                     if let service = leg?.serviceNumber { Text(service).foregroundStyle(.primary).lineLimit(1) }
                     Spacer(minLength: 4)
                     if let summary = leg?.summary, !summary.isEmpty {
