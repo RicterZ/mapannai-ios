@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
+import Combine
 
 struct TripEditorView: View {
     @ObservedObject var store: AppStore
@@ -340,15 +341,47 @@ private struct RoutePlaceSelectionButton: View {
     var body: some View {
         Button { store.focus(marker) } label: {
             HStack(spacing: 12) {
-                Text(ordinal).font(.subheadline).monospacedDigit()
-                    .foregroundStyle(.secondary).frame(minWidth: 18)
-                    .accessibilityIdentifier("route-\(routeIndex)-ordinal-\(marker.id)")
+                RouteOrdinalLabel(store: store, dayID: dayID, routeIndex: routeIndex, markerID: marker.id)
+                    .frame(width: 18)
+                    .fixedSize(horizontal: false, vertical: true)
                 PlaceSelectionRow(marker: marker)
             }.contentShape(Rectangle())
         }.buttonStyle(.automatic).foregroundStyle(.primary)
             .accessibilityIdentifier("route-\(routeIndex)-marker-\(marker.id)")
             .accessibilityValue(ordinal)
     }
+}
+
+/// The dragged cell may stay retained by UIKit while SwiftUI moves its hosting
+/// row. Bind the actual numeral to the local snapshot, not to a later host redraw.
+private struct RouteOrdinalLabel: UIViewRepresentable {
+    let store: AppStore
+    let dayID: String
+    let routeIndex: Int
+    let markerID: String
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> UILabel {
+        let label = UILabel()
+        label.textAlignment = .center
+        label.textColor = .secondaryLabel
+        label.accessibilityIdentifier = "route-\(routeIndex)-ordinal-\(markerID)"
+        return label
+    }
+    func updateUIView(_ label: UILabel, context: Context) {
+        label.font = .monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize,
+                                               weight: .regular)
+        context.coordinator.subscription = store.$trips.sink { [weak label] trips in
+            guard let label else { return }
+            let day = trips.lazy.flatMap(\.days).first { $0.id == dayID }
+            let position = day.flatMap { day in
+                day.chains.indices.contains(routeIndex) ? day.chains[routeIndex].firstIndex(of: markerID) : nil
+            }
+            label.text = position.map { String($0 + 1) } ?? ""
+            label.invalidateIntrinsicContentSize()
+        }
+    }
+    static func dismantleUIView(_ label: UILabel, coordinator: Coordinator) { coordinator.subscription?.cancel() }
+    final class Coordinator { var subscription: AnyCancellable? }
 }
 
 /// A slot changes identity when its contents or ordinal change. Native list drag
@@ -723,19 +756,23 @@ struct NativePlaceListDrop: UIViewRepresentable {
             return nil
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
+            originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
             parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             guard let target = livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
             parent.onTarget(nil)
-            if let destination = coordinator.destinationIndexPath,
-               let attributes = collectionView.layoutAttributesForItem(at: destination) {
-                // SwiftUI owns the data source; toItemAt hides a reused destination
-                // cell until landing completes. Animate the preview independently.
-                let previewTarget = UIDragPreviewTarget(container: collectionView, center: attributes.center)
-                for item in coordinator.items { coordinator.drop(item.dragItem, to: previewTarget) }
-            }
             acceptDrop(coordinator.session, target: target)
+            // The native lifted snapshot contains the old ordinal. A day move
+            // commits the actual row synchronously; do not keep that frozen image
+            // over it with a second landing animation.
+            if !parent.prefix.hasPrefix("day-place/"),
+               let destination = coordinator.destinationIndexPath,
+               let attributes = collectionView.layoutAttributesForItem(at: destination) {
+                for item in coordinator.items {
+                    coordinator.drop(item.dragItem, to: UIDragPreviewTarget(container: collectionView, center: attributes.center))
+                }
+            }
 
         }
         func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {

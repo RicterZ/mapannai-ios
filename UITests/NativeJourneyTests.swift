@@ -2,9 +2,9 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
-    @MainActor func testFloatingOrdinalDragAndLocalOrderStayConsistent() {
+    @MainActor func testDroppedNumeralChangesBeforeDelayedDistance() {
         let app = XCUIApplication()
-        app.launchArguments = ["--demo", "--trip-places-preview", "--delayed-route-build-preview"]
+        app.launchArguments = ["--demo", "--trip-places-preview", "--delayed-route-build-preview", "--delayed-route-distance-preview"]
         app.launch()
         let source = app.buttons["trip-unscheduled-preview-cafe"]
         XCTAssertTrue(source.waitForExistence(timeout: 10))
@@ -36,6 +36,12 @@ final class NativeJourneyTests: XCTestCase {
             withVelocity: .slow, thenHoldForDuration: 2)
         XCTAssertEqual(inserted.value as? String, "3")
         XCTAssertEqual(next.value as? String, "2")
+        XCTAssertEqual(app.staticTexts["route-0-ordinal-preview-cafe"].label, "3")
+        XCTAssertFalse(app.otherElements["route-0-distance-2"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Source numeral after release, before delayed distances"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
         XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-preview-cafe").count, 1)
         XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-demo-1").count, 1)
         let last = app.buttons["route-0-marker-demo-0"]

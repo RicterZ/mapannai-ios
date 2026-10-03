@@ -971,7 +971,15 @@ struct TripSaveDraft: Identifiable {
                 segments = restored
             }
             var transaction = Transaction(); transaction.disablesAnimations = true
-            withTransaction(transaction) { displayRoutes = segments.map(\.display) }
+            var displays = segments.map(\.display)
+            #if DEBUG
+            if demo, ProcessInfo.processInfo.arguments.contains("--delayed-route-distance-preview") {
+                displays = displays.map { route in
+                    var copy = route; copy.isPlanned = true; copy.distance = 850; return copy
+                }
+            }
+            #endif
+            withTransaction(transaction) { displayRoutes = displays }
             guard planning, !segments.isEmpty else { return }
             var failed = 0, completed = 0
             for segment in segments {
