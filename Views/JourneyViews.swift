@@ -102,6 +102,7 @@ struct JourneyDaysContents: View {
         return store.markers.filter { ids.contains($0.id) }
     }
     @State private var nativeDayFrames: [String: CGRect] = [:]
+    @State private var targetedDayID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editing = false
     @State private var deletion: TripDay?
@@ -117,6 +118,9 @@ struct JourneyDaysContents: View {
                             Color.clear.preference(key: NativeDayFrames.self, value: [day.id: geometry.frame(in: .global)])
                         })
                 }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
+                    .listRowBackground(Color(uiColor: .systemBackground)
+                        .overlay(Color(uiColor: .tertiarySystemFill).opacity(targetedDayID == day.id ? 1 : 0)))
+                    .animation(reduceMotion ? nil : .default, value: targetedDayID == day.id)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { deletion = day } label: { Image(systemName: "trash") }
                             .accessibilityLabel("删除")
@@ -178,10 +182,11 @@ struct JourneyDaysContents: View {
             } header: {
                 Color.clear.frame(height: 16).accessibilityHidden(true)
             }
-            }.listRowBackground(Color(uiColor: .systemBackground))
+            }
         }
             .onPreferenceChange(NativeDayFrames.self) { nativeDayFrames = $0 }
-            .background(NativePlaceListDrop(frames: nativeDayFrames, prefix: "trip-place/" + trip.id + "/") { id, dayID in
+            .sensoryFeedback(.selection, trigger: targetedDayID) { _, newValue in newValue != nil }
+            .background(NativePlaceListDrop(frames: nativeDayFrames, prefix: "trip-place/" + trip.id + "/", onTarget: { targetedDayID = $0 }) { id, dayID in
                 if let day = trip.days.first(where: { $0.id == dayID }) {
                     _ = assignPreviewPlaces(["trip-place/" + trip.id + "/" + id], to: day)
                 }

@@ -733,6 +733,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
         weak var host: UIView?
         var dragFrames: [String: CGRect]?
         var nativeRowTargets: [IndexPath: String] = [:]
+        private var publishedTarget: String?
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
@@ -756,7 +757,8 @@ struct NativePlaceListDrop: UIViewRepresentable {
         func target(_ session: UIDropSession) -> String? {
             guard let host, let window = host.window else { return nil }
             let point = session.location(in: window)
-            guard let match = (dragFrames ?? parent.frames).sorted(by: { $0.key.split(separator: "/").count > $1.key.split(separator: "/").count }).first(where: { $0.value.contains(point) }) else { return nil }
+            let frames = parent.prefix.hasPrefix("trip-place/") ? parent.frames : (dragFrames ?? parent.frames)
+            guard let match = frames.sorted(by: { $0.key.split(separator: "/").count > $1.key.split(separator: "/").count }).first(where: { $0.value.contains(point) }) else { return nil }
             let parts = match.key.split(separator: "/")
             if parts.count == 2, Int(parts[1]) != nil {
                 return match.key + (point.y < match.value.midY ? "/before" : "/after")
@@ -808,7 +810,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
             let target = resolvedTarget(session, destination: destinationIndexPath)
-            DispatchQueue.main.async { self.parent.onTarget(target) }
+            publishTarget(target)
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
         }
         private func livePoolTarget(_ session: UIDropSession) -> String? {
@@ -857,11 +859,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
-            parent.onTarget(nil); dragFrames = nil; nativeRowTargets = [:]
+            publishTarget(nil); dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
-            parent.onTarget(nil)
+            publishTarget(nil)
             acceptDrop(coordinator.session, target: target)
             // The native lifted snapshot contains the old ordinal. A day move
             // commits the actual row synchronously; do not keep that frozen image
@@ -878,12 +880,28 @@ struct NativePlaceListDrop: UIViewRepresentable {
         func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
             session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
         }
+        private func publishTarget(_ target: String?) {
+            guard publishedTarget != target else { return }
+            publishedTarget = target
+            DispatchQueue.main.async { self.parent.onTarget(target) }
+        }
+        func collectionView(_ collectionView: UICollectionView, dropSessionDidExit session: UIDropSession) {
+            publishTarget(nil)
+        }
         func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
-            UIDropProposal(operation: resolvedTarget(session, destination: nil) == nil ? .cancel : .move)
+            let target = resolvedTarget(session, destination: nil)
+            publishTarget(target)
+            return UIDropProposal(operation: target == nil ? .cancel : .move)
+        }
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+            publishTarget(nil)
+        }
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+            publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
             guard let target = resolvedTarget(session, destination: nil) else { return }
-            parent.onTarget(nil)
+            publishTarget(nil)
             acceptDrop(session, target: target)
         }
         private func localPayload(_ session: UIDropSession) -> String? {
