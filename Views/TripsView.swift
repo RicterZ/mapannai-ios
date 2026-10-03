@@ -630,6 +630,8 @@ struct NativePlaceListDrop: UIViewRepresentable {
         var lastTarget: String?
         var dragOrdinalOverlay: UILabel?
         var dragOrdinalOffset: CGPoint?
+        var activeDropSession: UIDropSession?
+        var dragDisplayLink: CADisplayLink?
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
@@ -689,11 +691,21 @@ struct NativePlaceListDrop: UIViewRepresentable {
             // boundary for the model instead of independently splitting frozen rows.
             let nativeTarget = livePoolTarget(session) ?? destinationIndexPath.flatMap { insertionTarget(at: $0, session: session) }
             let target = nativeTarget ?? (stationary ? lastTarget : target(session))
+            activeDropSession = session
+            if dragDisplayLink == nil {
+                let link = CADisplayLink(target: self, selector: #selector(updateDragDisplayLink))
+                link.add(to: .main, forMode: .common)
+                dragDisplayLink = link
+            }
             updateDragOrdinalOverlay(session, target: target)
             if let target { lastTarget = target }
             if !stationary { lastPoint = point }
             DispatchQueue.main.async { self.parent.onTarget(target) }
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
+        }
+        @objc private func updateDragDisplayLink() {
+            guard let session = activeDropSession else { return }
+            updateDragOrdinalOverlay(session, target: lastTarget)
         }
         private func updateDragOrdinalOverlay(_ session: UIDropSession, target: String?) {
             guard let window = host?.window, let payload = localPayload(session) else { return }
@@ -761,6 +773,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
             dragOrdinalOverlay?.removeFromSuperview(); dragOrdinalOverlay = nil; dragOrdinalOffset = nil
+            activeDropSession = nil; dragDisplayLink?.invalidate(); dragDisplayLink = nil
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             guard let target = livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
