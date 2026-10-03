@@ -626,12 +626,10 @@ struct NativePlaceListDrop: UIViewRepresentable {
         weak var host: UIView?
         var dragFrames: [String: CGRect]?
         var nativeRowTargets: [IndexPath: String] = [:]
-        var dragPreviewImage: UIImage?
-        var dragPreviewNumberFrame: CGRect?
-        var dragPreviewOriginalOrdinal: String?
-        var dragPreviewOrdinal: String?
         var lastPoint: CGPoint?
         var lastTarget: String?
+        var dragOrdinalOverlay: UILabel?
+        var dragOrdinalOffset: CGPoint?
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
@@ -691,70 +689,44 @@ struct NativePlaceListDrop: UIViewRepresentable {
             // boundary for the model instead of independently splitting frozen rows.
             let nativeTarget = livePoolTarget(session) ?? destinationIndexPath.flatMap { insertionTarget(at: $0, session: session) }
             let target = nativeTarget ?? (stationary ? lastTarget : target(session))
-            updateDragPreview(session, target: target)
+            updateDragOrdinalOverlay(session, target: target)
             if let target { lastTarget = target }
             if !stationary { lastPoint = point }
             DispatchQueue.main.async { self.parent.onTarget(target) }
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
         }
-        private func updateDragPreview(_ session: UIDropSession, target: String?) {
-            guard let payload = localPayload(session), let item = session.items.first,
-                  let list = host as? UICollectionView else { return }
-            let source = payload.dropFirst(parent.prefix.count).split(separator: "/")
-            guard source.count == 2,
-                  let sourceKey = parent.sourceTargets[String(source[0]) + "/" + String(source[1])],
-                  let originalPosition = Int(sourceKey.split(separator: "/").last ?? "") else { return }
-            if dragPreviewImage == nil {
-                guard let path = nativeRowTargets.first(where: { $0.value == sourceKey })?.key,
-                      let cell = list.cellForItem(at: path) else { return }
-                dragPreviewImage = UIGraphicsImageRenderer(bounds: cell.bounds).image { context in
-                    cell.layer.render(in: context.cgContext)
-                }
-                // Match the explicit route row insets; global frames can include
-                // UIKit's lifting transform and shift the number mask sideways.
-                dragPreviewNumberFrame = CGRect(x: 20, y: 0, width: 18,
-                                               height: max(0, cell.bounds.height - 13.5))
-                dragPreviewOriginalOrdinal = String(originalPosition + 1)
+        private func updateDragOrdinalOverlay(_ session: UIDropSession, target: String?) {
+            guard let window = host?.window, let payload = localPayload(session) else { return }
+            let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
+            guard parts.count == 2, let sourceKey = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])],
+                  let originalPosition = Int(sourceKey.split(separator: "/").last ?? ""),
+                  let sourceFrame = (dragFrames ?? parent.frames)[sourceKey] else { return }
+            let point = session.location(in: window)
+            if dragOrdinalOffset == nil {
+                dragOrdinalOffset = CGPoint(x: sourceFrame.minX + 20 - point.x, y: sourceFrame.minY - point.y)
             }
-            var ordinal = dragPreviewOriginalOrdinal ?? ""
-            if target == "unplanned" {
-                ordinal = ""
-            } else if let target {
-                let parts = target.split(separator: "/")
-                if parts.count >= 2, let route = Int(parts[0]) {
-                    let boundary: Int
-                    if let position = Int(parts[1]) {
-                        boundary = position + (parts.last == "after" ? 1 : 0)
-                    } else {
-                        boundary = parent.sourceTargets.values.filter { $0.hasPrefix("\(route)/") }.count
-                    }
-                    let removedBefore = Int(source[1]) == route && originalPosition < boundary
+            if dragOrdinalOverlay == nil {
+                let label = UILabel(frame: .zero)
+                label.textAlignment = .center
+                label.font = .monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize, weight: .regular)
+                label.textColor = .secondaryLabel
+                label.backgroundColor = .systemBackground
+                label.layer.cornerRadius = 2; label.clipsToBounds = true
+                window.addSubview(label); dragOrdinalOverlay = label
+            }
+            var ordinal = String(originalPosition + 1)
+            if target == "unplanned" { ordinal = "" }
+            else if let target {
+                let pieces = target.split(separator: "/")
+                if pieces.count >= 2, let route = Int(pieces[0]), let position = Int(pieces[1]) {
+                    let boundary = position + (pieces.last == "after" ? 1 : 0)
+                    let removedBefore = Int(parts[1]) == route && originalPosition < boundary
                     ordinal = String(boundary + 1 - (removedBefore ? 1 : 0))
                 }
             }
-            guard ordinal != dragPreviewOrdinal, let image = dragPreviewImage,
-                  let numberFrame = dragPreviewNumberFrame else { return }
-            dragPreviewOrdinal = ordinal
-            // Reassigning the provider refreshes the floating UIKit preview. Keep
-            // the source row's exact snapshot/size; redraw only its ordinal region.
-            let font = UIFont.monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize,
-                                                       weight: .regular)
-            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.secondaryLabel]
-            let text = ordinal as NSString
-            let size = text.size(withAttributes: attributes)
-            let updatedImage = UIGraphicsImageRenderer(size: image.size).image { context in
-                image.draw(at: .zero)
-                UIColor.systemBackground.setFill()
-                context.fill(numberFrame)
-                text.draw(at: CGPoint(x: numberFrame.midX - size.width / 2,
-                                      y: numberFrame.midY - size.height / 2), withAttributes: attributes)
-            }
-            item.previewProvider = {
-                let view = UIImageView(image: updatedImage)
-                let parameters = UIDragPreviewParameters()
-                parameters.backgroundColor = .clear
-                return UIDragPreview(view: view, parameters: parameters)
-            }
+            guard let label = dragOrdinalOverlay, let offset = dragOrdinalOffset else { return }
+            label.text = ordinal
+            label.frame = CGRect(x: point.x + offset.x, y: point.y + offset.y, width: 24, height: max(28, sourceFrame.height - 13.5))
         }
         private func livePoolTarget(_ session: UIDropSession) -> String? {
             guard let window = host?.window, let pool = parent.frames["unplanned"],
@@ -788,12 +760,10 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             parent.onTarget(nil); lastTarget = nil; lastPoint = nil; dragFrames = nil; nativeRowTargets = [:]
-            dragPreviewImage = nil; dragPreviewNumberFrame = nil
-            dragPreviewOrdinal = nil; dragPreviewOriginalOrdinal = nil
+            dragOrdinalOverlay?.removeFromSuperview(); dragOrdinalOverlay = nil; dragOrdinalOffset = nil
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             guard let target = livePoolTarget(coordinator.session) ?? coordinator.destinationIndexPath.flatMap({ insertionTarget(at: $0, session: coordinator.session) }) ?? lastTarget ?? target(coordinator.session) else { return }
-            updateDragPreview(coordinator.session, target: target)
             parent.onTarget(nil)
             if let destination = coordinator.destinationIndexPath,
                let attributes = collectionView.layoutAttributesForItem(at: destination) {
