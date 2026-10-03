@@ -2,6 +2,19 @@ import XCTest
 @testable import MapAnNai
 
 final class AIPlannerTests: XCTestCase {
+    @MainActor func testStopPreservesPartialReplyWithoutRepeatingIt() {
+        let planner = AIPlannerStore()
+        let conversation = AIConversation()
+        planner.conversations = [conversation]
+        planner.activeID = conversation.id
+        planner.partial = "已收到的回复"
+        planner.stop()
+        XCTAssertEqual(planner.conversation?.messages.last?.content, "已收到的回复")
+        XCTAssertEqual(planner.partial, "")
+        planner.stop()
+        XCTAssertEqual(planner.conversation?.messages.count, 1)
+    }
+
     func testRequestUsesServerContractWithoutSystemPromptOrTools() throws {
         let request = AIRequest(settings: AIConfiguration(baseUrl: "https://model.example/v1", apiKey: "test-key", model: "test-model"),
             messages: [AIMessage(role: "user", content: "安排东京三天"), AIMessage(role: "assistant", content: nil)],

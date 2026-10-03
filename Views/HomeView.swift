@@ -517,7 +517,7 @@ struct HomeView: View {
                     .transition(AppMotion.workspaceTransition(edge: .trailing, reduceMotion: reduceMotion))
                     .zIndex(2)
             }
-            if AIPlannerStore.entryEnabled && (!aiPresented || layout.usesSidebar) {
+            if AIPlannerStore.entryEnabled && !settings.hideAIChatIcon && (!aiPresented || layout.usesSidebar) {
                 Button {
                     if aiPresented { aiPlanner.close() } else { aiPlanner.presented = true }
                 } label: {

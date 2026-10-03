@@ -16,7 +16,7 @@ MapAnNai iOS is the native iPhone and iPad client for MapAnNai Plus. Save restau
 - **Use it on your phone or tablet**: Switch trip dates from the collapsed Liquid Glass itinerary capsule on iOS 26 and later (with a frosted material on earlier systems), pull it up for details, or view the map and itinerary side by side on iPad to compare places and organize your plans.
 - **Share travel data with the web app**: Connect to your own MapAnNai Plus server and continue editing the same trip on the web, iPhone, or iPad.
 
-Use the chat icon at the top right of the map to plan with the AI assistant. Configure your model API in Settings first. Assistant replies support Markdown tables; swipe wide tables horizontally to read all columns.
+Use the chat icon at the top right of the map to plan with the AI assistant. Configure your model API in Settings first. Settings also lets you hide the chat icon (off by default). Replies can continue briefly in the background; interrupted replies retain the text already received and are never automatically resent. Assistant replies support Markdown tables; swipe wide tables horizontally to read all columns.
 
 ## Plan your first trip
 

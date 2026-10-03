@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import UIKit
 
 struct AIConfiguration: Codable, Equatable {
     var baseUrl = "https://api.openai.com/v1"
@@ -181,7 +182,7 @@ actor AIHistoryRepository {
 }
 
 @MainActor final class AIPlannerStore: ObservableObject {
-    // Deliberately hidden until enabled in a later product release. UI tests can open directly.
+    // The settings preference controls entry visibility independently of conversations.
     static let entryEnabled = true
     @Published var presented = false
     @Published var configuration = AIConfiguration()
@@ -194,6 +195,7 @@ actor AIHistoryRepository {
     @Published private(set) var busy = false
     @Published private(set) var ready = false
     var conversation: AIConversation? { conversations.first { $0.id == activeID } }
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var task: Task<Void, Never>?
     private var effectsTask: Task<Void, Never>?
     private var needsRefresh = false
@@ -253,6 +255,8 @@ actor AIHistoryRepository {
         conversations.removeAll { $0.id == activeID }; activeID = conversations.first?.id; persist()
     }
     func stop() {
+        preservePartialReply()
+        endBackgroundExecution()
         task?.cancel(); task = nil; generation = UUID()
         if busy { error = "已停止；正在执行的操作可能已保存，请查询后继续" }
         busy = false; partial = ""
@@ -280,6 +284,7 @@ actor AIHistoryRepository {
             context: AIContext(localDate: StartupCamera.localDate(now: Date(), calendar: .current), tripId: store.tripID, dayId: store.dayID))
         let service = AIPlannerService(client: store.api)
         activeStore = store
+        beginBackgroundExecution()
         task = Task {
             do {
                 try await service.stream(request) { [self, store] event in
@@ -288,13 +293,47 @@ actor AIHistoryRepository {
             } catch {
                 if generation == revision {
                     let message = error.localizedDescription
-                    self.error = !configuration.apiKey.isEmpty && message.contains(configuration.apiKey) ? "AI 请求失败，请检查配置" : message
+                    if UIApplication.shared.applicationState == .background, error is URLError {
+                        self.error = "后台连接已中断，已保留收到的内容；正在执行的操作可能已保存，请查询后继续"
+                    } else {
+                        self.error = !configuration.apiKey.isEmpty && message.contains(configuration.apiKey) ? "AI 请求失败，请检查配置" : message
+                    }
                 }
             }
             guard generation == revision else { return }
+            preservePartialReply()
+            endBackgroundExecution()
             busy = false; task = nil; partial = ""
             queueRefresh(store: store, ids: []) // Includes partial writes and unexpected disconnects.
         }
+    }
+    private func beginBackgroundExecution() {
+        endBackgroundExecution()
+        let revision = generation
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "AI reply") { [weak self] in
+            Task { @MainActor in
+                guard let self, self.generation == revision else { return }
+                self.expireBackgroundExecution()
+            }
+        }
+    }
+    private func endBackgroundExecution() {
+        guard backgroundTask != .invalid else { return }
+        let identifier = backgroundTask
+        backgroundTask = .invalid
+        UIApplication.shared.endBackgroundTask(identifier)
+    }
+    // Keep received text, invalidate old callbacks, and never replay tool writes.
+    func expireBackgroundExecution() {
+        guard busy else { endBackgroundExecution(); return }
+        stop()
+        error = "后台回复已中断，已保留收到的内容；正在执行的操作可能已保存，请查询后继续"
+    }
+    private func preservePartialReply() {
+        guard !partial.isEmpty, let index = conversations.firstIndex(where: { $0.id == activeID }) else { return }
+        conversations[index].messages.append(AIMessage(role: "assistant", content: partial))
+        partial = ""
+        persist()
     }
     private func receive(_ event: AIEvent, id: UUID, revision: UUID, store: AppStore?) {
         guard generation == revision, let index = conversations.firstIndex(where: { $0.id == id }) else { return }

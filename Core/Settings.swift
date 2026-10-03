@@ -16,9 +16,11 @@ enum NavigationMapApp: String, CaseIterable {
     @Published var navigationMapApp: NavigationMapApp {
         didSet { UserDefaults.standard.set(navigationMapApp.rawValue, forKey: "navigationMapApp") }
     }
+    @Published var hideAIChatIcon: Bool { didSet { UserDefaults.standard.set(hideAIChatIcon, forKey: "hideAIChatIcon") } }
     @Published var revision = UUID()
     var configured: Bool { !baseURL.isEmpty }
     init() {
+        hideAIChatIcon = UserDefaults.standard.bool(forKey: "hideAIChatIcon")
         navigationMapApp = NavigationMapApp(rawValue: UserDefaults.standard.string(forKey: "navigationMapApp") ?? "system") ?? .system
         baseURL = UserDefaults.standard.string(forKey: "baseURL") ?? ""
         token = Keychain.read("api-token")

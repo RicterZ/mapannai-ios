@@ -37,6 +37,10 @@ struct SettingsView: View {
                     TextField("https://map.example.com", text: $url).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("API token（可留空）", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
                 } header: { Text("MapAnNai 服务") } footer: { Text("可先留空服务地址，只开启原生地图。填写现有 Web 服务的根地址后，地点与旅行会和网页共享；token 保存在系统钥匙串。HTTP 可用于局域网开发，公网建议使用 HTTPS。") }
+                Section("AI 助手") {
+                    Toggle("隐藏 AI 对话图标", isOn: $settings.hideAIChatIcon)
+                        .accessibilityIdentifier("hide-ai-chat-icon-toggle")
+                }
                 AIConfigurationSection(planner: aiPlanner)
                 Section {
                     Toggle("同意高德地图隐私说明", isOn: $consent)
