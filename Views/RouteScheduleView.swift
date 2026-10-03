@@ -141,15 +141,18 @@ struct RouteTransportRow: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
                     Image(systemName: leg?.mode.symbol ?? "arrow.down").frame(width: 18)
                     Text(leg?.mode.label ?? "添加交通安排")
                     if let service = leg?.serviceNumber { Text(service).foregroundStyle(.primary).lineLimit(1) }
                     Spacer(minLength: 4)
-                    Image(systemName: "chevron.right").font(.caption2)
+                    if let summary = leg?.summary, !summary.isEmpty {
+                        Text(summary).font(.caption).monospacedDigit().fixedSize()
+                    } else {
+                        Image(systemName: "chevron.right").font(.caption2)
+                    }
                 }
-                let detail = [distance, leg?.summary].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-                if !detail.isEmpty { Text(detail).monospacedDigit().padding(.leading, 26) }
+                if let distance { Text(distance).monospacedDigit().padding(.leading, 26) }
                 if let note = leg?.note { Text(note).lineLimit(2).padding(.leading, 26) }
             }
             .font(.footnote).foregroundStyle(.secondary)
