@@ -177,3 +177,5 @@ AI配置缺失或无效时，聊天页显示“前往设置”入口并禁用发
 被拖起的路线地点保留系统原生截图预览，不在窗口叠加独立标号，不在拖动期间重设 previewProvider。浮动截图保留提起时的标号；落下后的实际列表读取本地顺序更新标号。
 
 拖放测试使用 --delayed-route-build-preview --delayed-route-distance-preview，将示例路线与 850 m 距离延后 8 秒发布；松手先断言真实 UILabel 为新标号且距离未出现，并保存屏幕截图。
+
+AI 回复的管道 Markdown 表格使用原生 SwiftUI Grid 与横向 ScrollView；支持表头、对齐标记、转义竖线与流式缺失单元格，代码围栏不解析成表格。正文与单元格保留内联 Markdown，系统动态字体与文本选择继续可用。

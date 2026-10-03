@@ -195,7 +195,7 @@ private struct AIMessageBubble: View {
             if isUser { Spacer(minLength: 32) }
             Group {
                 if isUser { Text(content) }
-                else { Text(.init(content)) }
+                else { AIMessageMarkdown(content: content, availableWidth: max(1, maxWidth - 28)) }
             }
             .font(.body)
             .textSelection(.enabled)
