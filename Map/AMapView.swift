@@ -66,6 +66,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var routeRevision = UUID()
         var lastCamera: UUID?
         var lastLocate: UUID?
+        private var pendingLocate = false
         var routesVisible = true
         var lastStyledCompact: Bool?
         var lastStyledSelection: String?
@@ -185,7 +186,35 @@ struct AMapNativeRenderer: UIViewRepresentable {
             if lastLocate == nil { lastLocate = store.locating }
             else if lastLocate != store.locating {
                 lastLocate = store.locating; map.showsUserLocation = true
-                map.setUserTrackingMode(.follow, animated: true)
+                pendingLocate = true
+                if let location = map.userLocation.location, location.horizontalAccuracy >= 0,
+                   abs(location.timestamp.timeIntervalSinceNow) < 30 {
+                    focusUserLocation(map, location: location)
+                }
+            }
+        }
+        func mapView(_ mapView: MAMapView!, didUpdate userLocation: MAUserLocation!, updatingLocation: Bool) {
+            guard pendingLocate, updatingLocation, let mapView, let location = userLocation?.location,
+                  location.horizontalAccuracy >= 0 else { return }
+            focusUserLocation(mapView, location: location)
+        }
+        private func focusUserLocation(_ map: MAMapView, location: CLLocation) {
+            guard pendingLocate, let status = map.getMapStatus() else { return }
+            pendingLocate = false
+            map.setUserTrackingMode(.none, animated: false)
+            let insets = padding(map)
+            status.centerCoordinate = location.coordinate
+            status.zoomLevel = 15
+            status.screenAnchor = CGPoint(
+                x: (map.bounds.width + insets.left - insets.right) / (2 * max(1, map.bounds.width)),
+                y: (map.bounds.height + insets.top - insets.bottom) / (2 * max(1, map.bounds.height)))
+            let duration = CameraMotion.duration(
+                from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
+                to: Coordinates.wgs(Coordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)),
+                currentZoom: Double(map.zoomLevel), targetZoom: 15,
+                reduceMotion: UIAccessibility.isReduceMotionEnabled)
+            withCameraAnimation(duration: duration) {
+                map.setMapStatus(status, animated: duration > 0, duration: duration)
             }
         }
         private func padding(_ map: MAMapView, command: CameraCommand? = nil) -> UIEdgeInsets {
