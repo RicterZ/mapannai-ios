@@ -75,6 +75,7 @@ struct DayContentsView: View {
     var onViewRoute: () -> Void = {}
     @Environment(\.colorScheme) private var colorScheme
     @State private var chainEditor: ChainEditRequest?
+    @State private var scheduleEditor: RouteScheduleRequest?
     @State private var editingTitle = false
     @State private var title = ""
     @State private var deletingDay = false
@@ -143,7 +144,24 @@ struct DayContentsView: View {
                             if let marker = store.markers.first(where: { $0.id == id }) {
                                 VStack(spacing: 0) {
                                     RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker)
-                                    if position + 1 < chain.count, let distance = routeDistance(chain: chain, index: index, position: position + 1) {
+                                    if let route = day.scheduledRoute(at: index) {
+                                        let stop = route.stops[position]
+                                        if !stop.summary.isEmpty || stop.note != nil {
+                                            Button { openSchedule(route, position: position, transport: false) } label: {
+                                                HStack(spacing: 5) {
+                                                    Image(systemName: "clock")
+                                                    Text(stop.summary.isEmpty ? "游览安排" : stop.summary).monospacedDigit()
+                                                    if let note = stop.note { Text(note).lineLimit(1) }
+                                                    Spacer()
+                                                }.font(.footnote).foregroundStyle(.secondary).padding(.leading, 28).padding(.bottom, 5)
+                                            }.buttonStyle(.plain).accessibilityLabel("编辑游览安排")
+                                        }
+                                        if position + 1 < chain.count {
+                                            RouteTransportRow(leg: route.leg(at: position), distance: routeDistance(chain: chain, index: index, position: position + 1)) {
+                                                openSchedule(route, position: position, transport: true)
+                                            }.accessibilityIdentifier("route-\(index)-transport-\(position)")
+                                        }
+                                    } else if position + 1 < chain.count, let distance = routeDistance(chain: chain, index: index, position: position + 1) {
                                         HStack(spacing: 8) {
                                             Rectangle().fill(Theme.routeDividerColor).frame(height: Theme.routeDividerHeight)
                                             Text(distance).font(.caption).foregroundStyle(.secondary).fixedSize()
@@ -174,6 +192,13 @@ struct DayContentsView: View {
                                     return NativePlaceItemProvider(payload: "day-place/" + day.id + "/" + id + "/" + String(index))
                                 }
                                 .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id) }
+                                .contextMenu {
+                                    if let route = day.scheduledRoute(at: index) {
+                                        Button("游览安排", systemImage: "clock") { openSchedule(route, position: position, transport: false) }
+                                        if position + 1 < chain.count { Button("交通安排", systemImage: "tram") { openSchedule(route, position: position, transport: true) } }
+                                    }
+                                    Button("移出路线", systemImage: "minus.circle") { makeDayPlaceUnplanned(id) }
+                                }
 
                             }
                         }
@@ -249,6 +274,7 @@ struct DayContentsView: View {
             moveDayPlace(markerID, from: source, to: index, at: insertion)
         })
         .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
+        .sheet(item: $scheduleEditor) { RouteScheduleEditor(store: store, request: $0) }
         .alert("日期标题", isPresented: $editingTitle) {
             TextField("例如：梧桐街区漫步", text: $title)
             Button("取消", role: .cancel) {}
@@ -312,6 +338,13 @@ struct DayContentsView: View {
         }
     }
 
+    private func openSchedule(_ route: RouteChain, position: Int, transport: Bool) {
+        guard route.stops.indices.contains(position), !transport || route.stops.indices.contains(position + 1) else { return }
+        let names = Dictionary(store.markers.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        scheduleEditor = RouteScheduleRequest(day: day, route: route, position: position, isTransport: transport,
+            fromTitle: names[route.stops[position].markerId] ?? "地点",
+            toTitle: transport ? names[route.stops[position + 1].markerId] ?? "地点" : nil)
+    }
     private func routeDistance(chain: [String], index: Int, position: Int) -> String? {
         #if DEBUG
         if store.demo, ProcessInfo.processInfo.arguments.contains("--route-distance-preview"), position > 0, position < chain.count {

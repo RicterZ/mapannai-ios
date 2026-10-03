@@ -76,7 +76,14 @@ struct TripDay: Codable, Identifiable, Hashable {
     var colorIndex: Int?
     var markerIds: [String]
     var chains: [[String]]
+    var routeChains: [RouteChain]? = nil
     var label: String { title?.isEmpty == false ? title! : date }
+    func scheduledRoute(at index: Int) -> RouteChain? {
+        guard chains.indices.contains(index) else { return nil }
+        let ids = chains[index]
+        if let routes = routeChains, routes.indices.contains(index), routes[index].stops.map(\.markerId) == ids { return routes[index] }
+        return routeChains?.first { $0.stops.map(\.markerId) == ids }
+    }
     func removing(_ markerID: String) -> TripDay {
         var copy = self
         copy.markerIds.removeAll { $0 == markerID }

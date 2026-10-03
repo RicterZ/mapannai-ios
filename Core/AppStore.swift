@@ -540,6 +540,24 @@ struct TripSaveDraft: Identifiable {
         let body: [String: Any] = ["title": day.title ?? "", "emoji": day.emoji ?? "", "markerIds": day.markerIds, "chains": day.chains]
         return await perform { try await $0.mutate(Self.dayPath(day), method: "PUT", body: body) }
     }
+    func saveRouteSchedule(_ request: RouteScheduleRequest, patch: [String: Any], using suppliedClient: APIClient? = nil) async -> Bool {
+        guard let latest = trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }),
+              latest.chains == request.day.chains,
+              latest.routeChains?.contains(request.route) == true else {
+            errorMessage = "路线已更新，请重新打开安排"; return false
+        }
+        let revision = connectionRevision
+        return await perform(expectedRevision: revision) { client in
+            let updated: TripDay = try await (suppliedClient ?? client).request(Self.dayPath(request.day) + "/chains/" + APIClient.id(request.route.id), method: "PATCH", body: patch)
+            await self.acceptRouteSchedule(updated, revision: revision)
+        }
+    }
+    private func acceptRouteSchedule(_ day: TripDay, revision: UUID) {
+        guard revision == connectionRevision,
+              let ti = trips.firstIndex(where: { $0.id == day.tripId }),
+              let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
+        trips[ti].days[di] = day
+    }
     static func dayPath(_ day: TripDay) -> String { "trips/\(APIClient.id(day.tripId))/days/\(APIClient.id(day.id))" }
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
         addMarkerInBackground(marker, to: day)
@@ -1045,6 +1063,16 @@ struct TripSaveDraft: Identifiable {
             ]
         }
 
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--transport-schedule-preview") {
+            let stops = [ChainStop(id: "preview-stop-0", markerId: "demo-0", startTime: "09:30", durationMinutes: 60),
+                         ChainStop(id: "preview-stop-1", markerId: "demo-1", startTime: "10:45", durationMinutes: 45),
+                         ChainStop(id: "preview-stop-2", markerId: "demo-2")]
+            trips[0].days[0].routeChains = [RouteChain(id: "preview-route", stops: stops,
+                legs: [ChainLeg(fromStopId: stops[0].id, toStopId: stops[1].id, mode: .subway,
+                    serviceNumber: "10号线", startTime: "10:30", durationMinutes: 15, note: "陕西南路站 · 往虹桥火车站方向")])]
+        }
+        #endif
         if ProcessInfo.processInfo.arguments.contains("--overlapping-routes-demo") {
             trips[0].days[1].markerIds = ["demo-0", "demo-1", "demo-2"]
             trips[0].days[1].chains = [["demo-0", "demo-1", "demo-2"]]
