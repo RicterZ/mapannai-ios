@@ -32,7 +32,7 @@ struct AIMessageMarkdown: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
             .padding(.bottom, 4)
         }
-        .frame(maxWidth: availableWidth, alignment: .leading)
+        .frame(width: availableWidth, alignment: .leading)
         .accessibilityIdentifier("ai-markdown-table")
     }
 
@@ -43,8 +43,8 @@ struct AIMessageMarkdown: View {
                 Text(.init(cells[index]))
                     .fontWeight(header ? .semibold : .regular)
                     .multilineTextAlignment(alignment == .center ? .center : alignment == .trailing ? .trailing : .leading)
-                    .frame(width: width - 20, alignment: alignment == .center ? .center : alignment == .trailing ? .trailing : .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .frame(minWidth: width - 20, alignment: alignment == .center ? .center : alignment == .trailing ? .trailing : .leading)
                     .padding(10)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .background(header ? Color(uiColor: .tertiarySystemFill) : .clear)

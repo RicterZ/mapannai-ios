@@ -178,6 +178,6 @@ AI配置缺失或无效时，聊天页显示“前往设置”入口并禁用发
 
 拖放测试使用 --delayed-route-build-preview --delayed-route-distance-preview，将示例路线与 850 m 距离延后 8 秒发布；松手先断言真实 UILabel 为新标号且距离未出现，并保存屏幕截图。
 
-AI 回复的管道 Markdown 表格使用原生 SwiftUI Grid 与横向 ScrollView；支持表头、对齐标记、转义竖线与流式缺失单元格，代码围栏不解析成表格。正文与单元格保留内联 Markdown，系统动态字体与文本选择继续可用。
+AI 回复的管道 Markdown 表格使用原生 SwiftUI Grid 与横向 ScrollView；支持表头、对齐标记、转义竖线与流式缺失单元格，代码围栏不解析成表格。正文与单元格保留内联 Markdown，系统动态字体与文本选择继续可用。表格视口固定为气泡内容宽度，列按单元格自然宽度展开，不因气泡宽度自动折行；溢出仅在表格内部横向滚动。
 
 AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执行时间，结束、停止、失败和到期均释放。到期保存部分回复、取消请求并失效 generation，显示后台中断说明；不自动重发写入请求，不承诺长期后台运行。隐藏 AI 对话图标为 UserDefaults 本地偏好，默认 false，仅控制地图右上角入口，不删除配置或历史。
