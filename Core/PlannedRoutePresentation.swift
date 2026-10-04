@@ -15,21 +15,34 @@ enum PlannedRoutePresentation {
         for (index, point) in input.enumerated() where point.isValid {
             if index.isMultiple(of: 128) { try Task.checkCancellation() }
             if let last = kept.last, Coordinates.distance(last, point) < 1, index != input.count - 1 { continue }
-            // Only remove a short local excursion returning within 12m. Bound both
-            // traveled length and spatial extent, so large detours/bridges survive.
-            if kept.count > 2 {
+            // Compare against segments, not sampling vertices: a return can land
+            // halfway along a long road segment. Bounds apply only to the excursion.
+            if kept.count > 1 {
                 let total = (cumulative.last ?? 0) + Coordinates.distance(kept.last!, point)
-                var candidate: Int?
+                let p = xy(point)
+                var candidate: (index: Int, join: Coordinate)?
                 for previous in stride(from: kept.count - 2, through: 0, by: -1) {
-                    let traveled = total - cumulative[previous]
-                    if traveled > 240 { break }
-                    let gap = Coordinates.distance(kept[previous], point)
-                    guard gap <= 12, traveled >= max(35, gap * 4) else { continue }
-                    if kept[previous...].allSatisfy({ Coordinates.distance($0, point) <= 65 }) { candidate = previous }
+                    if total - cumulative[previous + 1] > 600 { break }
+                    let a = xy(kept[previous]), b = xy(kept[previous + 1])
+                    let dx = b.0 - a.0, dy = b.1 - a.1
+                    let length = dx * dx + dy * dy
+                    guard length > 0 else { continue }
+                    let t = min(1, max(0, ((p.0-a.0)*dx + (p.1-a.1)*dy)/length))
+                    let gap = hypot(p.0-a.0-t*dx, p.1-a.1-t*dy)
+                    let traveled = total - cumulative[previous] - t * (cumulative[previous + 1] - cumulative[previous])
+                    guard gap <= 20, traveled <= 600, traveled >= max(35, gap * 4) else { continue }
+                    guard kept[(previous + 1)...].allSatisfy({ Coordinates.distance($0, point) <= 160 }) else { continue }
+                    let join = Coordinate(latitude: kept[previous].latitude + t * (kept[previous + 1].latitude - kept[previous].latitude),
+                                          longitude: kept[previous].longitude + t * (kept[previous + 1].longitude - kept[previous].longitude))
+                    candidate = (previous, join)
                 }
                 if let candidate {
-                    kept.removeSubrange((candidate + 1)..<kept.count)
-                    cumulative.removeSubrange((candidate + 1)..<cumulative.count)
+                    kept.removeSubrange((candidate.index + 1)..<kept.count)
+                    cumulative.removeSubrange((candidate.index + 1)..<cumulative.count)
+                    if Coordinates.distance(kept.last!, candidate.join) > 1 {
+                        cumulative.append(cumulative.last! + Coordinates.distance(kept.last!, candidate.join))
+                        kept.append(candidate.join)
+                    }
                 }
             }
             cumulative.append((cumulative.last ?? 0) + (kept.last.map { Coordinates.distance($0, point) } ?? 0))

@@ -16,6 +16,22 @@ final class PlannedRoutePresentationTests: XCTestCase {
         XCTAssertTrue(cleaned.contains(Self.point(350, 150)))
         XCTAssertFalse(cleaned.contains(Self.point(285, 40)))
     }
+    // Sparse road samples: the return is in the middle of the first segment.
+    static let accessLoop = [(0.0,0.0),(400,0),(400,100),(350,150),(300,100),(350,0),(350,-200)].map(point)
+    func testSparseReturnAndAccessLoopArePruned() throws {
+        let spur = [(0.0,0.0),(300,0),(300,15),(240,15),(240,200)].map(Self.point)
+        let cleaned = try PlannedRoutePresentation.points(spur)
+        XCTAssertEqual(cleaned.first, spur.first)
+        XCTAssertEqual(cleaned.last, spur.last)
+        XCTAssertFalse(cleaned.contains(Self.point(300,0)))
+        let loop = try PlannedRoutePresentation.points(Self.accessLoop)
+        XCTAssertEqual(loop.first, Self.accessLoop.first)
+        XCTAssertEqual(loop.last, Self.accessLoop.last)
+        XCTAssertFalse(loop.contains(Self.point(350,150)))
+        // A genuine bend that does not return near the road must survive.
+        let bend = [(0.0,0.0),(300,0),(300,100),(500,100)].map(Self.point)
+        XCTAssertEqual(try PlannedRoutePresentation.points(bend), bend)
+    }
     func testLargeLoopAndSeparatedLegsArePreserved() throws {
         let large = [(0.0,0.0),(0,300),(300,300),(300,0),(0,0),(600,0)].map(Self.point)
         XCTAssertEqual(try PlannedRoutePresentation.points(large), large)
@@ -83,9 +99,9 @@ final class PlannedRoutePresentationTests: XCTestCase {
         let delegate = PresentationMapDelegate(); map.delegate = delegate
         let center = Self.point(300,100)
         map.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude), latitudinalMeters: 1100, longitudinalMeters: 800), animated: false)
-        for (name, points) in [("Before: planned geometry fixture", Self.fixture), ("After: shared pruning", try PlannedRoutePresentation.points(Self.fixture))] {
+        for (name, points) in [("Before: access loop fixture", Self.accessLoop), ("After: shared pruning", try PlannedRoutePresentation.points(Self.accessLoop))] {
             map.removeOverlays(map.overlays)
-            var coordinates = (name.hasPrefix("Before") ? RouteGeometry.smooth(points) : points).map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
             map.addOverlay(MKPolyline(coordinates: &coordinates, count: coordinates.count))
             try await Task.sleep(for: .seconds(2))
             let image = UIGraphicsImageRenderer(bounds: map.bounds).image { _ in map.drawHierarchy(in: map.bounds, afterScreenUpdates: true) }
