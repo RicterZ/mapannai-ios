@@ -274,11 +274,12 @@ struct AMapNativeRenderer: UIViewRepresentable {
             for id in changed {
                 guard let pair = lines[id] else { continue }
                 let active = selected.contains(id)
+                let dashed = store.displayRoutes.first(where: { $0.id == id })?.isDashed == true
                 if let white = map.renderer(for: pair.0) as? MAPolylineRenderer {
-                    white.lineWidth = RouteLineAppearance.outlineWidth(selected: active); white.setNeedsUpdate()
+                    white.lineWidth = RouteLineAppearance.outlineWidth(selected: active, dashed: dashed); white.setNeedsUpdate()
                 }
                 if let color = map.renderer(for: pair.1) as? MAPolylineRenderer {
-                    color.lineWidth = RouteLineAppearance.width(selected: active)
+                    color.lineWidth = RouteLineAppearance.width(selected: active, dashed: dashed)
                     color.strokeImage = active && !store.placeSearchPresented && store.displayRoutes.first(where: { $0.id == id })?.isDashed != true ? RouteMotionOverlay.texture(color: color.strokeColor, google: false) : nil
                     color.setNeedsUpdate()
                 }
@@ -356,11 +357,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 overlayStyle[ObjectIdentifier(white)] = (RouteLineAppearance.outline(route.colorIndex), true)
                 if let renderer = map.renderer(for: white) as? MAPolylineRenderer {
                     renderer.strokeColor = RouteLineAppearance.outline(route.colorIndex)
+                    renderer.lineWidth = RouteLineAppearance.outlineWidth(selected: store.displayRoutes.first(where: { $0.id == route.id })?.dayID == store.dayID, dashed: route.isDashed)
                     renderer.lineDashType = route.isDashed ? kMALineDashTypeSquare : kMALineDashTypeNone
                     renderer.setNeedsUpdate()
                 }
                 if let renderer = map.renderer(for: colored) as? MAPolylineRenderer {
                     renderer.strokeColor = tint
+                    renderer.lineWidth = RouteLineAppearance.width(selected: store.displayRoutes.first(where: { $0.id == route.id })?.dayID == store.dayID, dashed: route.isDashed)
                     renderer.lineDashType = route.isDashed ? kMALineDashTypeSquare : kMALineDashTypeNone
                     if route.isDashed { renderer.strokeImage = nil }
                     renderer.setNeedsUpdate()
@@ -522,8 +525,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
             renderer.strokeColor = style.0
             let id = lines.first { $0.value.0 === line || $0.value.1 === line }?.key
             let selected = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.dayID == store.dayID && store.dayID != nil
-            renderer.lineWidth = style.1 ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
             let dashed = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.isDashed == true
+            renderer.lineWidth = style.1 ? RouteLineAppearance.outlineWidth(selected: selected, dashed: dashed) : RouteLineAppearance.width(selected: selected, dashed: dashed)
             renderer.lineDashType = dashed ? kMALineDashTypeSquare : kMALineDashTypeNone
             if !style.1 && selected && !store.placeSearchPresented && !dashed {
                 renderer.strokeImage = RouteMotionOverlay.texture(color: style.0, google: false)
@@ -706,8 +709,8 @@ struct PreviewMap: View {
                         var path = Path(); for (index, p) in route.points.enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                         }
-                        context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))
-                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))
+                        context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID, dashed: route.isDashed), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))
+                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID, dashed: route.isDashed), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))
                     }
                 }
                 TimelineView(.animation(paused: true)) { timeline in

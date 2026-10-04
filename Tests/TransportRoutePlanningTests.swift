@@ -62,10 +62,47 @@ final class TransportRoutePlanningTests: XCTestCase {
                 line.dayID = selected ? (store.dayID ?? "") : "unselected"
                 line.casing = casing; line.isDashed = true
                 let renderer = try XCTUnwrap(coordinator.mapView(map,rendererFor:line) as? MKPolylineRenderer)
+                XCTAssertEqual(renderer.lineWidth, selected ? 3 : 2.5)
                 XCTAssertEqual(renderer.lineDashPattern,[8,6])
                 XCTAssertEqual(renderer.lineCap,.butt, "Round caps consume the 6pt gap when selected")
             }
         }
+    }
+    @MainActor func testDashedRouteVisualReview() async throws {
+        let store = AppStore(settings:Settings(),demo:true)
+        await store.awaitRouteUpdates()
+        let coordinator = AppleMapRenderer.Coordinator(store)
+        let window = UIWindow(frame:CGRect(x:0,y:0,width:390,height:700))
+        let map = MKMapView(frame:window.bounds)
+        let controller = UIViewController(); controller.view = map
+        window.rootViewController = controller; window.makeKeyAndVisible()
+        map.delegate = coordinator
+        map.setRegion(MKCoordinateRegion(center:CLLocationCoordinate2D(latitude:31.23,longitude:121.47),latitudinalMeters:1800,longitudinalMeters:1200),animated:false)
+        let points = RouteGeometry.curve(Coordinate(latitude:31.225,longitude:121.466),Coordinate(latitude:31.235,longitude:121.474))
+        for before in [true,false] {
+            map.removeOverlays(map.overlays)
+            var coordinates = points.map { CLLocationCoordinate2D(latitude:$0.latitude,longitude:$0.longitude) }
+            for casing in [true,false] {
+                let line = AppleMapRenderer.Line(coordinates:&coordinates,count:coordinates.count)
+                line.dayID = store.dayID ?? ""; line.casing = casing; line.isDashed = true
+                map.addOverlay(line)
+            }
+            try await Task.sleep(for:.seconds(2))
+            if before {
+                for overlay in map.overlays {
+                    if let line = overlay as? AppleMapRenderer.Line, let renderer = map.renderer(for:line) as? MKPolylineRenderer {
+                        renderer.lineWidth = line.casing ? 8 : 6
+                        renderer.setNeedsDisplay()
+                    }
+                }
+            }
+            try await Task.sleep(for:.milliseconds(250))
+            let image = UIGraphicsImageRenderer(bounds:map.bounds).image { _ in map.drawHierarchy(in:map.bounds,afterScreenUpdates:true) }
+            let attachment = XCTAttachment(image:image)
+            attachment.name = before ? "Before 8pt casing" : "After 3pt dashed"
+            attachment.lifetime = .keepAlways; add(attachment)
+        }
+        window.isHidden = true
     }
     func testFallbackIsDashedAndTransitExpirySurvivesDiskReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

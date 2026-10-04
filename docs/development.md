@@ -219,3 +219,5 @@ Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一�
 规划路径的展示几何统一由RouteProcessing→PlannedRoutePresentation处理，三个SDK及点击命中共用结果。每个地点区间移植Web `src/lib/map/route-geometry.ts` 的 `smoothRoutePath`：0.3m去重，端点入口绕行裁剪（弧长≤500m、范围≤180m、端点距离≤65m），地点附近或小型闭环剪枝，30m走廊内短弯简化，6m误差RDP，再去除短尖刺折返并以最大45m半径局部圆角。参数与处理顺序保持Web一致，固定样例逐坐标对照Web输出；Swift保留后台执行及取消检查。贝塞尔选项和fallback不变；原始API路径/距离仍存RouteCache，展示结果不回写。RouteOverlapPresentation在RouteProcessing内统一处理不同规划区间的反向共线：夹角点积<-0.94、横距≤5m，双方沿各自行进方向左侧偏移最多8m，距端点40m内渐变归零；16m采样和32m空间索引，超过200km单段暂不偏移。保留unseparatedPoints避免刷新累计偏移；所有SDK及命中读取同一展示points。偏移为地理米数，随地图缩小屏幕间隔会减小；同向/交叉/fallback不主动错开。
 
 路线规划仅保留开关，移除全局自动/步行/驾车选择。`POST /api/directions` 发送起终点和当前有向相邻访问的 `transportMode`（无交通安排时省略），不发送旧 `mode`，映射及默认选择由服务端负责。开启规划后，没有可用规划路径的段（等待请求、请求失败、所有非空fallback，含NO_ROUTE/UNSUPPORTED_MODE）均绘制虚线贝塞尔；关闭规划时保留实线关联曲线，不展示为实际路线距离。缓存v2隔离服务器/provider/交通方式/有向端点；公交、地铁、火车成功和NO_ROUTE缓存1小时，其他终态fallback保留。交通方式修改或拖动改变相邻边后重新匹配；过期缓存不得被保留的显示几何跳过。正常路径仍使用共享Web展示剪枝及iOS往返分离，不改变服务端路径与距离。
+
+虚线示意路线共用轻量线宽：普通2.5pt、选中3pt，不外扩描边；实线路线宽度不变。MapKit虚线使用平头保留断口。

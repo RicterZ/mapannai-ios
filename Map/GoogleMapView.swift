@@ -118,12 +118,12 @@ struct GoogleMapRenderer: UIViewRepresentable {
                     let path = GMSMutablePath()
                     for point in geometry.points { path.add(Self.coordinate(point)) }
                     let casing = GMSPolyline(path: path)
-                    casing.strokeWidth = RouteLineAppearance.outlineWidth(selected: false)
+                    casing.strokeWidth = RouteLineAppearance.outlineWidth(selected: false, dashed: geometry.isDashed)
                     casing.strokeColor = RouteLineAppearance.outline(geometry.colorIndex); casing.isTappable = false; casing.zIndex = 0
                     casing.map = map; casings[geometry.id] = casing
                     let line = GMSPolyline(path: path)
                     line.zIndex = 1
-                    line.strokeWidth = RouteLineAppearance.width(selected: false); line.strokeColor = RouteLineAppearance.color(geometry.colorIndex)
+                    line.strokeWidth = RouteLineAppearance.width(selected: false, dashed: geometry.isDashed); line.strokeColor = RouteLineAppearance.color(geometry.colorIndex)
                     line.userData = geometry.id; line.isTappable = !store.placeSearchPresented
                     line.map = map; lines[geometry.id] = line
                 }
@@ -132,8 +132,9 @@ struct GoogleMapRenderer: UIViewRepresentable {
             let selected = store.displayRoutes.filter { $0.dayID == store.dayID }
             let selectedIDs = Set(selected.map(\.id))
             for (id, line) in lines {
-                line.strokeWidth = RouteLineAppearance.width(selected: selectedIDs.contains(id))
-                casings[id]?.strokeWidth = RouteLineAppearance.outlineWidth(selected: selectedIDs.contains(id))
+                let dashed = geometries.first(where: { $0.id == id })?.isDashed == true
+                line.strokeWidth = RouteLineAppearance.width(selected: selectedIDs.contains(id), dashed: dashed)
+                casings[id]?.strokeWidth = RouteLineAppearance.outlineWidth(selected: selectedIDs.contains(id), dashed: dashed)
                 casings[id]?.map = line.map
                 if geometries.first(where: { $0.id == id })?.isDashed == true, let path = line.path {
                     let unit = 2 / (256 * pow(2, Double(map.camera.zoom)))

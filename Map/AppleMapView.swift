@@ -223,7 +223,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             let selected = line.dayID == store.dayID
             renderer.alpha = compact ? 0 : 1
             renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
-            renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
+            renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: selected, dashed: line.isDashed) : RouteLineAppearance.width(selected: selected, dashed: line.isDashed)
             renderer.lineCap = line.isDashed ? .butt : .round; renderer.lineJoin = .round
             renderer.lineDashPattern = line.isDashed ? [8, 6] : nil
         }
