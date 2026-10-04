@@ -1,5 +1,10 @@
-// Copy to Local.xcconfig and use the iOS SDK key registered for me.mapannai.ios.
+// Copy to Git-ignored Local.xcconfig. Keep all local map credentials here.
+// Only the two iOS SDK values are embedded in the app.
 AMAP_IOS_KEY =
-
-// Optional: Maps SDK for iOS key, restricted to me.mapannai.ios.
 GOOGLE_MAPS_IOS_KEY =
+
+// Optional server/Web credentials for local management only, never embedded.
+GOOGLE_API_KEY =
+AMAP_API_KEY =
+AMAP_JS_KEY =
+AMAP_JS_SECURITY_CODE =
