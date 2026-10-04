@@ -31,6 +31,7 @@
 		39485F3DE95106F278FE9E42 /* DayCameraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */; };
 		3949F712B65422C0D0BDCFC9 /* AddMapPlaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4727193173735B1B9BB87B02 /* AddMapPlaceTests.swift */; };
 		3CB22184CBBAE48E12851E89 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6BCC61DF450ED6A22EB583F /* Theme.swift */; };
+		3D720D267564FEC8C55445D1 /* AppleMapCoordinateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73EFD766A2F6A15B0BE41DCD /* AppleMapCoordinateTests.swift */; };
 		40D75353D7FB6F3862F2FA5B /* ItineraryScrollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1967E749797AC413790F093E /* ItineraryScrollTests.swift */; };
 		4692A1E0AFE15F940C05AF1A /* PanelControlsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4869E83E16B78BCCC652AAF2 /* PanelControlsTests.swift */; };
 		49854BE16EBA83ACCBB42D5E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5AAA4D8D79DFD1AE6A2DFD48 /* PrivacyInfo.xcprivacy */; };
@@ -167,6 +168,7 @@
 		6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyBackgroundTests.swift; sourceTree = "<group>"; };
 		71A017E8694F055DAB5D395B /* AIPlannerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerUITests.swift; sourceTree = "<group>"; };
 		7242A04536ED3C50E6452593 /* MarkerImageCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompression.swift; sourceTree = "<group>"; };
+		73EFD766A2F6A15B0BE41DCD /* AppleMapCoordinateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMapCoordinateTests.swift; sourceTree = "<group>"; };
 		77B1BBFF8F1D29583F6C7FF1 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		79073B6C556CA5650266332B /* MapBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapBackgroundTests.swift; sourceTree = "<group>"; };
 		7DC8A3EBC540A61F7259026E /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
@@ -284,6 +286,7 @@
 			isa = PBXGroup;
 			children = (
 				5AD8D5E25A1C9E0E2FACB862 /* AIPlannerTests.swift */,
+				73EFD766A2F6A15B0BE41DCD /* AppleMapCoordinateTests.swift */,
 				198C34C423C7BB478F9EC042 /* BackgroundSaveTests.swift */,
 				2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */,
 				B7708E0ACC60D14458C79575 /* ChatMarkdownTests.swift */,
@@ -551,6 +554,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DA9CD0CDD537652D05E8EE9E /* AIPlannerTests.swift in Sources */,
+				3D720D267564FEC8C55445D1 /* AppleMapCoordinateTests.swift in Sources */,
 				8E4BA9BE46B890358BAE4A01 /* BackgroundSaveTests.swift in Sources */,
 				0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */,
 				2630CCDF568636B07A9396BF /* ChatMarkdownTests.swift in Sources */,

@@ -34,7 +34,8 @@ struct AppleMapRenderer: UIViewRepresentable {
             self.key = key; super.init(); self.coordinate = Self.coordinate(coordinate); self.title = title
         }
         static func coordinate(_ point: Coordinate) -> CLLocationCoordinate2D {
-            CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+            let displayed = Coordinates.gcj(point)
+            return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
     final class Line: MKPolyline { var colorIndex = 0 }
@@ -97,14 +98,17 @@ struct AppleMapRenderer: UIViewRepresentable {
             }
             map.setVisibleMapRect(rect, edgePadding: padding, animated: !UIAccessibility.isReduceMotionEnabled)
         }
+        static func internalCoordinate(_ coordinate: CLLocationCoordinate2D) -> Coordinate {
+            Coordinates.wgs(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        }
         func locate(_ map: MKMapView, location: CLLocation) {
             guard pendingLocate, location.horizontalAccuracy >= 0 else { return }
             pendingLocate = false
-            focus(map, command: CameraCommand(points: [Coordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)]))
+            focus(map, command: CameraCommand(points: [Self.internalCoordinate(map.userLocation.coordinate)]))
         }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            let a = mapView.convert(CGPoint(x: 0, y: 0), toCoordinateFrom: mapView)
-            let b = mapView.convert(CGPoint(x: mapView.bounds.width, y: mapView.bounds.height), toCoordinateFrom: mapView)
+            let a = Self.internalCoordinate(mapView.convert(CGPoint(x: 0, y: 0), toCoordinateFrom: mapView))
+            let b = Self.internalCoordinate(mapView.convert(CGPoint(x: mapView.bounds.width, y: mapView.bounds.height), toCoordinateFrom: mapView))
             store.bounds = SearchBounds(west: min(a.longitude, b.longitude), south: min(a.latitude, b.latitude), east: max(a.longitude, b.longitude), north: max(a.latitude, b.latitude))
         }
         func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) { if let location = userLocation.location { locate(mapView, location: location) } }
@@ -134,7 +138,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                 if let marker = pin.marker { store.focus(marker) }
                 else if let place = pin.place { store.choose(place, fromMap: true) }
             } else if let feature = annotation as? MKMapFeatureAnnotation, !store.placeSearchPresented {
-                store.create(at: Coordinate(latitude: feature.coordinate.latitude, longitude: feature.coordinate.longitude), poiName: feature.title)
+                store.create(at: Self.internalCoordinate(feature.coordinate), poiName: feature.title)
             }
             mapView.deselectAnnotation(annotation, animated: false)
         }
@@ -142,7 +146,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         @objc func press(_ gesture: UILongPressGestureRecognizer) {
             guard gesture.state == .began, let map = gesture.view as? MKMapView else { return }
             let coordinate = map.convert(gesture.location(in: map), toCoordinateFrom: map)
-            store.noteMapInteraction(); store.create(at: Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude))
+            store.noteMapInteraction(); store.create(at: Self.internalCoordinate(coordinate))
         }
         @objc func tap(_ gesture: UITapGestureRecognizer) {
             guard gesture.state == .ended, let map = gesture.view as? MKMapView else { return }
