@@ -4,12 +4,16 @@ import MapKit
 final class AppleRouteRenderer: MKPolylineRenderer {
     var showsDirections = false { didSet { if oldValue != showsDirections { setNeedsDisplay() } } }
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
-        context.saveGState()
-        super.draw(mapRect, zoomScale: zoomScale, in: context)
-        context.restoreGState()
-        guard showsDirections, zoomScale > 0 else { return }
+        guard zoomScale > 0 else { return }
         if path == nil { createPath() }
         guard let path else { return }
+        context.saveGState()
+        context.beginPath(); context.addPath(path)
+        context.setStrokeColor((strokeColor ?? .systemBlue).cgColor)
+        context.setLineWidth(lineWidth / zoomScale)
+        context.setLineCap(.round); context.setLineJoin(.round)
+        context.strokePath(); context.restoreGState()
+        guard showsDirections else { return }
         let points = (0..<polyline.pointCount).map { index -> CGPoint in
             let p = point(for: polyline.points()[index])
             return CGPoint(x: p.x * zoomScale, y: p.y * zoomScale)

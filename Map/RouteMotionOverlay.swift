@@ -8,15 +8,15 @@ import UIKit
     static func texture(color: UIColor?, google: Bool) -> UIImage {
         let key = "\(color?.description ?? "clear")/\(google)"
         if let image = textures[key] { return image }
-        // AMap follows a horizontal texture strip. Google stamp images are square and
+        // AMap uses a vertical texture strip (matching the bundled traffic textures). Google images are square and
         // run top-to-bottom; transparent padding retains a thin glyph within the stroke.
-        let size = google ? CGSize(width: 6, height: 6) : CGSize(width: 90, height: 6)
+        let size = google ? CGSize(width: 6, height: 6) : CGSize(width: 6, height: 90)
         let format = UIGraphicsImageRendererFormat(); format.scale = 3
         let image = UIGraphicsImageRenderer(size: size, format: format).image { output in
             let context = output.cgContext
             if let color { context.setFillColor(color.cgColor); context.fill(CGRect(origin: .zero, size: size)) }
             context.translateBy(x: size.width / 2, y: size.height / 2)
-            if google { context.rotate(by: .pi / 2) }
+            context.rotate(by: .pi / 2)
             context.setStrokeColor(UIColor.white.cgColor); context.setLineWidth(strokeWidth)
             context.setLineCap(.round); context.setLineJoin(.round)
             for (index, point) in glyphPoints.enumerated() {
