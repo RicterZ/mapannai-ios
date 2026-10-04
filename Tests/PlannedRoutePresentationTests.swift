@@ -35,6 +35,47 @@ final class PlannedRoutePresentationTests: XCTestCase {
         let curve = try await processing.displayPoints(fallback, origin: origin, destination: destination)
         XCTAssertEqual(curve, RouteGeometry.curve(origin, destination))
     }
+    static var roundTrip: [DisplayRoute] {
+        let points = [(0.0,0.0),(250,0),(250,150),(600,150)].map(point)
+        return [DisplayRoute(id: "out", dayID: "day", tripID: "trip", colorIndex: 0, points: points, isPlanned: true),
+                DisplayRoute(id: "back", dayID: "day", tripID: "trip", colorIndex: 1, points: points.reversed(), isPlanned: true)]
+    }
+    func testOppositeLegsSeparateWithoutDriftOrEndpointChanges() throws {
+        let original = Self.roundTrip
+        let separated = try RouteOverlapPresentation.separate(original)
+        XCTAssertNotEqual(separated[0].points, original[0].points)
+        for i in original.indices {
+            XCTAssertEqual(separated[i].points.first, original[i].points.first)
+            XCTAssertEqual(separated[i].points.last, original[i].points.last)
+        }
+        let again = try RouteOverlapPresentation.separate(separated)
+        XCTAssertEqual(again[0].points, separated[0].points)
+        XCTAssertEqual(again[1].points, separated[1].points)
+        var sameDirection = original; sameDirection[1].points = original[0].points
+        XCTAssertEqual(try RouteOverlapPresentation.separate(sameDirection)[0].points, original[0].points)
+        var fallback = original; fallback[1].isPlanned = false
+        XCTAssertEqual(try RouteOverlapPresentation.separate(fallback)[0].points, original[0].points)
+    }
+    @MainActor func testOverlapScreenshots() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let map = MKMapView(frame: window.bounds)
+        let controller = UIViewController(); controller.view = map; window.rootViewController = controller; window.makeKeyAndVisible()
+        let delegate = PresentationMapDelegate(); map.delegate = delegate
+        let center = Self.point(300,80)
+        map.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude:center.latitude,longitude:center.longitude),latitudinalMeters:900,longitudinalMeters:720),animated:false)
+        for (name,routes) in [("Before overlap",Self.roundTrip),("After separate",try RouteOverlapPresentation.separate(Self.roundTrip))] {
+            map.removeOverlays(map.overlays)
+            for route in routes {
+                var coordinates = route.points.map { CLLocationCoordinate2D(latitude:$0.latitude,longitude:$0.longitude) }
+                let line = MKPolyline(coordinates:&coordinates,count:coordinates.count); line.title = route.id
+                map.addOverlay(line)
+            }
+            try await Task.sleep(for:.seconds(2))
+            let image = UIGraphicsImageRenderer(bounds:map.bounds).image { _ in map.drawHierarchy(in:map.bounds,afterScreenUpdates:true) }
+            let attachment = XCTAttachment(image:image); attachment.name=name; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        window.isHidden=true
+    }
     @MainActor func testMapComparisonScreenshots() async throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
         let map = MKMapView(frame: window.bounds)
@@ -56,7 +97,7 @@ final class PlannedRoutePresentationTests: XCTestCase {
 @MainActor private final class PresentationMapDelegate: NSObject, MKMapViewDelegate {
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         let renderer = MKPolylineRenderer(polyline: overlay as! MKPolyline)
-        renderer.strokeColor = .systemOrange; renderer.lineWidth = 6; renderer.lineCap = .round; renderer.lineJoin = .round
+        renderer.strokeColor = overlay.title == "back" ? .systemBlue : .systemOrange; renderer.lineWidth = 6; renderer.lineCap = .round; renderer.lineJoin = .round
         return renderer
     }
 }

@@ -93,6 +93,7 @@
 		C4D5DDD576313DAB75D72D1E /* JourneyEditingActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */; };
 		CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1DE90E8066F7692BEC6055 /* AppStore.swift */; };
 		CF042A2BC70E2C527E1844A0 /* GoogleMaps in Frameworks */ = {isa = PBXBuildFile; productRef = C15FA87F5F0BB5B7E3CB4AC0 /* GoogleMaps */; };
+		D22E9ED119C354B43A405B01 /* RouteOverlapPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 342BDA1456401B4EAD539738 /* RouteOverlapPresentation.swift */; };
 		D34B30E8151C3DFF8428D7E3 /* NativeMapControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DE00593E8084F5D51D56A4 /* NativeMapControls.swift */; };
 		D35081C38CB650DFA49D2085 /* JourneyBackgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */; };
 		D61C89014A16E20523662687 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1579B0865582F6FFBD7E34E0 /* APIClient.swift */; };
@@ -158,6 +159,7 @@
 		2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteDayPicker.swift; sourceTree = "<group>"; };
 		300E21D1B221F08F4F3037F8 /* RouteSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSelection.swift; sourceTree = "<group>"; };
 		33D4E8DFC738036248B04B83 /* RouteMotionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteMotionOverlay.swift; sourceTree = "<group>"; };
+		342BDA1456401B4EAD539738 /* RouteOverlapPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteOverlapPresentation.swift; sourceTree = "<group>"; };
 		37C16D7526C2682672D53176 /* RouteScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteScheduleTests.swift; sourceTree = "<group>"; };
 		3CCA2FF78AF59AF8A3410E29 /* RouteDirectionArrowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteDirectionArrowTests.swift; sourceTree = "<group>"; };
 		3E64E5D5CCD66C47F3724D18 /* AIPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerView.swift; sourceTree = "<group>"; };
@@ -322,6 +324,7 @@
 				8FFDC9F749A4D63D28FFD824 /* PlannedRoutePresentation.swift */,
 				4960F0B624456BC80191B2F2 /* RouteCache.swift */,
 				952CB681D43782DFE76952A6 /* RouteDirectionArrows.swift */,
+				342BDA1456401B4EAD539738 /* RouteOverlapPresentation.swift */,
 				9BFC9E44BED6AF2ED557266F /* RouteOverlaySnapshot.swift */,
 				20FE4064B67BA89D296FCAFB /* RouteProcessing.swift */,
 				4D9EAD315E471CD5B0A43F17 /* RouteSchedule.swift */,
@@ -613,6 +616,7 @@
 				58C717798F7574DE7E8ADDC8 /* RouteDirectionArrows.swift in Sources */,
 				BCCF9D9E423AD21EBC4BC5A1 /* RouteLineAppearance.swift in Sources */,
 				B658D79E6C324942CAF26537 /* RouteMotionOverlay.swift in Sources */,
+				D22E9ED119C354B43A405B01 /* RouteOverlapPresentation.swift in Sources */,
 				97F611E5D8A6E49BAE5F2958 /* RouteOverlaySnapshot.swift in Sources */,
 				E59A20A4E04ECD9CFFF72589 /* RouteProcessing.swift in Sources */,
 				987DA7E82DF827A042CB40CE /* RouteSchedule.swift in Sources */,
@@ -762,7 +766,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 151;
+				CURRENT_PROJECT_VERSION = 152;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -902,7 +906,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 151;
+				CURRENT_PROJECT_VERSION = 152;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

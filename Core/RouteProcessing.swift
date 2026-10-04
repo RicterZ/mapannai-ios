@@ -25,7 +25,7 @@ actor RouteProcessing {
                                                points: RouteGeometry.curve(a.coordinates, b.coordinates), isPlanned: false)
                     if preserve, let old = oldRoutes[display.id], old.isPlanned,
                        old.points.first == a.coordinates, old.points.last == b.coordinates {
-                        display.points = old.points
+                        display.points = old.unseparatedPoints ?? old.points
                         display.isPlanned = true
                         display.distance = old.distance
                     }
@@ -63,6 +63,9 @@ actor RouteProcessing {
         let result = try PlannedRoutePresentation.points(points)
         try Task.checkCancellation()
         return result
+    }
+    func separatingOverlaps(_ routes: [DisplayRoute]) throws -> [DisplayRoute] {
+        try RouteOverlapPresentation.separate(routes)
     }
     func amapSnapshot(_ routes: [RouteOverlayGeometry]) throws -> [PreparedRouteOverlay] {
         var prepared: [PreparedRouteOverlay] = []

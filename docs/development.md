@@ -216,4 +216,4 @@ Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一�
 
 定位显示在启动时开启，前台持续更新；初次定位授权仍由系统决定。三个地图共用 UserDirectionIndicator 的传感器与蓝色渐隐方向光束（无描边，从蓝点向外径向渐隐），获得有效 heading 后即显示，朝向相对地图 bearing 转换。定位按钮循环为居中→方向居中→居中；单指拖动退出跟随但保留位置及方向标识；双指缩放和旋转不退出。状态1北向上、状态2按用户 heading 旋转，两态均将当前位置放到 MapLayout 未遮挡区域中心并使用合适缩放；MapKit使用layoutMargins计算未遮挡视口与原生跟踪动画；高德/Google使用SDK视口锚点与镜头动画。无 heading 数据时保留位置点，不伪造方向。
 
-规划路径的展示几何统一由RouteProcessing→PlannedRoutePresentation处理，三个SDK及点击命中共用结果。每个地点区间单独剪枝：返回距离≤12m、沿途长度35–240m、范围半径≤65m的小绕圈/折返可移除，随后5m误差RDP简化；保留端点、大绕行和跨地点回访。简化后不再做Chaikin平滑以免大幅切角，转角由原生round join处理。贝塞尔选项和fallback不变；原始API路径/距离仍存RouteCache，展示结果不回写。当前不对不同地点区间的共线路径做横向偏移。
+规划路径的展示几何统一由RouteProcessing→PlannedRoutePresentation处理，三个SDK及点击命中共用结果。每个地点区间单独剪枝：返回距离≤12m、沿途长度35–240m、范围半径≤65m的小绕圈/折返可移除，随后5m误差RDP简化；保留端点、大绕行和跨地点回访。简化后不再做Chaikin平滑以免大幅切角，转角由原生round join处理。贝塞尔选项和fallback不变；原始API路径/距离仍存RouteCache，展示结果不回写。RouteOverlapPresentation在RouteProcessing内统一处理不同规划区间的反向共线：夹角点积<-0.94、横距≤5m，双方沿各自行进方向左侧偏移最多8m，距端点40m内渐变归零；16m采样和32m空间索引，超过200km单段暂不偏移。保留unseparatedPoints避免刷新累计偏移；所有SDK及命中读取同一展示points。偏移为地理米数，随地图缩小屏幕间隔会减小；同向/交叉/fallback不主动错开。

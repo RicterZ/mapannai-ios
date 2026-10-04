@@ -170,6 +170,7 @@ struct DisplayRoute: Identifiable {
     var points: [Coordinate]
     var isPlanned: Bool
     var distance: Double? = nil
+    var unseparatedPoints: [Coordinate]? = nil
 }
 enum TravelMode: String, Codable, CaseIterable { case auto, walking, driving
     var label: String { switch self { case .auto: "自动"; case .walking: "步行"; case .driving: "驾车" } }

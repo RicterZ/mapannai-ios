@@ -27,7 +27,7 @@ The default background is System Maps (Apple MapKit). Choose System Maps, AMap, 
 3. Tap Add Trip in My Trips or the ＋ on the collapsed panel, add places to each day, and arrange their visit order within routes.
 4. Open the day's itinerary while traveling to check places, read your notes, or start navigation. Tap a route title to view it on the map; use its right-hand arrow to show or hide its places.
 
-With route planning enabled, each planned segment's distance appears between its places. Map lines simplify small loops and short backtracks to emphasize visit order; distances retain the original planned values.
+With route planning enabled, each planned segment's distance appears between its places. Map lines simplify small loops and short backtracks to emphasize visit order; distances retain the original planned values. Opposite-direction overlapping legs are slightly separated near street-level zoom.
 
 Need a server? Follow the [MapAnNai Plus deployment guide](https://github.com/RicterZ/mapannai-plus#deploy-your-own-server), then enter its address and API token, if required, in the client. Searching, saving changes, and route planning require a network connection.
 

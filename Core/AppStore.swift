@@ -1053,7 +1053,9 @@ struct TripSaveDraft: Identifiable {
                 }
             }
             #endif
-            withTransaction(transaction) { displayRoutes = displays }
+            guard let presented = try? await routeProcessing.separatingOverlaps(displays),
+                  !Task.isCancelled, self.routeGeneration == generation else { return }
+            withTransaction(transaction) { displayRoutes = presented }
             guard planning, !segments.isEmpty else { return }
             var failed = 0, completed = 0
             for segment in segments {
@@ -1072,14 +1074,17 @@ struct TripSaveDraft: Identifiable {
                     guard let route else { continue }
                     let points = try await routeProcessing.displayPoints(route, origin: a, destination: b)
                     guard !Task.isCancelled, self.routeGeneration == generation else { return }
-                    if let index = displayRoutes.firstIndex(where: { $0.id == display.id }) {
-                        var updated = displayRoutes[index]
+                    if let index = displays.firstIndex(where: { $0.id == display.id }) {
+                        var updated = displays[index]
                         let distance = route.isFallback ? nil : route.distance
                         if updated.points != points || updated.isPlanned != !route.isFallback || updated.distance != distance {
                             updated.points = points; updated.isPlanned = !route.isFallback
                             updated.distance = distance
                             var transaction = Transaction(); transaction.disablesAnimations = true
-                            withTransaction(transaction) { displayRoutes[index] = updated }
+                            displays[index] = updated
+                            let presented = try await routeProcessing.separatingOverlaps(displays)
+                            guard !Task.isCancelled, self.routeGeneration == generation else { return }
+                            withTransaction(transaction) { displayRoutes = presented }
                         }
                     }
                 } catch {
