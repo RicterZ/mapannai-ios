@@ -13,7 +13,8 @@ final class RouteMotionOverlayTests: XCTestCase {
                 points: [Coordinate(latitude: 31, longitude: 121 + Double(index) * 0.01),
                          Coordinate(latitude: 31, longitude: 121.01 + Double(index) * 0.01)], isPlanned: true)
         }
-        let project: (Coordinate) -> CGPoint = { CGPoint(x: ($0.longitude - 121) * 10000, y: 100) }
+        var pan: CGFloat = 0
+        let project: (Coordinate) -> CGPoint = { CGPoint(x: ($0.longitude - 121) * 10000 + pan, y: 100) }
         overlay.update(routes: routes, in: view, enabled: { true }, project: project)
         for _ in 0..<100 where (view.layer.sublayers?.first?.sublayers ?? []).count < 3 {
             try await Task.sleep(for: .milliseconds(10))
@@ -24,6 +25,10 @@ final class RouteMotionOverlayTests: XCTestCase {
         overlay.refresh()
         overlay.update(routes: routes, in: view, enabled: { true }, project: project)
         XCTAssertEqual(view.layer.sublayers?.first?.sublayers, layers, "Repeated selection must retain layers and phase")
+        let positions = layers.map(\.position)
+        pan = 25; overlay.refresh()
+        XCTAssertEqual(layers.map(\.position), positions, "Panning must not redistribute arrows")
+        XCTAssertEqual(view.layer.sublayers?.first?.affineTransform().tx, 25)
         overlay.stop()
         XCTAssertTrue(view.layer.sublayers?.isEmpty ?? true)
         XCTAssertFalse(overlay.isRunning)

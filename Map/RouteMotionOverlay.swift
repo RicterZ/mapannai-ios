@@ -11,6 +11,8 @@ import UIKit
     private var tracks: [(RouteMotionPath, Int)] = []
     private var screenPaths: [(RouteDirectionPath, Int)] = []
     private var projectionDirty = true
+    private var projectionAnchors: [(Coordinate, CGPoint)] = []
+    private var projectionCoverage = CGRect.zero
     private var preparation: Task<Void, Never>?
     private var generation = UUID()
     private var project: ((Coordinate) -> CGPoint)?
@@ -72,13 +74,37 @@ import UIKit
     }
     func stop() {
         preparation?.cancel(); preparation = nil; generation = UUID()
-        pause(); arrows.forEach { $0.removeFromSuperlayer() }; arrows = []; arrowContainer.removeFromSuperlayer(); tracks = []; screenPaths = []; geometry = []
+        pause(); arrows.forEach { $0.removeFromSuperlayer() }; arrows = []; arrowContainer.removeFromSuperlayer(); tracks = []; screenPaths = []; geometry = []; projectionAnchors = []
     }
     private func render(timestamp: Double, reducedMotion: Bool) {
         guard let host, let project else { return }
         if projectionDirty {
-            screenPaths = tracks.map { (RouteDirectionPath(points: $0.0.points.map(project), bounds: host.bounds), $0.1) }
+            // A pan translates the existing painted arrows and their mask as a unit.
+            // Do not resample the path or redistribute arrow positions during a pan.
+            if let first = projectionAnchors.first {
+                let projected = project(first.0)
+                let delta = CGPoint(x: projected.x - first.1.x, y: projected.y - first.1.y)
+                let translationOnly = projectionAnchors.allSatisfy { coordinate, original in
+                    let point = project(coordinate)
+                    return hypot(point.x - original.x - delta.x, point.y - original.y - delta.y) < 0.05
+                }
+                let viewport = host.bounds.offsetBy(dx: -delta.x, dy: -delta.y)
+                if translationOnly && projectionCoverage.contains(viewport) {
+                    CATransaction.begin(); CATransaction.setDisableActions(true)
+                    arrowContainer.setAffineTransform(CGAffineTransform(translationX: delta.x, y: delta.y))
+                    self.arrows.forEach { $0.isHidden = false }
+                    CATransaction.commit(); projectionDirty = false
+                    return
+                }
+            }
+            projectionCoverage = host.bounds.insetBy(dx: -host.bounds.width, dy: -host.bounds.height)
+            projectionAnchors = tracks.flatMap { track -> [Coordinate] in
+                guard let first = track.0.points.first, let last = track.0.points.last else { return [] }
+                return [first, track.0.points[track.0.points.count / 2], last]
+            }.prefix(12).map { ($0, project($0)) }
+            screenPaths = tracks.map { (RouteDirectionPath(points: $0.0.points.map(project), bounds: projectionCoverage), $0.1) }
             CATransaction.begin(); CATransaction.setDisableActions(true)
+            arrowContainer.setAffineTransform(.identity)
             arrowContainer.frame = host.bounds
             CATransaction.commit()
             let mask = UIBezierPath()
@@ -92,7 +118,7 @@ import UIKit
             projectionDirty = false
         }
         let arrows = screenPaths.flatMap { path, color in
-            path.arrows(timestamp: timestamp, reducedMotion: reducedMotion, bounds: host.bounds).map { ($0, color) }
+            path.arrows(timestamp: timestamp, reducedMotion: reducedMotion, bounds: projectionCoverage).map { ($0, color) }
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         while self.arrows.count < arrows.count {
