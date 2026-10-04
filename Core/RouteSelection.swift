@@ -9,85 +9,61 @@ enum RouteSelection {
     static func length(_ route: DisplayRoute) -> Double {
         zip(route.points, route.points.dropFirst()).reduce(0) { $0 + Coordinates.distance($1.0, $1.1) }
     }
-    /// Independent chains never get an artificial link between their endpoints.
+    /// DisplayRoute is one directed edge between adjacent visits, never a whole chain.
     static func paths(_ routes: [DisplayRoute]) -> [RouteMotionPath] {
-        var keys: [String] = [], groups: [String: [Coordinate]] = [:]
-        for route in routes {
-            let key = route.id.split(separator: "|").prefix(2).joined(separator: "|")
-            if groups[key] == nil { keys.append(key); groups[key] = [] }
-            groups[key, default: []] += route.points
-        }
-        return keys.map { RouteMotionPath(points: groups[$0] ?? []) }
+        routes.map { RouteMotionPath(points: $0.points) }
     }
 }
 
 struct RouteMotionPath {
     let points: [Coordinate]
+    private let cumulative: [Double]
+    let length: Double
     init(points: [Coordinate]) {
-        // Duplicate vertices have no visible length and must not be walked every frame.
-        var unique: [Coordinate] = []
-        unique.reserveCapacity(points.count)
-        for point in points where unique.last != point { unique.append(point) }
-        self.points = unique
-    }
-}
-
-/// Progress is a segment and a fraction, not an elapsed-time percentage of the whole route.
-/// Reprojecting that segment preserves the location on zoom while keeping travel at 90pt/s.
-struct RouteMotionCursor {
-    private var segment = 0
-    private var fraction = 0.0
-    mutating func advance(on path: RouteMotionPath, distance: Double,
-                          project: (Coordinate) -> CGPoint) -> CGPoint? {
-        guard let first = path.points.first else { return nil }
-        guard path.points.count > 1 else { return project(first) }
-        var remaining = max(0, distance)
-        var measuringCycle = segment == 0 && fraction == 0
-        var cycleLength = 0.0
-        // At most: initial partial loop, one measured loop, final partial loop.
-        for _ in 0...(path.points.count * 3) {
-            let a = project(path.points[segment]), b = project(path.points[segment + 1])
-            let length = hypot(b.x - a.x, b.y - a.y)
-            let available = Double(length) * (1 - fraction)
-            if length > 0, remaining < available {
-                fraction += remaining / Double(length)
-                return CGPoint(x: a.x + (b.x - a.x) * fraction, y: a.y + (b.y - a.y) * fraction)
+        var unique: [Coordinate] = [], distances: [Double] = []
+        var total = 0.0
+        for point in points where unique.last != point {
+            if let previous = unique.last {
+                let latitude = (point.latitude + previous.latitude) * .pi / 360
+                let longitude = RouteGeoBounds.longitudeDelta(point.longitude - previous.longitude)
+                total += hypot((point.latitude - previous.latitude) * 111_000,
+                               longitude * 111_000 * cos(latitude))
             }
-            remaining = max(0, remaining - available)
-            if measuringCycle { cycleLength += Double(length) }
-            segment += 1; fraction = 0
-            if segment == path.points.count - 1 {
-                segment = 0
-                // Accumulate a whole cycle only if this frame actually traverses it.
-                // Crossing the endpoint no longer projects the entire path a second time.
-                if measuringCycle {
-                    guard cycleLength > 0 else { return project(first) }
-                    remaining = remaining.truncatingRemainder(dividingBy: cycleLength)
-                } else { measuringCycle = true }
-                cycleLength = 0
-            }
+            unique.append(point); distances.append(total)
         }
-        return project(first)
+        self.points = unique; cumulative = distances; length = total
+    }
+    /// Same cumulative-distance interpolation as Web pointAlongPath; O(log n) per dot.
+    func coordinate(progress: Double) -> Coordinate? {
+        guard let first = points.first else { return nil }
+        guard length > 0, points.count > 1 else { return first }
+        let distance = min(1, max(0, progress)) * length
+        var low = 1, high = points.count - 1
+        while low < high {
+            let middle = (low + high) / 2
+            if cumulative[middle] < distance { low = middle + 1 } else { high = middle }
+        }
+        let index = low - 1, segment = cumulative[low] - cumulative[index]
+        let fraction = segment > 0 ? (distance - cumulative[index]) / segment : 0
+        return Coordinate(latitude: points[index].latitude + (points[low].latitude - points[index].latitude) * fraction,
+                          longitude: points[index].longitude + RouteGeoBounds.longitudeDelta(points[low].longitude - points[index].longitude) * fraction)
     }
 }
 
 final class RouteMotionAnimation {
-    static let pointsPerSecond = 90.0
+    static let duration = 2.1
     private var paths: [RouteMotionPath] = []
-    private var cursors: [RouteMotionCursor] = []
-    private var lastTimestamp: Double?
-    func reset(paths: [RouteMotionPath] = []) {
-        self.paths = paths
-        cursors = paths.map { _ in RouteMotionCursor() }
-        lastTimestamp = nil
+    func reset(paths: [RouteMotionPath] = []) { self.paths = paths }
+    static func progress(timestamp: Double) -> Double {
+        max(0, timestamp).truncatingRemainder(dividingBy: duration) / duration
+    }
+    static func opacity(timestamp: Double) -> Float {
+        let p = progress(timestamp: timestamp)
+        return Float(min(1, p * 10, (1 - p) * 10))
     }
     func positions(timestamp: Double, project: (Coordinate) -> CGPoint) -> [CGPoint?] {
-        // Don't catch up after suspension or a long UI stall with a sudden jump.
-        let delta = min(0.1, max(0, timestamp - (lastTimestamp ?? timestamp)))
-        lastTimestamp = timestamp
-        return paths.indices.map { index in
-            cursors[index].advance(on: paths[index], distance: Self.pointsPerSecond * delta, project: project)
-        }
+        let progress = Self.progress(timestamp: timestamp)
+        return paths.map { $0.coordinate(progress: progress).map(project) }
     }
 }
 

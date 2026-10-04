@@ -36,8 +36,13 @@ final class RouteScheduleUITests: XCTestCase {
         let c = app.buttons["route-0-marker-demo-2"]
         XCTAssertTrue(b.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["10号线"].exists)
+        let initialLayout = expectation(description: "Initial sheet layout settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { initialLayout.fulfill() }
+        wait(for: [initialLayout], timeout: 2)
         b.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
             thenDragTo: app.cells.containing(.button, identifier: "route-0-marker-demo-2").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.9)), withVelocity: .slow, thenHoldForDuration: 1)
+        let updatedOrdinal = expectation(for: NSPredicate(format: "value == %@", "3"), evaluatedWith: b)
+        wait(for: [updatedOrdinal], timeout: 2)
         XCTAssertEqual(b.value as? String, "3")
         XCTAssertEqual(c.value as? String, "2")
         XCTAssertFalse(app.staticTexts["10号线"].exists)
@@ -47,6 +52,8 @@ final class RouteScheduleUITests: XCTestCase {
         disconnected.name = "松手立即断开有向边，游览时间保留"; disconnected.lifetime = .keepAlways; add(disconnected)
         b.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
             thenDragTo: c.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.1)), withVelocity: .slow, thenHoldForDuration: 1)
+        let restoredOrdinal = expectation(for: NSPredicate(format: "value == %@", "2"), evaluatedWith: b)
+        wait(for: [restoredOrdinal], timeout: 2)
         XCTAssertEqual(b.value as? String, "2")
         XCTAssertEqual(c.value as? String, "3")
         XCTAssertTrue(app.staticTexts["10号线"].exists)
@@ -90,7 +97,7 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertTrue(source.waitForExistence(timeout: 5))
         let target = app.buttons["route-0-marker-demo-1"]
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
-            thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 1)
+            thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 0)
         XCTAssertTrue(app.buttons["route-0-marker-demo-3"].waitForExistence(timeout: 5))
         XCTAssertFalse(source.exists)
         XCTAssertEqual(app.buttons["route-0-marker-demo-3"].value as? String, "2")

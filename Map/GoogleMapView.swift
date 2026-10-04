@@ -31,11 +31,12 @@ struct GoogleMapRenderer: UIViewRepresentable {
     }
     func updateUIView(_ map: GMSMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: GMSMapView, coordinator: Coordinator) {
-        coordinator.tapArbiter.cancel(); coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
+        coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
     }
     @MainActor final class Coordinator: NSObject, GMSMapViewDelegate, CLLocationManagerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
+        let routeMotion = RouteMotionOverlay()
         var poiInfoMarker: GMSMarker?
         var poiDraftID: UUID?
         private let headingManager = CLLocationManager()
@@ -110,6 +111,15 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 }
             }
             for line in lines.values { line.isTappable = !store.placeSearchPresented; line.map = MapZoomPresentation.isCompact(Double(map.camera.zoom)) ? nil : map }
+            let selected = store.displayRoutes.filter { $0.dayID == store.dayID }
+            let selectedIDs = Set(selected.map(\.id))
+            for (id, line) in lines { line.strokeWidth = selectedIDs.contains(id) ? 6 : 4 }
+            routeMotion.update(routes: selected, in: map, enabled: { [weak self, weak map] in
+                guard let self, let map else { return false }
+                return !MapZoomPresentation.isCompact(Double(map.camera.zoom)) && !self.store.placeSearchPresented
+            }, project: { [weak map] coordinate in
+                map?.projection.point(for: Self.coordinate(coordinate)) ?? .zero
+            })
             map.isBuildingsEnabled = !store.placeSearchPresented
             // Hide commercial POIs during server search; road labels remain visible.
             if searchStyleEnabled != store.placeSearchPresented {
@@ -194,6 +204,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
             tapArbiter.scheduleRoute { [weak self] in self?.store.selectRoute(route) }
         }
         func mapView(_ mapView: GMSMapView, willMove gesture: Bool) { if gesture { store.noteMapInteraction() } }
+        func mapView(_ mapView: GMSMapView, didChange position: GMSCameraPosition) { routeMotion.refresh() }
         func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
             update(mapView)
             let region = mapView.projection.visibleRegion()

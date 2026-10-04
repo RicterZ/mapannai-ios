@@ -194,7 +194,6 @@ struct DayContentsView: View {
                                 }
                                 .onDrag {
                                     guard !store.saving else { return NSItemProvider() }
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                     return NativePlaceItemProvider(payload: "day-place/" + day.id + "/" + id + "/" + String(index))
                                 }
 
@@ -218,11 +217,10 @@ struct DayContentsView: View {
                                 .accessibilityAddTraits(.isButton)
                                 .accessibilityIdentifier("day-marker-\(id)")
                                 .background(GeometryReader { geometry in
-                                    Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global)])
+                                    Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global), "source/" + id: geometry.frame(in: .global)])
                                 })
                                 .onDrag {
                                     guard !store.saving else { return NSItemProvider() }
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                     return NativePlaceItemProvider(payload: "day-place/" + day.id + "/" + id)
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -735,13 +733,12 @@ struct NativePlaceListDrop: UIViewRepresentable {
         var dragFrames: [String: CGRect]?
         var nativeRowTargets: [IndexPath: String] = [:]
         private var publishedTarget: String?
-        private var animationGate = NativeDropAnimationGate()
         private var fixedFrames: [String: CGRect] = [:]
         private var cellFrames: [IndexPath: CGRect] = [:]
         private var fixedSource: IndexPath?
         private var feedbackTarget: String?
         private var feedbackOffsets: [IndexPath: CGFloat] = [:]
-        private let reorderFeedback = UISelectionFeedbackGenerator()
+        private let reorderFeedback = UIImpactFeedbackGenerator(style: .medium)
 
         let recordsDragUpdates = ProcessInfo.processInfo.arguments.contains("--route-drag-diagnostics")
         private var diagnosticDragActive = false
@@ -758,7 +755,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
             NSLog("ROUTEDRAG finished updates=%d", diagnosticUpdates)
         }
         var interaction: UIDropInteraction?
-        private var originalReorderingCadence: UICollectionView.ReorderingCadence?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
         func findList(_ view: UIView) -> UIView? {
@@ -771,12 +767,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
             detach()
             if let list = view as? UICollectionView {
                 originalDropDelegate = list.dropDelegate
-                if parent.prefix.hasPrefix("day-place/") {
-                    originalReorderingCadence = list.reorderingCadence
-                    // Debounce the native make-space animation itself, not the
-                    // final drop commit or an independently computed hover target.
-                    list.reorderingCadence = .slow
-                }
                 list.dropDelegate = self; host = list
                 return
             }
@@ -785,9 +775,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func detach() {
             clearFixedFeedback()
-            if let list = host as? UICollectionView, let originalReorderingCadence,
-               list.reorderingCadence == .slow { list.reorderingCadence = originalReorderingCadence }
-            originalReorderingCadence = nil
             if let list = host as? UICollectionView, list.dropDelegate === self { list.dropDelegate = originalDropDelegate }
             if let interaction { host?.removeInteraction(interaction) }
             interaction = nil; host = nil
@@ -821,7 +808,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
                             }
                         }
                     }
-                    for (key, frame) in parent.currentFrames where key != "unplanned" {
+                    for (key, frame) in parent.currentFrames where key != "unplanned" && !key.hasPrefix("source/") {
                         let point = collectionView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
                         if let path = collectionView.indexPathForItem(at: point) { nativeRowTargets[path] = key }
                     }
@@ -835,6 +822,10 @@ struct NativePlaceListDrop: UIViewRepresentable {
                     let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
                     if parts.count == 2, let key = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])] {
                         fixedSource = nativeRowTargets.first { $0.value == key }?.key
+                    } else if let marker = parts.first, let window = collectionView.window,
+                              let frame = parent.currentFrames["source/" + String(marker)] {
+                        let point = collectionView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
+                        fixedSource = collectionView.indexPathForItem(at: point)
                     }
                 }
             }
@@ -851,33 +842,52 @@ struct NativePlaceListDrop: UIViewRepresentable {
             guard feedbackTarget != target else { return }
             feedbackTarget = target
             var offsets: [IndexPath: CGFloat] = [:]
-            if let source = fixedSource, let target,
-               let key = nativeRowTargets[source], key.split(separator: "/").first == target.split(separator: "/").first {
-                let rows = nativeRowTargets.filter { path, key in
-                    path.section == source.section && Int(key.split(separator: "/").last ?? "") != nil
+            if let target, let route = target.split(separator: "/").first, Int(route) != nil {
+                let rows = nativeRowTargets.filter { _, key in
+                    let parts = key.split(separator: "/")
+                    return parts.count == 2 && parts.first == route && Int(parts[1]) != nil
                 }.keys.sorted()
-                if let old = rows.firstIndex(of: source) {
-                    let parts = target.split(separator: "/")
-                    var insertion = (parts.count > 1 ? Int(parts[1]) : nil).map { $0 + (parts.last == "after" ? 1 : 0) } ?? rows.count
-                    var order = rows; order.remove(at: old)
-                    // Frozen rows may begin midway through a scrolled route.
-                    // Convert the model boundary using their actual ordinals.
-                    insertion = order.filter { path in
-                        guard let key = nativeRowTargets[path], let ordinal = Int(key.split(separator: "/").last ?? "") else { return false }
-                        return ordinal < insertion
+                let parts = target.split(separator: "/")
+                let boundary = (parts.count > 1 ? Int(parts[1]) : nil).map { $0 + (parts.last == "after" ? 1 : 0) }
+                    ?? rows.compactMap { nativeRowTargets[$0]?.split(separator: "/").last.flatMap { Int($0) } }.map { $0 + 1 }.max() ?? 0
+                let sourceHeight = fixedSource.flatMap { cellFrames[$0]?.height } ?? 44
+                if let source = fixedSource, rows.contains(source) {
+                    var order = rows.filter { $0 != source }
+                    let insertion = order.filter { path in
+                        Int(nativeRowTargets[path]?.split(separator: "/").last ?? "") ?? 0 < boundary
                     }.count
-                    order.insert(source, at: min(order.count, max(0, insertion)))
+                    order.insert(source, at: insertion)
                     var top = rows.compactMap { cellFrames[$0]?.minY }.min() ?? 0
                     for path in order {
                         guard let frame = cellFrames[path] else { continue }
                         if path != source { offsets[path] = top - frame.minY }
                         top += frame.height
                     }
+                } else {
+                    // Incoming pool/cross-route place uses the very same frozen
+                    // insertion boundary. Only the space needed by the source differs.
+                    let insertionY = rows.first { path in
+                        (Int(nativeRowTargets[path]?.split(separator: "/").last ?? "") ?? 0) >= boundary
+                    }.flatMap { cellFrames[$0]?.minY } ?? rows.compactMap { cellFrames[$0]?.maxY }.max()
+                    if let source = fixedSource, let sourceFrame = cellFrames[source], let insertionY {
+                        for (path, frame) in cellFrames where path != source {
+                            if sourceFrame.minY >= insertionY, frame.minY >= insertionY, frame.minY < sourceFrame.minY {
+                                offsets[path] = sourceHeight
+                            } else if sourceFrame.minY < insertionY, frame.minY > sourceFrame.minY, frame.minY < insertionY {
+                                offsets[path] = -sourceHeight
+                            }
+                        }
+                    } else {
+                        for path in rows {
+                            let ordinal = Int(nativeRowTargets[path]?.split(separator: "/").last ?? "") ?? 0
+                            if ordinal >= boundary { offsets[path] = sourceHeight }
+                        }
+                    }
                 }
             }
             let changedOffsets = offsets.filter { abs($0.value) > 0.5 }
             if target != nil, changedOffsets != feedbackOffsets {
-                reorderFeedback.selectionChanged()
+                reorderFeedback.impactOccurred()
                 reorderFeedback.prepare()
             }
             feedbackOffsets = changedOffsets
@@ -895,93 +905,30 @@ struct NativePlaceListDrop: UIViewRepresentable {
             }
             feedbackTarget = nil; feedbackOffsets = [:]
         }
-        /// Every day-place drag uses this resolver, regardless of its source.
-        /// Native insertion remains authoritative; live geometry covers missing
-        /// indices after scrolling and the card margins/traffic/gaps.
         private func resolvedTarget(_ session: UIDropSession, destination: IndexPath?) -> String? {
-            guard parent.prefix.hasPrefix("day-place/"), let host, let window = host.window else {
-                return target(session)
-            }
-            let point = session.location(in: window)
-            let bounds = host.convert(host.bounds, to: window)
-            guard bounds.contains(point) else { return nil }
-            // UIKit's insertion boundary is also the boundary used by its
-            // make-space animation. Never replace it with moving row geometry.
-            if let destination { return insertionTarget(at: destination, session: session) }
-            if let pool = livePoolTarget(session) { return pool }
-            return NativeRouteDropGeometry.target(at: point, frames: parent.currentFrames)
+            if parent.prefix.hasPrefix("day-place/"), host is UICollectionView { return fixedTarget(session) }
+            return target(session)
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
-            if fixedSource != nil {
-                let target = fixedTarget(session)
-                publishTarget(target)
-                updateFixedFeedback(target, list: collectionView)
-                // The fixed boundary owns both feedback and commit. Do not ask
-                // UIKit to create a second moving insertion gap.
-                return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: .unspecified)
-            }
             let target = resolvedTarget(session, destination: destinationIndexPath)
+            if recordsDragUpdates, feedbackTarget != target { NSLog("ROUTEDRAG boundary=%@ source=%@", target ?? "nil", fixedSource?.description ?? "nil") }
             publishTarget(target)
             if parent.prefix.hasPrefix("day-place/") {
-                // Make-space animation belongs to UIKit. Eligibility must not
-                // depend on rows which that same animation is moving around.
-                // Use the stationary list viewport with edge hysteresis instead.
-                let eligible = animationGate.update(point: session.location(in: collectionView),
-                    bounds: collectionView.bounds, hasPayload: localPayload(session) != nil)
-                return UICollectionViewDropProposal(operation: eligible ? .move : .cancel,
-                    intent: eligible ? .insertAtDestinationIndexPath : .unspecified)
+                updateFixedFeedback(target, list: collectionView)
+                return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: .unspecified)
             }
-            return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move,
-                intent: .insertIntoDestinationIndexPath)
-        }
-        private func livePoolTarget(_ session: UIDropSession) -> String? {
-            guard let window = host?.window else { return nil }
-            let point = session.location(in: window)
-            // Only the currently visible pool can receive a drop. Frozen source
-            // frames overlap route rows after UIKit makes space for insertion.
-            if parent.currentFrames["unplanned"]?.contains(point) == true { return "unplanned" }
-            return nil
-        }
-        private func insertionTarget(at destination: IndexPath, session: UIDropSession) -> String? {
-            var path = destination
-            if parent.prefix.hasPrefix("day-place/"), let list = host as? UICollectionView,
-               destination.section == list.numberOfSections - 2 { return "unplanned" }
-            // UIKit reports a final index for moves within the same section,
-            // after removing the source. Our model accepts a pre-removal boundary.
-            if let payload = localPayload(session) {
-                let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
-                if parts.count == 2, let sourceRouteKey = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])],
-                   let source = nativeRowTargets.first(where: { entry in
-                       entry.value == sourceRouteKey
-                   })?.key, source.section == path.section, source.item < path.item {
-                    path = IndexPath(item: path.item + 1, section: path.section)
-                }
-            }
-            guard parent.prefix.hasPrefix("day-place/") else { return nil }
-            if let key = nativeRowTargets[path] {
-                let parts = key.split(separator: "/")
-                return parts.count == 2 && Int(parts[1]) != nil ? key + "/before" : key
-            }
-            // A drop after the pool's last cell has no destination cell. It still
-            // belongs to the pool, including when auto-scroll moved it above the finger.
-            if path.item > 0, nativeRowTargets[IndexPath(item: path.item - 1, section: path.section)] == "unplanned" { return "unplanned" }
-            // The insertion boundary after the final item has no cell of its own.
-            if path.item > 0, let key = nativeRowTargets[IndexPath(item: path.item - 1, section: path.section)],
-               let position = key.split(separator: "/").last, Int(position) != nil {
-                return key + "/after"
-            }
-            return nil
+            return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: .insertIntoDestinationIndexPath)
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             clearFixedFeedback(); fixedFrames = [:]; cellFrames = [:]; fixedSource = nil
             finishDiagnostics()
             originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
-            publishTarget(nil); animationGate = NativeDropAnimationGate(); dragFrames = nil; nativeRowTargets = [:]
+            publishTarget(nil); dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             finishDiagnostics()
-            guard let target = fixedSource != nil ? fixedTarget(coordinator.session) : resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
+            guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
             clearFixedFeedback()
             publishTarget(nil)
             acceptDrop(coordinator.session, target: target)
@@ -1018,7 +965,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
             publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
-            animationGate = NativeDropAnimationGate()
             publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
@@ -1039,13 +985,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
             let prefix = parent.prefix, accept = parent.accept
             if let payload = localPayload(session) {
                 accept(String(payload.dropFirst(prefix.count)), target)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
             }
             session.loadObjects(ofClass: NSString.self) { objects in
                 guard let text = objects.first as? String, text.hasPrefix(prefix) else { return }
                 accept(String(text.dropFirst(prefix.count)), target)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
         }
     }
@@ -1086,17 +1030,5 @@ enum NativeRouteDropGeometry {
             return prefix + "header"
         }
         return nil
-    }
-}
-
-/// Prevent animation feedback from switching move/cancel as moving row frames
-/// pass under a stationary finger. A 12pt viewport exit band absorbs edge jitter.
-struct NativeDropAnimationGate {
-    private(set) var active = false
-    mutating func update(point: CGPoint, bounds: CGRect, hasPayload: Bool) -> Bool {
-        guard hasPayload else { active = false; return false }
-        let region = active ? bounds.insetBy(dx: -12, dy: -12) : bounds
-        active = region.contains(point)
-        return active
     }
 }

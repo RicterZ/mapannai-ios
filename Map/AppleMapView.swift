@@ -24,7 +24,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         return map
     }
     func updateUIView(_ map: MKMapView, context: Context) { context.coordinator.update(map) }
-    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.tapArbiter.cancel(); map.delegate = nil; map.showsUserLocation = false }
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); map.delegate = nil; map.showsUserLocation = false }
 
     final class Pin: MKPointAnnotation {
         let key: String
@@ -38,10 +38,11 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0 }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = "" }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
+        let routeMotion = RouteMotionOverlay()
         var lastTap: CGPoint?
         var selectedPOI: MKMapFeatureAnnotation?
         var selectedPOIDraftID: UUID?
@@ -83,10 +84,22 @@ struct AppleMapRenderer: UIViewRepresentable {
                 for route in routes {
                     var coordinates = route.points.map(Pin.coordinate)
                     let line = Line(coordinates: &coordinates, count: coordinates.count)
-                    line.colorIndex = route.colorIndex
+                    line.colorIndex = route.colorIndex; line.dayID = route.dayID
                     map.addOverlay(line)
                 }
             }
+            for overlay in map.overlays {
+                if let line = overlay as? Line, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
+                    renderer.lineWidth = line.dayID == store.dayID ? 6 : 4
+                }
+            }
+            routeMotion.update(routes: routes.filter { $0.dayID == store.dayID }, in: map,
+                enabled: { [weak self, weak map] in
+                    guard let self, let map else { return false }
+                    return !self.isCompact(map) && !self.store.placeSearchPresented
+                }, project: { [weak map] coordinate in
+                    map?.convert(Pin.coordinate(coordinate), toPointTo: map) ?? .zero
+                })
             if let command = store.camera, command.id != lastCamera {
                 lastCamera = command.id
                 focus(map, command: command)
@@ -150,7 +163,9 @@ struct AppleMapRenderer: UIViewRepresentable {
                 store.noteMapInteraction()
             }
         }
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { routeMotion.refresh() }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            routeMotion.refresh()
             compact = isCompact(mapView)
             for pin in pins.values { if let view = mapView.view(for: pin) { style(view, pin: pin) } }
             for overlay in mapView.overlays { mapView.renderer(for: overlay)?.alpha = compact ? 0 : 1 }
@@ -185,7 +200,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            let renderer = MKPolylineRenderer(polyline: line); renderer.alpha = compact ? 0 : 1; renderer.strokeColor = UIColor(Theme.color(line.colorIndex)); renderer.lineWidth = 4
+            let renderer = MKPolylineRenderer(polyline: line); renderer.alpha = compact ? 0 : 1; renderer.strokeColor = UIColor(Theme.color(line.colorIndex)); renderer.lineWidth = line.dayID == store.dayID ? 6 : 4
             return renderer
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {

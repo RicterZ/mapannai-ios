@@ -76,19 +76,6 @@ final class RouteSelectionTests: XCTestCase {
         XCTAssertEqual(distance, 0, accuracy: 0.000001)
         XCTAssertEqual(try RouteSpatialIndex(points: []).nearestDistance(at: .zero, bounds: bounds) { _ in .zero }, .infinity)
     }
-    func testMotionEndpointWrapDoesNotProjectWholePath() throws {
-        let path = RouteMotionPath(points: (0...10000).map { Coordinate(latitude: 0, longitude: Double($0)) })
-        var cursor = RouteMotionCursor()
-        _ = cursor.advance(on: path, distance: 9999.5) { CGPoint(x: $0.longitude, y: 0) }
-        var calls = 0
-        let point = try XCTUnwrap(cursor.advance(on: path, distance: 1) {
-            calls += 1; return CGPoint(x: $0.longitude, y: 0)
-        })
-        XCTAssertEqual(point.x, 0.5, accuracy: 0.0001)
-        XCTAssertLessThanOrEqual(calls, 4, "Wrapping must visit only the endpoint and first segment")
-        let duplicates = RouteMotionPath(points: Array(repeating: Coordinate(latitude: 0, longitude: 0), count: 10000))
-        XCTAssertEqual(duplicates.points.count, 1)
-    }
     func testPOIOverscanCoversLocalPanButNeedsRefreshAfterLongPan() {
         let viewport = RouteGeoBounds(points: [Coordinate(latitude: 30, longitude: 120), Coordinate(latitude: 31, longitude: 121)], referenceLongitude: 120)
         let coverage = viewport.expanded(factor: 1)
@@ -96,48 +83,40 @@ final class RouteSelectionTests: XCTestCase {
         XCTAssertFalse(coverage.contains(viewport.shifted(2)))
         XCTAssertEqual(coverage.corners.count, 4)
     }
-    func testMovingCircleMaintainsScreenSpeedAcrossZoomAndFrameRates() throws {
+    func testMotionUsesWebCycleAndCumulativePathDistance() throws {
         let path = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 0),
-            Coordinate(latitude: 0, longitude: 20), Coordinate(latitude: 0, longitude: 500)])
+            Coordinate(latitude: 0, longitude: 1), Coordinate(latitude: 0, longitude: 4)])
         let animation = RouteMotionAnimation(); animation.reset(paths: [path])
-        var scale = 1.0
-        let project: (Coordinate) -> CGPoint = { CGPoint(x: $0.longitude * scale, y: 0) }
-        _ = animation.positions(timestamp: 0, project: project)
-        var position = CGPoint.zero
-        for frame in 1...60 {
-            position = try XCTUnwrap(animation.positions(timestamp: Double(frame) / 60, project: project).first ?? nil)
-        }
-        XCTAssertEqual(RouteMotionAnimation.pointsPerSecond, 90, accuracy: 0.001, "The requested 1.5× speed is 90pt/s")
-        XCTAssertEqual(position.x, 90, accuracy: 0.001)
-        // Zoom retains the same segment/fraction; only the next frame's travel is added.
-        scale = 2
-        position = try XCTUnwrap(animation.positions(timestamp: 1 + 1.0 / 60, project: project).first ?? nil)
-        XCTAssertEqual(position.x, 181.5, accuracy: 0.001)
-        scale = 0.5
-        position = try XCTUnwrap(animation.positions(timestamp: 1 + 2.0 / 60, project: project).first ?? nil)
-        XCTAssertEqual(position.x, 46.875, accuracy: 0.001)
-        for frame in 1...120 {
-            position = try XCTUnwrap(animation.positions(timestamp: 1 + 2.0 / 60 + Double(frame) / 120, project: project).first ?? nil)
-        }
-        XCTAssertEqual(position.x, 136.875, accuracy: 0.001, "60Hz and 120Hz must cover the same distance per second")
-    }
-    func testMovingCircleLoopsAndIndependentPathsHaveSameScreenSpeed() throws {
-        let routes = [route("day|0|1"), route("day|1|1")]
-        XCTAssertEqual(RouteSelection.paths(routes).count, 2)
-        let short = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 0), Coordinate(latitude: 0, longitude: 10)])
-        let long = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 0), Coordinate(latitude: 0, longitude: 1000)])
-        var cursor = RouteMotionCursor()
         let project: (Coordinate) -> CGPoint = { CGPoint(x: $0.longitude, y: $0.latitude) }
-        XCTAssertEqual(try XCTUnwrap(cursor.advance(on: short, distance: 26, project: project)).x, 6, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(animation.positions(timestamp: 0.525, project: project)[0]).x, 1, accuracy: 0.00001)
+        XCTAssertEqual(try XCTUnwrap(animation.positions(timestamp: 1.05, project: project)[0]).x, 2, accuracy: 0.00001)
+        XCTAssertEqual(try XCTUnwrap(animation.positions(timestamp: 2.1, project: project)[0]).x, 0, accuracy: 0.00001)
+        XCTAssertEqual(RouteMotionAnimation.opacity(timestamp: 0), 0)
+        XCTAssertEqual(RouteMotionAnimation.opacity(timestamp: 0.105), 0.5, accuracy: 0.00001)
+        XCTAssertEqual(RouteMotionAnimation.opacity(timestamp: 1.05), 1)
+        XCTAssertEqual(RouteMotionAnimation.opacity(timestamp: 1.995), 0.5, accuracy: 0.00001)
+    }
+    func testEveryDirectedEdgeGetsItsOwnDotAndCommonPhase() throws {
+        let routes = [route("day|0|0"), route("day|0|1"), route("day|1|0")]
+        XCTAssertEqual(RouteSelection.paths(routes).count, 3, "Do not concatenate edges in the same chain")
+        let short = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 0), Coordinate(latitude: 0, longitude: 1)])
+        let long = RouteMotionPath(points: [Coordinate(latitude: 0, longitude: 10), Coordinate(latitude: 0, longitude: 14)])
         let animation = RouteMotionAnimation(); animation.reset(paths: [short, long])
-        _ = animation.positions(timestamp: 0, project: project)
-        let positions = animation.positions(timestamp: 0.1, project: project)
-        XCTAssertEqual(try XCTUnwrap(positions[0]).x, 9, accuracy: 0.001)
-        XCTAssertEqual(try XCTUnwrap(positions[1]).x, 9, accuracy: 0.001)
-        let resumed = animation.positions(timestamp: 20, project: project)
-        XCTAssertEqual(try XCTUnwrap(resumed[1]).x, 18, accuracy: 0.001, "Don't catch up with a huge jump after suspension")
-        var zeroCursor = RouteMotionCursor()
-        XCTAssertEqual(zeroCursor.advance(on: RouteMotionPath(points: [short.points[0], short.points[0]]), distance: 6, project: project), .zero)
+        let positions = animation.positions(timestamp: 1.05) { CGPoint(x: $0.longitude, y: $0.latitude) }
+        XCTAssertEqual(try XCTUnwrap(positions[0]).x, 0.5, accuracy: 0.00001)
+        XCTAssertEqual(try XCTUnwrap(positions[1]).x, 12, accuracy: 0.00001)
+    }
+    func testLargePathOnlyProjectsOneInterpolatedCoordinateAndHandlesDegeneracy() throws {
+        let path = RouteMotionPath(points: (0...10000).map { Coordinate(latitude: 0, longitude: Double($0) / 1000) })
+        let animation = RouteMotionAnimation(); animation.reset(paths: [path])
+        var calls = 0
+        let position = animation.positions(timestamp: 1.05) { calls += 1; return CGPoint(x: $0.longitude, y: 0) }
+        XCTAssertEqual(try XCTUnwrap(position[0]).x, 5, accuracy: 0.00001)
+        XCTAssertEqual(calls, 1)
+        XCTAssertNil(RouteMotionPath(points: []).coordinate(progress: 0.5))
+        let point = Coordinate(latitude: 0, longitude: 0)
+        let zero = RouteMotionPath(points: Array(repeating: point, count: 100))
+        XCTAssertEqual(zero.points.count, 1); XCTAssertEqual(zero.coordinate(progress: 0.5), point)
     }
     @MainActor func testRouteClickSelectsDayPreservesCameraAndCanBeRepeated() async throws {
         let store = AppStore(settings: Settings(), demo: true)
