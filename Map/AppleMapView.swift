@@ -38,7 +38,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false; var decoration = false }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
@@ -101,9 +101,9 @@ struct AppleMapRenderer: UIViewRepresentable {
                 map.removeOverlays(map.overlays.filter { $0 is Line })
                 for route in routes {
                     var coordinates = route.points.map(Pin.coordinate)
-                    for layer in 0..<3 {
+                    for casing in [true, false] {
                         let line = Line(coordinates: &coordinates, count: coordinates.count)
-                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.casing = layer == 0; line.decoration = layer == 2
+                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.casing = casing
                         map.addOverlay(line)
                     }
                 }
@@ -221,11 +221,10 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         private func styleRoute(_ renderer: MKPolylineRenderer, line: Line) {
             let selected = line.dayID == store.dayID
-            renderer.alpha = compact || (line.decoration && (!selected || store.placeSearchPresented)) ? 0 : 1
-            renderer.strokeColor = line.decoration ? .white : line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
-            renderer.lineWidth = line.decoration ? RouteArrowAppearance.strokeWidth : line.casing ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
+            renderer.alpha = compact ? 0 : 1
+            renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
+            renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
             renderer.lineCap = .round; renderer.lineJoin = .round
-            renderer.lineDashPattern = line.decoration ? [5, 85] : nil
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let pin = annotation as? Pin {

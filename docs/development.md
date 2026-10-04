@@ -192,7 +192,7 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 
 导航设置可选择 Google，通过官方 HTTPS Maps URLs 传入 WGS-84 目的地、api=1 和 dir_action=navigate，已安装时可由系统打开 App，否则浏览器打开，无需地图 SDK Key。
 
-地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向图案共用RouteArrowAppearance（1.2pt笔画、5pt长度）与90pt目标间距。高德使用MAPolylineRenderer.strokeImage的6×90pt纵向纹理，折角朝纹理上方以对应路线起点→终点（与Google纹理方向相反）；Google使用GMSTextureStyle和投影长度GMSStyleSpansOffset（6pt图案段、84pt空白段），缩放更新原生样式分段。两者纹理由同一矢量折角生成3x图像。MapKit使用纯原生MKPolylineRenderer绘制描边、彩线及白色虚线装饰（5pt实线、85pt间隔），不提供方向箭头。无draw重写、镜头驱动失效或自定义线宽换算；选中日期且非搜索时显示装饰，低缩放统一隐藏。没有独立箭头覆盖物、镜头追随图层、地理折角缓存或180ms延迟重建。SDK纹理周期、转角与MapKit连续缩放视觉效果仍需真机验证，不能以模拟绘图测试代替。
+地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向图案共用RouteArrowAppearance（1.2pt笔画、5pt长度）与90pt目标间距。高德使用MAPolylineRenderer.strokeImage的6×90pt纵向纹理，折角朝纹理上方以对应路线起点→终点（与Google纹理方向相反）；Google使用GMSTextureStyle和投影长度GMSStyleSpansOffset（6pt图案段、84pt空白段），缩放更新原生样式分段。两者纹理由同一矢量折角生成3x图像。MapKit仅使用纯原生MKPolylineRenderer绘制描边和彩线，无箭头或虚线装饰。无draw重写、镜头驱动失效或自定义线宽换算，低缩放统一隐藏。没有独立箭头覆盖物、镜头追随图层、地理折角缓存或180ms延迟重建。SDK纹理周期、转角与MapKit连续缩放视觉效果仍需真机验证，不能以模拟绘图测试代替。
 
 定位交互共用 LocationFollowMode：idle→centered→heading→centered；第二次实心location.fill，第三次空心location并恢复北朝上，单指拖动退回idle，双指缩放/旋转保持跟踪，第二根手指抬起也不转换为拖动。MapNavigationGestures只观察SDK已有识别器，不增加竞争手势。MapKit使用原生follow/followWithHeading及原生定位动画；高德与Google使用共享CoreLocation heading驱动镜头方向，手势期间暂停镜头更新，保留用户缩放；退出Google销毁时停止方向监听。方向跟随需真机传感器验证。
 
