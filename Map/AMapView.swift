@@ -81,6 +81,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var selectionRequest: UUID?
         private var selectionRoutes: [DisplayRoute] = []
         private let routeMotion = RouteMotionOverlay()
+        private var directionLines: [MAPolyline] = []
         let userDirection = UserDirectionIndicator()
         private var pendingRouteTap: DispatchWorkItem?
         private var mapTapAnnotation: MAAnnotation?
@@ -270,6 +271,17 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 self?.routesVisible == true && self?.store.placeSearchPresented == false
             }, project: { [weak map] coordinate in
                 map?.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map) ?? .zero
+            }, unproject: { [weak map] point in
+                let coordinate = map?.convert(point, toCoordinateFrom: map) ?? CLLocationCoordinate2D()
+                return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            }, cameraKey: { [weak map] in Double(map?.zoomLevel ?? 0) }, publish: { [weak self, weak map] paths in
+                guard let self, let map else { return }
+                map.removeOverlays(self.directionLines)
+                self.directionLines = paths.compactMap { points in
+                    var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                    return MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count))
+                }
+                map.addOverlays(self.directionLines)
             })
         }
 
@@ -520,6 +532,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
         }
         func mapView(_ mapView: MAMapView!, rendererFor overlay: MAOverlay!) -> MAOverlayRenderer! {
+            if let line = overlay as? MAPolyline, directionLines.contains(where: { $0 === line }) {
+                let renderer = MAPolylineRenderer(polyline: line)!
+                renderer.strokeColor = RouteMotionOverlay.strokeColor; renderer.lineWidth = RouteMotionOverlay.strokeWidth
+                renderer.reducePoint = false
+                renderer.lineCapType = kMALineCapRound; renderer.lineJoinType = kMALineJoinRound
+                return renderer
+            }
             guard let line = overlay as? MAPolyline, let style = overlayStyle[ObjectIdentifier(line)] else { return nil }
             let renderer = MAPolylineRenderer(polyline: line)!
             renderer.strokeColor = style.0

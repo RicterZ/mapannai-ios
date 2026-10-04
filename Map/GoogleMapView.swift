@@ -37,6 +37,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
         let routeMotion = RouteMotionOverlay()
+        var directionLines: [GMSPolyline] = []
         let userDirection = UserDirectionIndicator()
         var poiInfoMarker: GMSMarker?
         var poiDraftID: UUID?
@@ -138,6 +139,18 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 return !MapZoomPresentation.isCompact(Double(map.camera.zoom)) && !self.store.placeSearchPresented
             }, project: { [weak map] coordinate in
                 map?.projection.point(for: Self.coordinate(coordinate)) ?? .zero
+            }, unproject: { [weak map] point in
+                let coordinate = map?.projection.coordinate(for: point) ?? CLLocationCoordinate2D()
+                return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            }, cameraKey: { [weak map] in Double(map?.camera.zoom ?? 0) }, publish: { [weak self, weak map] paths in
+                guard let self, let map else { return }
+                self.directionLines.forEach { $0.map = nil }
+                self.directionLines = paths.map { points in
+                    let path = GMSMutablePath(); points.forEach { path.add(Self.coordinate($0)) }
+                    let line = GMSPolyline(path: path)
+                    line.strokeColor = RouteMotionOverlay.strokeColor; line.strokeWidth = RouteMotionOverlay.strokeWidth
+                    line.isTappable = false; line.zIndex = 2; line.map = map; return line
+                }
             })
             map.isBuildingsEnabled = !store.placeSearchPresented
             // Hide commercial POIs during server search; road labels remain visible.

@@ -104,7 +104,7 @@ xcodebuild -project MapAnNai.xcodeproj -scheme MapAnNai \
 
 地点详情切换保留同一个系统sheet，内容向左翻页；固定标识的自定义detent通过UISheetPresentationController.animateChanges更新高度，封面预览使用更高档位，展开至全屏时保持全屏。减少动态效果时直接更新。
 
-旅途 sheet 的拖动和升降由系统负责。最小档标题与展开导航的顶部区域根据 sheet 屏幕上的呈现高度连续交接，正文保持不透明，标题遮罩覆盖底部安全区；工作区不追加矩形裁剪，由系统 sheet 外轮廓与列表滚动区域管理底部显示，避免整页淡入导致文字、图标和分组背景短暂灰白，松手归档时使用 UIKit presentation layer 的位置补偿已提前提交的目标布局高度，观察仅在布局变化及短暂归档期间运行，稳定后停止。退出中的标题保留最小档区域的中心；展开导航实例与滚动身份保持稳定。现有高度、工具栏及搜索栏对齐补偿保留。外层背景材质随高度过渡至systemGroupedBackground；仅内容分组行固定systemBackground，半屏和全屏保持白色。减少动态效果时取消额外位移、旋转与缓动。镜头和标点缩放保持 SDK / 渲染时序；路线方向箭头统一由共享动画组件驱动。
+旅途 sheet 的拖动和升降由系统负责。最小档标题与展开导航的顶部区域根据 sheet 屏幕上的呈现高度连续交接，正文保持不透明，标题遮罩覆盖底部安全区；工作区不追加矩形裁剪，由系统 sheet 外轮廓与列表滚动区域管理底部显示，避免整页淡入导致文字、图标和分组背景短暂灰白，松手归档时使用 UIKit presentation layer 的位置补偿已提前提交的目标布局高度，观察仅在布局变化及短暂归档期间运行，稳定后停止。退出中的标题保留最小档区域的中心；展开导航实例与滚动身份保持稳定。现有高度、工具栏及搜索栏对齐补偿保留。外层背景材质随高度过渡至systemGroupedBackground；仅内容分组行固定systemBackground，半屏和全屏保持白色。减少动态效果时取消额外位移、旋转与缓动。镜头和标点缩放保持 SDK / 渲染时序；路线方向箭头统一由共享几何组件生成，再由地图原生覆盖物绘制。
 
 ## unsigned IPA 与自动发布
 
@@ -192,7 +192,7 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 
 导航设置可选择 Google，通过官方 HTTPS Maps URLs 传入 WGS-84 目的地、api=1 和 dir_action=navigate，已安装时可由系统打开 App，否则浏览器打开，无需地图 SDK Key。
 
-地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向箭头统一使用 RouteMotionOverlay，三个 SDK 仅提供屏幕坐标投影。连线样式统一由 RouteLineAppearance 定义：选中彩线 6pt、未选中 3.5pt，外描边比彩线宽 2pt，颜色为路线色与白色混合的浅色描边。三个 SDK 都画相同的描边与彩线双层几何。相邻地点的已绘制路径从起点 45pt 开始，每隔固定 90pt 绘制静态白色单折角箭头；局部切线决定方向，缩放更新屏幕累计长度并增减箭头，绝不把间距平均分摊到整段。箭头宽度限制在彩线内，叠加路线形状 mask 防止弯道处突出描边。无 CADisplayLink、位移或淡入淡出动画；平移镜头时整体平移箭头与裁切图层，不重排箭头；缩放、旋转或平移超出一屏预绘余量时更新屏幕投影，静止镜头复用缓存，只绘制可见箭头。后台、搜索及低缩放时隐藏，减少动态效果不改变静态箭头。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。
+地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向箭头统一使用 RouteMotionOverlay，三个 SDK 仅提供正反坐标投影、缩放值及原生折线提交。连线样式统一由 RouteLineAppearance 定义：选中彩线 6pt、未选中 3.5pt，外描边比彩线宽 2pt，颜色为路线色与白色混合的浅色描边。三个 SDK 都画相同的描边与彩线双层几何。相邻地点的已绘制路径从起点 45pt 开始，每隔固定 90pt 绘制静态白色单折角箭头；局部切线决定方向，缩放更新屏幕累计长度并增减箭头，绝不把间距平均分摊到整段。箭头为1.4pt白色原生折线，顶点由共享组件统一生成，尺寸限制在彩线内；不使用独立CALayer、屏幕遮罩或镜头回调补位。无CADisplayLink或箭头动画；平移时保持地理顶点不变，由SDK与路线一起变换。缩放或平移超出一屏预绘余量时更新几何，静止镜头复用原生覆盖物。后台、搜索及低缩放时隐藏，减少动态效果不改变静态箭头。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。
 
 定位交互共用 LocationFollowMode：idle→centered→heading→centered；第二次实心location.fill，第三次空心location并恢复北朝上，手动地图操作退回idle。MapKit/高德原生followWithHeading，Google使用CoreLocation heading驱动镜头bearing；退出Google销毁时停止方向监听。方向跟随需真机传感器验证。
 

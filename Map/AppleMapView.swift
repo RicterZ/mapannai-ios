@@ -38,11 +38,12 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false; var directionArrow = false }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
         let routeMotion = RouteMotionOverlay()
+        var directionLines: [Line] = []
         let userDirection = UserDirectionIndicator()
         var lastTap: CGPoint?
         var selectedPOI: MKMapFeatureAnnotation?
@@ -89,7 +90,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             map.selectableMapFeatures = store.placeSearchPresented ? [] : [.pointsOfInterest]
             if routes.map(RouteOverlayGeometry.init) != store.displayRoutes.map(RouteOverlayGeometry.init) {
                 routes = store.displayRoutes
-                map.removeOverlays(map.overlays)
+                map.removeOverlays(map.overlays.filter { !($0 is Line && ($0 as! Line).directionArrow) })
                 for route in routes {
                     var coordinates = route.points.map(Pin.coordinate)
                     for casing in [true, false] {
@@ -100,16 +101,32 @@ struct AppleMapRenderer: UIViewRepresentable {
                 }
             }
             for overlay in map.overlays {
-                if let line = overlay as? Line, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
+                if let line = overlay as? Line, !line.directionArrow, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
                     renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
                 }
             }
-            routeMotion.update(routes: routes.filter { $0.dayID == store.dayID }, in: map,
+            let arrowRoutes = routes.filter { $0.dayID == store.dayID }.map { route in
+                var rendered = route; rendered.points = route.points.map(Coordinates.gcj); return rendered
+            }
+            routeMotion.update(routes: arrowRoutes, in: map,
                 enabled: { [weak self, weak map] in
                     guard let self, let map else { return false }
                     return !self.isCompact(map) && !self.store.placeSearchPresented
                 }, project: { [weak map] coordinate in
-                    map?.convert(Pin.coordinate(coordinate), toPointTo: map) ?? .zero
+                    map?.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map) ?? .zero
+                }, unproject: { [weak map] point in
+                    guard let map else { return Coordinate(latitude: 0, longitude: 0) }
+                    let coordinate = map.convert(point, toCoordinateFrom: map)
+                    return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                }, cameraKey: { [weak map] in map?.visibleMapRect.size.width ?? 0 }, publish: { [weak self, weak map] paths in
+                    guard let self, let map else { return }
+                    map.removeOverlays(self.directionLines)
+                    self.directionLines = paths.map { points in
+                        var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                        let line = Line(coordinates: &coordinates, count: coordinates.count)
+                        line.directionArrow = true; return line
+                    }
+                    map.addOverlays(self.directionLines, level: .aboveRoads)
                 })
             if let command = store.camera, command.id != lastCamera {
                 lastCamera = command.id
@@ -218,6 +235,11 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
+            if line.directionArrow {
+                let renderer = MKPolylineRenderer(polyline: line)
+                renderer.strokeColor = RouteMotionOverlay.strokeColor; renderer.lineWidth = RouteMotionOverlay.strokeWidth
+                renderer.lineCap = .round; renderer.lineJoin = .round; return renderer
+            }
             let renderer = MKPolylineRenderer(polyline: line); renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
             renderer.lineCap = .round; renderer.lineJoin = .round
             return renderer
