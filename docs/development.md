@@ -199,3 +199,5 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 本机地图凭据统一管理于被忽略的 Config/Local.xcconfig（建议权限0600），不另建含Key的env。AMAP_IOS_KEY与GOOGLE_MAPS_IOS_KEY是唯一嵌入App的字段；GOOGLE_API_KEY、AMAP_API_KEY、AMAP_JS_KEY、AMAP_JS_SECURITY_CODE可作为本地管理记录，代码不读取、不嵌入。服务器现有Key若用于iOS，须确认允许Maps SDK for iOS及实际Bundle ID；不能把服务端IP限制的Key视为已验证可用。Local.xcconfig不提交，example只保留空字段。
 
 POI反馈共用MapInteractionFeedback（0.22秒出现/消失，尊重减少动态效果）与revealTarget视口边缘避让；临时选点置顶。MapKit/Google的路线点击经MapTapArbiter短暂等待SDK POI回调，标点/POI优先取消路线提交；已保存标点优先44pt命中。各SDK底图POI命中范围由SDK提供，真实重叠点击仍需分别真机验证。
+
+底图POI反馈优先使用SDK能力：MapKit保留MKMapFeatureAnnotation原生选中，不叠加草稿图标；Google按官方示例使用无图标GMSMarker的默认信息窗口（SDK无默认POI点击UI）；高德保留共享自绘草稿标记。关闭/替换草稿清理原生选中，长按空白处仍用共享标记。添加页面、遮挡避让和点击优先级保持应用统一流程。

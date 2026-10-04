@@ -43,6 +43,8 @@ struct AppleMapRenderer: UIViewRepresentable {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
         var lastTap: CGPoint?
+        var selectedPOI: MKMapFeatureAnnotation?
+        var selectedPOIDraftID: UUID?
         var pins: [String: Pin] = [:]
         var routes: [DisplayRoute] = []
         var lastCamera: UUID?
@@ -56,7 +58,11 @@ struct AppleMapRenderer: UIViewRepresentable {
             var desired: [String: (Coordinate, String, Marker?, Place?)] = [:]
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker, nil) }
             for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil, place) }
-            if let draft = store.draft { desired["draft"] = (draft.coordinates, draft.title, nil, nil) }
+            if let feature = selectedPOI, store.draft?.id != selectedPOIDraftID {
+                selectedPOI = nil; selectedPOIDraftID = nil
+                map.deselectAnnotation(feature, animated: true)
+            }
+            if let draft = store.draft, selectedPOI == nil { desired["draft"] = (draft.coordinates, draft.title, nil, nil) }
             for key in Array(pins.keys) where desired[key] == nil {
                 let pin = pins.removeValue(forKey: key)!
                 if key == "draft" { MapInteractionFeedback.disappear(map.view(for: pin)) { [weak map] in map?.removeAnnotation(pin) } }
@@ -192,7 +198,10 @@ struct AppleMapRenderer: UIViewRepresentable {
                     tapArbiter.claim(); store.focus(marker)
                 } else {
                     tapArbiter.claim()
+                    selectedPOI = feature
                     store.create(at: Self.internalCoordinate(feature.coordinate), poiName: feature.title)
+                    selectedPOIDraftID = store.draft?.id
+                    return // Keep the native POI selection; no duplicate custom pin.
                 }
             }
             mapView.deselectAnnotation(annotation, animated: false)
@@ -201,6 +210,8 @@ struct AppleMapRenderer: UIViewRepresentable {
         @objc func press(_ gesture: UILongPressGestureRecognizer) {
             guard gesture.state == .began, let map = gesture.view as? MKMapView else { return }
             let coordinate = map.convert(gesture.location(in: map), toCoordinateFrom: map)
+            if let feature = selectedPOI { map.deselectAnnotation(feature, animated: true) }
+            selectedPOI = nil; selectedPOIDraftID = nil
             store.noteMapInteraction(); store.create(at: Self.internalCoordinate(coordinate))
         }
         func hitPin(_ map: MKMapView, at point: CGPoint) -> Pin? {

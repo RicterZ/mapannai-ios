@@ -36,6 +36,8 @@ struct GoogleMapRenderer: UIViewRepresentable {
     @MainActor final class Coordinator: NSObject, GMSMapViewDelegate, CLLocationManagerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
+        var poiInfoMarker: GMSMarker?
+        var poiDraftID: UUID?
         private let headingManager = CLLocationManager()
         var markers: [String: GMSMarker] = [:]
         var lines: [String: GMSPolyline] = [:]
@@ -63,7 +65,10 @@ struct GoogleMapRenderer: UIViewRepresentable {
             var desired: [String: (Coordinate, String, Marker?)] = [:]
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker) }
             for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil) }
-            if let draft = store.draft { desired["draft"] = (draft.coordinates, draft.title, nil) }
+            if poiInfoMarker != nil, store.draft?.id != poiDraftID {
+                poiInfoMarker?.map = nil; poiInfoMarker = nil; poiDraftID = nil
+            }
+            if let draft = store.draft, poiInfoMarker == nil { desired["draft"] = (draft.coordinates, draft.title, nil) }
             for key in Array(markers.keys) where desired[key] == nil {
                 guard let marker = markers.removeValue(forKey: key) else { continue }
                 if key == "draft" { MapInteractionFeedback.disappear(marker.iconView) { marker.map = nil } }
@@ -162,6 +167,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
             return true
         }
         func mapView(_ mapView: GMSMapView, didLongPressAt coordinate: CLLocationCoordinate2D) {
+            poiInfoMarker?.map = nil; poiInfoMarker = nil; poiDraftID = nil
             store.noteMapInteraction(); store.create(at: Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude))
         }
         func mapView(_ mapView: GMSMapView, didTapPOIWithPlaceID placeID: String, name: String, location: CLLocationCoordinate2D) {
@@ -175,6 +181,12 @@ struct GoogleMapRenderer: UIViewRepresentable {
             }
             tapArbiter.claim()
             store.noteMapInteraction(); store.create(at: Coordinate(latitude: location.latitude, longitude: location.longitude), poiName: name)
+            poiInfoMarker?.map = nil
+            let info = GMSMarker(position: location)
+            info.title = name
+            info.icon = UIImage() // Google's documented POI info-window pattern.
+            info.map = mapView; mapView.selectedMarker = info
+            poiInfoMarker = info; poiDraftID = store.draft?.id
         }
         func mapView(_ mapView: GMSMapView, didTap overlay: GMSOverlay) {
             guard !store.placeSearchPresented, let id = overlay.userData as? String, let route = store.displayRoutes.first(where: { $0.id == id }) else { return }
