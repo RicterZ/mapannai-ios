@@ -44,6 +44,8 @@ struct AppleMapRenderer: UIViewRepresentable {
         let tapArbiter = MapTapArbiter()
         let routeMotion = RouteMotionOverlay()
         var directionGlyphs: [[Coordinate]] = []
+        let directionOverlay = AppleDirectionOverlay()
+        var directionRenderer: AppleDirectionRenderer?
         let userDirection = UserDirectionIndicator()
         let navigationGestures = MapNavigationGestures()
         var lastTap: CGPoint?
@@ -100,7 +102,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             map.selectableMapFeatures = store.placeSearchPresented ? [] : [.pointsOfInterest]
             if routes.map(RouteOverlayGeometry.init) != store.displayRoutes.map(RouteOverlayGeometry.init) {
                 routes = store.displayRoutes
-                map.removeOverlays(map.overlays)
+                map.removeOverlays(map.overlays.filter { $0 is Line })
                 for route in routes {
                     var coordinates = route.points.map(Pin.coordinate)
                     for casing in [true, false] {
@@ -132,9 +134,10 @@ struct AppleMapRenderer: UIViewRepresentable {
                 }, cameraKey: { [weak map] in log2(max(map?.camera.centerCoordinateDistance ?? 1, 1)) }, publish: { [weak self, weak map] paths in
                     guard let self, let map else { return }
                     self.directionGlyphs = paths
-                    for overlay in map.overlays {
-                        guard let line = overlay as? Line, !line.casing else { continue }
-                        (map.renderer(for: line) as? AppleRouteRenderer)?.updateGlyphs(paths)
+                    if let renderer = self.directionRenderer {
+                        renderer.updateGlyphs(paths)
+                    } else if !paths.isEmpty {
+                        map.addOverlay(self.directionOverlay, level: .aboveRoads)
                     }
                 })
             if let command = store.camera, command.id != lastCamera {
@@ -233,9 +236,19 @@ struct AppleMapRenderer: UIViewRepresentable {
             view.displayPriority = .required
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if overlay === directionOverlay {
+                let renderer = AppleDirectionRenderer(overlay: overlay)
+                renderer.shouldRasterize = false
+                renderer.strokeColor = RouteMotionOverlay.strokeColor
+                renderer.lineWidth = RouteMotionOverlay.strokeWidth
+                renderer.lineCap = .round; renderer.lineJoin = .round
+                renderer.updateGlyphs(directionGlyphs)
+                directionRenderer = renderer
+                return renderer
+            }
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            let renderer = AppleRouteRenderer(polyline: line)
-            renderer.updateGlyphs(line.casing ? [] : directionGlyphs)
+            let renderer = MKPolylineRenderer(polyline: line)
+            renderer.shouldRasterize = false
             renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
             renderer.lineCap = .round; renderer.lineJoin = .round
             return renderer
