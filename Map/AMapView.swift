@@ -271,10 +271,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 guard let pair = lines[id] else { continue }
                 let active = selected.contains(id)
                 if let white = map.renderer(for: pair.0) as? MAPolylineRenderer {
-                    white.lineWidth = active ? 9 : 6; white.setNeedsUpdate()
+                    white.lineWidth = RouteLineAppearance.outlineWidth(selected: active); white.setNeedsUpdate()
                 }
                 if let color = map.renderer(for: pair.1) as? MAPolylineRenderer {
-                    color.lineWidth = active ? 6 : 3.5; color.setNeedsUpdate()
+                    color.lineWidth = RouteLineAppearance.width(selected: active); color.setNeedsUpdate()
                 }
             }
             CATransaction.commit()
@@ -347,14 +347,17 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 overlayStyle[ObjectIdentifier(colored)] = (tint, false)
                 // The SDK requires renderer invalidation when its overlay model changes.
-                map.renderer(for: white)?.setNeedsUpdate()
+                overlayStyle[ObjectIdentifier(white)] = (RouteLineAppearance.outline(route.colorIndex), true)
+                if let renderer = map.renderer(for: white) as? MAPolylineRenderer {
+                    renderer.strokeColor = RouteLineAppearance.outline(route.colorIndex); renderer.setNeedsUpdate()
+                }
                 if let renderer = map.renderer(for: colored) as? MAPolylineRenderer {
                     renderer.strokeColor = tint; renderer.setNeedsUpdate()
                 }
             } else {
                 guard let white = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)),
                       let colored = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)) else { return [] }
-                overlayStyle[ObjectIdentifier(white)] = (.white, true)
+                overlayStyle[ObjectIdentifier(white)] = (RouteLineAppearance.outline(route.colorIndex), true)
                 overlayStyle[ObjectIdentifier(colored)] = (tint, false)
                 lines[route.id] = (white, colored)
                 added = [white, colored]
@@ -512,7 +515,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             renderer.strokeColor = style.0
             let id = lines.first { $0.value.0 === line || $0.value.1 === line }?.key
             let selected = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.dayID == store.dayID && store.dayID != nil
-            renderer.lineWidth = style.1 ? (selected ? 9 : 6) : (selected ? 6 : 3.5)
+            renderer.lineWidth = style.1 ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
             return renderer
         }
         func mapView(_ mapView: MAMapView!, didSelect view: MAAnnotationView!) {
@@ -692,11 +695,11 @@ struct PreviewMap: View {
                         var path = Path(); for (index, p) in route.points.enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                         }
-                        context.stroke(path, with: .color(.white), style: StrokeStyle(lineWidth: store.dayID == route.dayID ? 9 : 6, lineCap: .round))
-                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: store.dayID == route.dayID ? 6 : 3.5, lineCap: .round))
+                        context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID), lineCap: .round))
+                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID), lineCap: .round))
                     }
                 }
-                TimelineView(.animation(paused: !motionActive || reduceMotion)) { timeline in
+                TimelineView(.animation(paused: true)) { timeline in
                     Canvas { context, size in
                         guard motionActive, !MapZoomPresentation.isCompact(zoom) else { return }
                         let routes = store.displayRoutes.filter { $0.dayID == store.dayID }
@@ -704,10 +707,10 @@ struct PreviewMap: View {
                             let path = RouteDirectionPath(points: route.points.map { point($0, size: size) }, bounds: CGRect(origin: .zero, size: size))
                             for arrow in path.arrows(timestamp: timeline.date.timeIntervalSinceReferenceDate,
                                                      reducedMotion: reduceMotion, bounds: CGRect(origin: .zero, size: size)) {
-                                var glyph = Path(); glyph.move(to: CGPoint(x: -3.5, y: -4)); glyph.addLine(to: CGPoint(x: 1.5, y: 0)); glyph.addLine(to: CGPoint(x: -3.5, y: 4))
+                                var glyph = Path(); glyph.move(to: CGPoint(x: -2.5, y: -2.3)); glyph.addLine(to: CGPoint(x: 1.5, y: 0)); glyph.addLine(to: CGPoint(x: -2.5, y: 2.3))
                                 var drawing = context; drawing.opacity = Double(arrow.opacity)
                                 drawing.translateBy(x: arrow.position.x, y: arrow.position.y); drawing.rotate(by: .radians(Double(arrow.angle)))
-                                drawing.stroke(glyph, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                drawing.stroke(glyph, with: .color(.white), style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
                             }
                         }
                     }

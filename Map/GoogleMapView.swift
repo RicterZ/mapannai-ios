@@ -42,6 +42,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
         private let headingManager = CLLocationManager()
         var markers: [String: GMSMarker] = [:]
         var lines: [String: GMSPolyline] = [:]
+        var casings: [String: GMSPolyline] = [:]
         var geometries: [RouteOverlayGeometry] = []
         var lastCamera: UUID?
         var lastLocate: UUID?
@@ -100,12 +101,17 @@ struct GoogleMapRenderer: UIViewRepresentable {
             let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
             if snapshot != geometries {
                 geometries = snapshot
-                for line in lines.values { line.map = nil }; lines = [:]
+                for line in Array(lines.values) + Array(casings.values) { line.map = nil }; lines = [:]; casings = [:]
                 for geometry in snapshot {
                     let path = GMSMutablePath()
                     for point in geometry.points { path.add(Self.coordinate(point)) }
+                    let casing = GMSPolyline(path: path)
+                    casing.strokeWidth = RouteLineAppearance.outlineWidth(selected: false)
+                    casing.strokeColor = RouteLineAppearance.outline(geometry.colorIndex); casing.isTappable = false; casing.zIndex = 0
+                    casing.map = map; casings[geometry.id] = casing
                     let line = GMSPolyline(path: path)
-                    line.strokeWidth = 4; line.strokeColor = UIColor(Theme.color(geometry.colorIndex))
+                    line.zIndex = 1
+                    line.strokeWidth = RouteLineAppearance.width(selected: false); line.strokeColor = RouteLineAppearance.color(geometry.colorIndex)
                     line.userData = geometry.id; line.isTappable = !store.placeSearchPresented
                     line.map = map; lines[geometry.id] = line
                 }
@@ -113,7 +119,11 @@ struct GoogleMapRenderer: UIViewRepresentable {
             for line in lines.values { line.isTappable = !store.placeSearchPresented; line.map = MapZoomPresentation.isCompact(Double(map.camera.zoom)) ? nil : map }
             let selected = store.displayRoutes.filter { $0.dayID == store.dayID }
             let selectedIDs = Set(selected.map(\.id))
-            for (id, line) in lines { line.strokeWidth = selectedIDs.contains(id) ? 6 : 4 }
+            for (id, line) in lines {
+                line.strokeWidth = RouteLineAppearance.width(selected: selectedIDs.contains(id))
+                casings[id]?.strokeWidth = RouteLineAppearance.outlineWidth(selected: selectedIDs.contains(id))
+                casings[id]?.map = line.map
+            }
             routeMotion.update(routes: selected, in: map, enabled: { [weak self, weak map] in
                 guard let self, let map else { return false }
                 return !MapZoomPresentation.isCompact(Double(map.camera.zoom)) && !self.store.placeSearchPresented

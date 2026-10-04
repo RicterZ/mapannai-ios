@@ -15,15 +15,15 @@ final class RouteMotionOverlayTests: XCTestCase {
         }
         let project: (Coordinate) -> CGPoint = { CGPoint(x: ($0.longitude - 121) * 10000, y: 100) }
         overlay.update(routes: routes, in: view, enabled: { true }, project: project)
-        for _ in 0..<100 where (view.layer.sublayers ?? []).count < 3 {
+        for _ in 0..<100 where (view.layer.sublayers?.first?.sublayers ?? []).count < 3 {
             try await Task.sleep(for: .milliseconds(10))
         }
-        let layers = try XCTUnwrap(view.layer.sublayers)
+        let layers = try XCTUnwrap(view.layer.sublayers?.first?.sublayers)
         XCTAssertEqual(layers.count, 3)
         XCTAssertTrue(layers.allSatisfy { $0 is CAShapeLayer })
         overlay.refresh()
         overlay.update(routes: routes, in: view, enabled: { true }, project: project)
-        XCTAssertEqual(view.layer.sublayers, layers, "Repeated selection must retain layers and phase")
+        XCTAssertEqual(view.layer.sublayers?.first?.sublayers, layers, "Repeated selection must retain layers and phase")
         overlay.stop()
         XCTAssertTrue(view.layer.sublayers?.isEmpty ?? true)
         XCTAssertFalse(overlay.isRunning)

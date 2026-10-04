@@ -38,7 +38,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0; var dayID = "" }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
@@ -83,14 +83,16 @@ struct AppleMapRenderer: UIViewRepresentable {
                 map.removeOverlays(map.overlays)
                 for route in routes {
                     var coordinates = route.points.map(Pin.coordinate)
-                    let line = Line(coordinates: &coordinates, count: coordinates.count)
-                    line.colorIndex = route.colorIndex; line.dayID = route.dayID
-                    map.addOverlay(line)
+                    for casing in [true, false] {
+                        let line = Line(coordinates: &coordinates, count: coordinates.count)
+                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.casing = casing
+                        map.addOverlay(line)
+                    }
                 }
             }
             for overlay in map.overlays {
                 if let line = overlay as? Line, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
-                    renderer.lineWidth = line.dayID == store.dayID ? 6 : 4
+                    renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
                 }
             }
             routeMotion.update(routes: routes.filter { $0.dayID == store.dayID }, in: map,
@@ -200,7 +202,8 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            let renderer = MKPolylineRenderer(polyline: line); renderer.alpha = compact ? 0 : 1; renderer.strokeColor = UIColor(Theme.color(line.colorIndex)); renderer.lineWidth = line.dayID == store.dayID ? 6 : 4
+            let renderer = MKPolylineRenderer(polyline: line); renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
+            renderer.lineCap = .round; renderer.lineJoin = .round
             return renderer
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {

@@ -3,13 +3,15 @@ import XCTest
 
 final class RouteDirectionArrowTests: XCTestCase {
     let bounds = CGRect(x: 0, y: 0, width: 1000, height: 1000)
-    func testLongAndShortRoutesMoveAtSameScreenSpeed() throws {
+    func testStaticArrowsHaveExactSpacingAcrossZoom() throws {
         for length in [100.0, 1000.0] {
             let path = RouteDirectionPath(points: [.zero, CGPoint(x: length, y: 0)])
             let start = try XCTUnwrap(path.arrows(timestamp: 0.5, reducedMotion: false, bounds: bounds).first)
             let end = try XCTUnwrap(path.arrows(timestamp: 1.5, reducedMotion: false, bounds: bounds).first)
-            XCTAssertEqual(end.position.x - start.position.x, 12, accuracy: 0.001)
+            XCTAssertEqual(end.position.x - start.position.x, 0, accuracy: 0.001)
             XCTAssertEqual(start.angle, 0)
+            let arrows = path.arrows(timestamp: 1, reducedMotion: false, bounds: bounds)
+            for pair in zip(arrows, arrows.dropFirst()) { XCTAssertEqual(pair.1.position.x - pair.0.position.x, 100, accuracy: 0.001) }
         }
     }
     func testBendUsesLocalDirectionAndReducedMotionIsStatic() throws {

@@ -5,8 +5,6 @@ import CoreGraphics
 struct RouteDirectionPath {
     struct Arrow { let position: CGPoint; let angle: CGFloat; let opacity: Float }
     static let spacing = 100.0
-    static let travel = 24.0
-    static let duration = 2.0
     let points: [CGPoint]
     private let cumulative: [Double]
     let length: Double
@@ -22,8 +20,8 @@ struct RouteDirectionPath {
             kept.append(point); distances.append(total)
         }
         self.points = kept; cumulative = distances; length = total
-        let count = max(1, Int(min((total / Self.spacing).rounded(), Double(Int.max / 2))))
-        let step = total / Double(count)
+        let count = max(0, Int(min(ceil((total - 50) / Self.spacing), Double(Int.max / 2))))
+        let step = Self.spacing
         var visible = Set<Int>()
         if step > 0 {
             let rect = bounds.insetBy(dx: -24, dy: -24)
@@ -51,13 +49,9 @@ struct RouteDirectionPath {
     }
     func arrows(timestamp: Double, reducedMotion: Bool, bounds: CGRect) -> [Arrow] {
         guard points.count > 1, length >= 28 else { return [] }
-        let phase = reducedMotion ? 0.5 : max(0, timestamp).truncatingRemainder(dividingBy: Self.duration) / Self.duration
-        let offset = reducedMotion ? 0 : (phase - 0.5) * Self.travel
-        let fade: Float = reducedMotion ? 1 : Float(min(1, phase * 10, (1 - phase) * 10))
-        let count = max(1, Int((length / Self.spacing).rounded()))
         var result: [Arrow] = []
         for index in indices {
-            let distance = (Double(index) + 0.5) * length / Double(count) + offset
+            let distance = 50 + Double(index) * Self.spacing
             guard distance >= 12, distance <= length - 12 else { continue }
             var low = 1, high = points.count - 1
             while low < high {
@@ -68,7 +62,7 @@ struct RouteDirectionPath {
             let fraction = (distance - cumulative[low - 1]) / (cumulative[low] - cumulative[low - 1])
             let point = CGPoint(x: a.x + (b.x - a.x) * fraction, y: a.y + (b.y - a.y) * fraction)
             guard bounds.insetBy(dx: -12, dy: -12).contains(point) else { continue }
-            result.append(Arrow(position: point, angle: atan2(b.y - a.y, b.x - a.x), opacity: fade))
+            result.append(Arrow(position: point, angle: atan2(b.y - a.y, b.x - a.x), opacity: 1))
         }
         return result
     }

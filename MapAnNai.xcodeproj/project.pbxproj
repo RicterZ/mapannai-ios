@@ -84,6 +84,7 @@
 		B3727CE9B79519F6341AE5B6 /* NativeSheetHeightReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8BC6B0004E2261EB109B84 /* NativeSheetHeightReader.swift */; };
 		B55668A6A18E3B01AE4916BF /* NoteContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114754DBBCAFABDDCB8097D /* NoteContent.swift */; };
 		B658D79E6C324942CAF26537 /* RouteMotionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D4E8DFC738036248B04B83 /* RouteMotionOverlay.swift */; };
+		BCCF9D9E423AD21EBC4BC5A1 /* RouteLineAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CF885A0C2BE75526CB0BCC /* RouteLineAppearance.swift */; };
 		BD107C091E8E4C753CB7D72E /* AMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1D7BACAED41D3AB875D71B /* AMapView.swift */; };
 		C4D5DDD576313DAB75D72D1E /* JourneyEditingActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */; };
 		CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1DE90E8066F7692BEC6055 /* AppStore.swift */; };
@@ -183,6 +184,7 @@
 		5F1DE90E8066F7692BEC6055 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompressionTests.swift; sourceTree = "<group>"; };
 		643D80F501C97FDAC85C6252 /* RouteSpatialIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSpatialIndex.swift; sourceTree = "<group>"; };
+		65CF885A0C2BE75526CB0BCC /* RouteLineAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteLineAppearance.swift; sourceTree = "<group>"; };
 		676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyTitleTests.swift; sourceTree = "<group>"; };
 		6871690DA4224A68B7D97B4F /* AppleMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMapView.swift; sourceTree = "<group>"; };
 		6B450235965289010509590A /* MapMarkerAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapMarkerAppearance.swift; sourceTree = "<group>"; };
@@ -362,6 +364,7 @@
 				6B450235965289010509590A /* MapMarkerAppearance.swift */,
 				538108F21D71668426EA9A48 /* MapRenderer.swift */,
 				2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */,
+				65CF885A0C2BE75526CB0BCC /* RouteLineAppearance.swift */,
 				33D4E8DFC738036248B04B83 /* RouteMotionOverlay.swift */,
 			);
 			path = Map;
@@ -594,6 +597,7 @@
 				0A3C38A375DBE8FF853161E1 /* RouteCache.swift in Sources */,
 				9AA3D451340B9A78DBD31C91 /* RouteDayPicker.swift in Sources */,
 				58C717798F7574DE7E8ADDC8 /* RouteDirectionArrows.swift in Sources */,
+				BCCF9D9E423AD21EBC4BC5A1 /* RouteLineAppearance.swift in Sources */,
 				B658D79E6C324942CAF26537 /* RouteMotionOverlay.swift in Sources */,
 				97F611E5D8A6E49BAE5F2958 /* RouteOverlaySnapshot.swift in Sources */,
 				E59A20A4E04ECD9CFFF72589 /* RouteProcessing.swift in Sources */,
@@ -742,7 +746,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 131;
+				CURRENT_PROJECT_VERSION = 132;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -882,7 +886,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 131;
+				CURRENT_PROJECT_VERSION = 132;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
