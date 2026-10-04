@@ -61,6 +61,43 @@ final class RouteMotionOverlayTests: XCTestCase {
         XCTAssertGreaterThan(paths.last![1].longitude, 1700)
         overlay.stop()
     }
+    @MainActor func testRouteRendererPreservesSixPointWidthAcrossZoom() throws {
+        for zoom: CGFloat in [0.01, 0.02] {
+            var coordinates = [CLLocationCoordinate2D(latitude: 31, longitude: 121), CLLocationCoordinate2D(latitude: 31, longitude: 121.1)]
+            let line = MKPolyline(coordinates: &coordinates, count: coordinates.count)
+            let renderer = AppleRouteRenderer(polyline: line)
+            renderer.lineWidth = 6; renderer.strokeColor = .systemBlue
+            renderer.createPath()
+            let start = renderer.point(for: line.points()[0])
+            let origin = line.points()[0]
+            let glyphs = [45.0, 135, 225].map { x in
+                RouteMotionOverlay.glyphPoints.map { point in
+                    let mapPoint = MKMapPoint(x: origin.x + (x + point.x) / zoom, y: origin.y + point.y / zoom)
+                    return Coordinate(latitude: mapPoint.coordinate.latitude, longitude: mapPoint.coordinate.longitude)
+                }
+            }
+            renderer.updateGlyphs(glyphs)
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 80), format: {
+                let format = UIGraphicsImageRendererFormat(); format.scale = 1; return format
+            }()).image { output in
+                UIColor.white.setFill(); output.fill(CGRect(x: 0, y: 0, width: 320, height: 80))
+                let context = output.cgContext
+                context.translateBy(x: 10, y: 40)
+                context.scaleBy(x: zoom, y: zoom)
+                context.translateBy(x: -start.x, y: -start.y)
+                renderer.draw(line.boundingMapRect, zoomScale: zoom, in: context)
+            }
+            let attachment = XCTAttachment(image: image); attachment.name = "Route 6pt at scale \(zoom)"; attachment.lifetime = .keepAlways; add(attachment)
+            let cg = try XCTUnwrap(image.cgImage)
+            let data = try XCTUnwrap(cg.dataProvider?.data)
+            let bytes = try XCTUnwrap(CFDataGetBytePtr(data))
+            let painted = (0..<80).filter { y in
+                let offset = y * cg.bytesPerRow + 100 * 4
+                return bytes[offset] < 240 || bytes[offset + 1] < 240 || bytes[offset + 2] < 240
+            }
+            XCTAssertEqual(painted.count, 6, "Route must remain 6 screen points wide")
+        }
+    }
     @MainActor func testMapKitZoomKeyIsIndependentOfRotation() {
         let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
         let camera = MKMapCamera(lookingAtCenter: CLLocationCoordinate2D(latitude: 31, longitude: 121),

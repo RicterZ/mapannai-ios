@@ -16,7 +16,7 @@ import UIKit
     private(set) var isRunning = false
     static let strokeWidth = RouteArrowAppearance.strokeWidth
     static let strokeColor = UIColor.white
-    static let glyphPoints = [CGPoint(x: -2, y: -1.8), CGPoint(x: 1, y: 0), CGPoint(x: -2, y: 1.8)]
+    static let glyphPoints = [CGPoint(x: -3, y: -1.8), CGPoint(x: 2, y: 0), CGPoint(x: -3, y: 1.8)]
 
     func update(routes: [DisplayRoute], in view: UIView, enabled: @escaping () -> Bool,
                 project: @escaping (Coordinate) -> CGPoint,

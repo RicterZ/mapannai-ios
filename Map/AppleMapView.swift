@@ -133,7 +133,8 @@ struct AppleMapRenderer: UIViewRepresentable {
                     guard let self, let map else { return }
                     self.directionGlyphs = paths
                     for overlay in map.overlays {
-                        (map.renderer(for: overlay) as? AppleRouteRenderer)?.updateGlyphs(paths)
+                        guard let line = overlay as? Line, !line.casing else { continue }
+                        (map.renderer(for: line) as? AppleRouteRenderer)?.updateGlyphs(paths)
                     }
                 })
             if let command = store.camera, command.id != lastCamera {
@@ -233,8 +234,8 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            let renderer: MKPolylineRenderer = line.casing ? MKPolylineRenderer(polyline: line) : AppleRouteRenderer(polyline: line)
-            (renderer as? AppleRouteRenderer)?.updateGlyphs(directionGlyphs)
+            let renderer = AppleRouteRenderer(polyline: line)
+            renderer.updateGlyphs(line.casing ? [] : directionGlyphs)
             renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
             renderer.lineCap = .round; renderer.lineJoin = .round
             return renderer
