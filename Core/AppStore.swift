@@ -62,6 +62,9 @@ struct TripSaveDraft: Identifiable {
     @Published var routeProgress = ""
     @Published var camera: CameraCommand?
     @Published var locating = UUID()
+    @Published private(set) var locationMode: LocationFollowMode = .idle
+    func cycleLocationMode() { locationMode = locationMode.next; locating = UUID() }
+    func stopLocationFollowing() { locationMode = .idle }
     @Published var mapViewportInsets: MapViewportInsets = .phone
     var bounds: SearchBounds?
     let demo: Bool
@@ -182,7 +185,7 @@ struct TripSaveDraft: Identifiable {
         startupLocation = coordinate
         applyNearestStartupMarker()
     }
-    func noteMapInteraction() { startupMapInteracted = true }
+    func noteMapInteraction() { startupMapInteracted = true; stopLocationFollowing() }
     private func applyNearestStartupMarker() {
         guard let location = startupLocation, !startupLocationFinished, !startupMapInteracted else { return }
         guard camera == nil || camera?.id == startupLocationCameraID else { return }

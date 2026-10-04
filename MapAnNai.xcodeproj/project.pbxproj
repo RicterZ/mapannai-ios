@@ -60,6 +60,7 @@
 		8E4BA9BE46B890358BAE4A01 /* BackgroundSaveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 198C34C423C7BB478F9EC042 /* BackgroundSaveTests.swift */; };
 		8FC298524B1D52C0FBF7C80B /* SearchSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C335E3944995E33E94762A45 /* SearchSelectionTests.swift */; };
 		90547715CCA2328EA998204F /* NativeJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45FECFBB8C13A6617DE0148 /* NativeJourneyTests.swift */; };
+		9081281758535F7F520D412F /* LocationFollowModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09050C66B29D08E3DD685E7E /* LocationFollowModeTests.swift */; };
 		94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72771F1E2B151FC279B7446 /* Geometry.swift */; };
 		97F611E5D8A6E49BAE5F2958 /* RouteOverlaySnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFC9E44BED6AF2ED557266F /* RouteOverlaySnapshot.swift */; };
 		98077213B5743CC94A28A49C /* ChatMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ED06A8F371A68F48D1B4F53 /* ChatMarkdown.swift */; };
@@ -94,6 +95,7 @@
 		EA7A0398EDDD1A5DFFE220EF /* IPadDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 455D902A90E28E3E96034F8D /* IPadDetailTests.swift */; };
 		EDACC92DB748C66C90FF7452 /* NativeRouteDropGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC1E75B71BD3626B83A19E4 /* NativeRouteDropGeometryTests.swift */; };
 		EDC065EB7BAB9AFD123E640D /* RouteScheduleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91EFBD72522A19CC2A1A64B5 /* RouteScheduleUITests.swift */; };
+		EFACC0B506FC801DFF2CFF75 /* LocationFollowMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 403E1E86582B3BE53341BE5A /* LocationFollowMode.swift */; };
 		F1949C4DCF21D01AF1A756B2 /* SearchReturnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B204CAEBC71F4234F1FC623 /* SearchReturnTests.swift */; };
 		F1C63FD2A82AAF743A72E3E0 /* StartupCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3978F19A26A8C390918515 /* StartupCamera.swift */; };
 		F23D930B9FB4B819515B5D30 /* TripDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98A6A81018435A3992E39030 /* TripDeletionTests.swift */; };
@@ -122,6 +124,7 @@
 
 /* Begin PBXFileReference section */
 		038EF71F79FF50630DC220E9 /* LongPressPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongPressPresentationTests.swift; sourceTree = "<group>"; };
+		09050C66B29D08E3DD685E7E /* LocationFollowModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationFollowModeTests.swift; sourceTree = "<group>"; };
 		09E543F803BEDC2629C60388 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		0B62253EAC3829164040323C /* SearchMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchMapTests.swift; sourceTree = "<group>"; };
 		0E1101856C18590877C951E1 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
@@ -144,6 +147,7 @@
 		3E64E5D5CCD66C47F3724D18 /* AIPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerView.swift; sourceTree = "<group>"; };
 		3F55A919B31EC92357E58F47 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		401E2D25019885A304E0676C /* MapZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapZoomTests.swift; sourceTree = "<group>"; };
+		403E1E86582B3BE53341BE5A /* LocationFollowMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationFollowMode.swift; sourceTree = "<group>"; };
 		4140415A9DAD22E98BB13192 /* GoogleMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleMapView.swift; sourceTree = "<group>"; };
 		425DF5BCBE1273228F07E613 /* MarkerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerViews.swift; sourceTree = "<group>"; };
 		42CAE74097153A4CF3C81CE1 /* MapAnNaiTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MapAnNaiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -280,6 +284,7 @@
 				52A5131C016B257343D4A0CD /* CameraMotion.swift */,
 				9ED06A8F371A68F48D1B4F53 /* ChatMarkdown.swift */,
 				F72771F1E2B151FC279B7446 /* Geometry.swift */,
+				403E1E86582B3BE53341BE5A /* LocationFollowMode.swift */,
 				A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */,
 				DE1B1BE0D10CFCEBB91BDC15 /* MapServices.swift */,
 				E638F7BC16C1CF3639093C55 /* MapZoomPresentation.swift */,
@@ -313,6 +318,7 @@
 				908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */,
 				BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */,
 				DE9141FA533CC90A4942D040 /* GoogleMapIntegrationTests.swift */,
+				09050C66B29D08E3DD685E7E /* LocationFollowModeTests.swift */,
 				629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */,
 				CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */,
 				CBC1E75B71BD3626B83A19E4 /* NativeRouteDropGeometryTests.swift */,
@@ -544,6 +550,7 @@
 				88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */,
 				74A88091D9ABF6D8AA712AB9 /* JourneySheetBackground.swift in Sources */,
 				E5E82A9A2F2526B35B873E8B /* JourneyViews.swift in Sources */,
+				EFACC0B506FC801DFF2CFF75 /* LocationFollowMode.swift in Sources */,
 				B353F2DDCDACD295F7761889 /* MapAnNaiApp.swift in Sources */,
 				18DC608C17CAC7B4854B1504 /* MapLayout.swift in Sources */,
 				A46DB7C6125137C883E819A0 /* MapMarkerAppearance.swift in Sources */,
@@ -591,6 +598,7 @@
 				39485F3DE95106F278FE9E42 /* DayCameraTests.swift in Sources */,
 				1813F5E4A7C7AA606B7E96E7 /* DirectedRouteMoveTests.swift in Sources */,
 				0D91BDAF33E1564B4AB87964 /* GoogleMapIntegrationTests.swift in Sources */,
+				9081281758535F7F520D412F /* LocationFollowModeTests.swift in Sources */,
 				0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */,
 				77E5FBF26CBA7D5C9FA81B1C /* MarkerRepositoryTests.swift in Sources */,
 				EDACC92DB748C66C90FF7452 /* NativeRouteDropGeometryTests.swift in Sources */,

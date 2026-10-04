@@ -67,6 +67,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         var lastCamera: UUID?
         var lastLocate: UUID?
         private var pendingLocate = false
+        private var lastFollowMode: LocationFollowMode = .idle
         var routesVisible = true
         var lastStyledCompact: Bool?
         var lastStyledSelection: String?
@@ -183,6 +184,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
             updatePinStyles(map)
             updateSearchBounds(map)
+            if lastFollowMode != store.locationMode {
+                lastFollowMode = store.locationMode
+                if store.locationMode == .idle { map.setUserTrackingMode(.none, animated: false) }
+            }
             if lastLocate == nil { lastLocate = store.locating }
             else if lastLocate != store.locating {
                 lastLocate = store.locating; map.showsUserLocation = true
@@ -205,6 +210,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let insets = padding(map)
             status.centerCoordinate = location.coordinate
             status.zoomLevel = 15
+            if store.locationMode != .heading { status.rotationDegree = 0 }
             status.screenAnchor = CGPoint(
                 x: (map.bounds.width + insets.left - insets.right) / (2 * max(1, map.bounds.width)),
                 y: (map.bounds.height + insets.top - insets.bottom) / (2 * max(1, map.bounds.height)))
@@ -216,6 +222,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             withCameraAnimation(duration: duration) {
                 map.setMapStatus(status, animated: duration > 0, duration: duration)
             }
+            if store.locationMode == .heading { map.setUserTrackingMode(.followWithHeading, animated: duration > 0) }
         }
         private func padding(_ map: MAMapView, command: CameraCommand? = nil) -> UIEdgeInsets {
             let insets = (command ?? CameraCommand(points: [])).viewportInsets(base: store.mapViewportInsets,

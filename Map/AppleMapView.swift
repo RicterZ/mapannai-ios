@@ -46,6 +46,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         var lastCamera: UUID?
         var lastLocate: UUID?
         var pendingLocate = false
+        var lastFollowMode: LocationFollowMode = .idle
         var compact = false
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MKMapView) {
@@ -78,6 +79,10 @@ struct AppleMapRenderer: UIViewRepresentable {
                 lastCamera = command.id
                 focus(map, command: command)
             }
+            if lastFollowMode != store.locationMode {
+                lastFollowMode = store.locationMode
+                if store.locationMode == .idle { map.setUserTrackingMode(.none, animated: false) }
+            }
             if lastLocate == nil { lastLocate = store.locating }
             else if lastLocate != store.locating {
                 lastLocate = store.locating; pendingLocate = true; map.showsUserLocation = true
@@ -106,11 +111,25 @@ struct AppleMapRenderer: UIViewRepresentable {
         func locate(_ map: MKMapView, location: CLLocation) {
             guard pendingLocate, location.horizontalAccuracy >= 0 else { return }
             pendingLocate = false
+            map.setUserTrackingMode(.none, animated: false)
             focus(map, command: CameraCommand(points: [Self.internalCoordinate(map.userLocation.coordinate)]))
+            if store.locationMode == .heading {
+                map.setUserTrackingMode(.followWithHeading, animated: !UIAccessibility.isReduceMotionEnabled)
+            } else {
+                let camera = map.camera.copy() as! MKMapCamera
+                camera.heading = 0
+                map.setCamera(camera, animated: !UIAccessibility.isReduceMotionEnabled)
+            }
         }
         func isCompact(_ map: MKMapView) -> Bool {
             let zoom = log2(MKMapSize.world.width * max(map.bounds.width, 1) / max(map.visibleMapRect.width, 1) / 256)
             return MapZoomPresentation.isCompact(zoom)
+        }
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            let gestures: [UIGestureRecognizer] = mapView.subviews.flatMap { $0.gestureRecognizers ?? [] }
+            if gestures.contains(where: { $0.state == .began || $0.state == .changed }) {
+                store.noteMapInteraction()
+            }
         }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             compact = isCompact(mapView)

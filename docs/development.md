@@ -193,3 +193,5 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 导航设置可选择 Google，通过官方 HTTPS Maps URLs 传入 WGS-84 目的地、api=1 和 dir_action=navigate，已安装时可由系统打开 App，否则浏览器打开，无需地图 SDK Key。
 
 地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线流动小球仍由高德适配层实现，苹果和Google首版显示静态路线。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。
+
+定位交互共用 LocationFollowMode：idle→centered→heading→centered；第二次实心location.fill，第三次空心location并恢复北朝上，手动地图操作退回idle。MapKit/高德原生followWithHeading，Google使用CoreLocation heading驱动镜头bearing；退出Google销毁时停止方向监听。方向跟随需真机传感器验证。

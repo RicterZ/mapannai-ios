@@ -31,10 +31,11 @@ struct GoogleMapRenderer: UIViewRepresentable {
     }
     func updateUIView(_ map: GMSMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: GMSMapView, coordinator: Coordinator) {
-        coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
+        coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
     }
-    @MainActor final class Coordinator: NSObject, GMSMapViewDelegate {
+    @MainActor final class Coordinator: NSObject, GMSMapViewDelegate, CLLocationManagerDelegate {
         let store: AppStore
+        private let headingManager = CLLocationManager()
         var markers: [String: GMSMarker] = [:]
         var lines: [String: GMSPolyline] = [:]
         var geometries: [RouteOverlayGeometry] = []
@@ -42,12 +43,14 @@ struct GoogleMapRenderer: UIViewRepresentable {
         var lastLocate: UUID?
         var pendingLocate = false
         var searchStyleEnabled: Bool?
+        weak var map: GMSMapView?
         var locationObservation: NSKeyValueObservation?
-        init(_ store: AppStore) { self.store = store }
+        init(_ store: AppStore) { self.store = store; super.init(); headingManager.delegate = self }
         static func coordinate(_ point: Coordinate) -> CLLocationCoordinate2D {
             CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
         }
         func update(_ map: GMSMapView) {
+            self.map = map
             if locationObservation == nil {
                 locationObservation = map.observe(\.myLocation, options: [.new]) { [weak self, weak map] _, _ in
                     Task { @MainActor in
@@ -93,6 +96,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 map.mapStyle = store.placeSearchPresented ? try? GMSMapStyle(jsonString: "[{\"featureType\":\"poi\",\"stylers\":[{\"visibility\":\"off\"}]}]") : nil
             }
             if let command = store.camera, command.id != lastCamera { lastCamera = command.id; focus(map, command) }
+            if store.locationMode == .heading { headingManager.startUpdatingHeading() } else { headingManager.stopUpdatingHeading() }
             if lastLocate == nil { lastLocate = store.locating }
             else if lastLocate != store.locating {
                 lastLocate = store.locating; pendingLocate = true; map.isMyLocationEnabled = true; locate(map)
@@ -118,6 +122,14 @@ struct GoogleMapRenderer: UIViewRepresentable {
             pendingLocate = false
             focus(map, CameraCommand(points: [Coordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)]))
         }
+        func locationManager(_ manager: CLLocationManager, didUpdateHeading heading: CLHeading) {
+            guard store.locationMode == .heading, heading.headingAccuracy >= 0, let map,
+                  let location = map.myLocation else { return }
+            let bearing = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
+            let camera = GMSCameraPosition(target: location.coordinate, zoom: map.camera.zoom, bearing: bearing, viewingAngle: map.camera.viewingAngle)
+            map.camera = camera
+        }
+        func stopHeading() { headingManager.stopUpdatingHeading() }
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
             store.noteMapInteraction()
             guard let key = marker.userData as? String else { return true }

@@ -438,8 +438,8 @@ struct HomeView: View {
         journeyLeadingControl(destination: destination, sidebar: sidebar)
         if !sidebar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { location.request { store.locating = UUID() } } label: {
-                    toolbarActionIcon("location")
+                Button { location.request { store.cycleLocationMode() } } label: {
+                    toolbarActionIcon(store.locationMode.symbol)
                 }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
             }
         }
@@ -607,8 +607,8 @@ struct HomeView: View {
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.dayID)
             .frame(maxWidth: .infinity)
             HStack(spacing: 0) {
-                Button { location.request { store.locating = UUID() } } label: {
-                    toolbarActionIcon("location").frame(width: 44, height: 44)
+                Button { location.request { store.cycleLocationMode() } } label: {
+                    toolbarActionIcon(store.locationMode.symbol).frame(width: 44, height: 44)
                 }.accessibilityLabel("定位到当前位置").accessibilityIdentifier("itinerary-header-location")
                 Button { store.beginAddingPlace(to: store.day, tripID: store.tripID) } label: {
                     toolbarActionIcon("magnifyingglass").frame(width: 44, height: 44)
@@ -723,8 +723,8 @@ struct HomeView: View {
     }
 
     private var locationButton: some View {
-        Button { location.request { store.locating = UUID() } } label: {
-            Image(systemName: "location").font(.system(size: 20, weight: .regular)).foregroundStyle(Theme.cyan)
+        Button { location.request { store.cycleLocationMode() } } label: {
+            Image(systemName: store.locationMode.symbol).font(.system(size: 20, weight: .regular)).foregroundStyle(Theme.cyan)
                 .frame(width: 48, height: 48).background(.white, in: Circle())
                 .shadow(color: .black.opacity(0.15), radius: 5, y: 3)
         }.accessibilityLabel("定位到当前位置")
