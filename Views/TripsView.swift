@@ -196,17 +196,6 @@ struct DayContentsView: View {
                                     guard !store.saving else { return NSItemProvider() }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                     return NativePlaceItemProvider(payload: "day-place/" + day.id + "/" + id + "/" + String(index))
-                                } preview: {
-                                    VStack(spacing: 0) {
-                                        RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker, stop: day.scheduledRoute(at: index)?.stops[position])
-                                        if let note = day.scheduledRoute(at: index)?.stops[position].note, !note.isEmpty {
-                                            Text(note).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.leading, 78).padding(.bottom, 5)
-                                        }
-                                    }
-                                    .frame(width: nativeRouteFrames["\(index)/\(position)"]?.width)
-                                    .background(Color(uiColor: .systemBackground))
                                 }
 
                                 .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id) }
@@ -762,6 +751,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             NSLog("ROUTEDRAG finished updates=%d", diagnosticUpdates)
         }
         var interaction: UIDropInteraction?
+        private var originalReorderingCadence: UICollectionView.ReorderingCadence?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
         func findList(_ view: UIView) -> UIView? {
@@ -774,6 +764,12 @@ struct NativePlaceListDrop: UIViewRepresentable {
             detach()
             if let list = view as? UICollectionView {
                 originalDropDelegate = list.dropDelegate
+                if parent.prefix.hasPrefix("day-place/") {
+                    originalReorderingCadence = list.reorderingCadence
+                    // Debounce the native make-space animation itself, not the
+                    // final drop commit or an independently computed hover target.
+                    list.reorderingCadence = .slow
+                }
                 list.dropDelegate = self; host = list
                 return
             }
@@ -781,6 +777,9 @@ struct NativePlaceListDrop: UIViewRepresentable {
             view.addInteraction(interaction); host = view; self.interaction = interaction
         }
         func detach() {
+            if let list = host as? UICollectionView, let originalReorderingCadence,
+               list.reorderingCadence == .slow { list.reorderingCadence = originalReorderingCadence }
+            originalReorderingCadence = nil
             if let list = host as? UICollectionView, list.dropDelegate === self { list.dropDelegate = originalDropDelegate }
             if let interaction { host?.removeInteraction(interaction) }
             interaction = nil; host = nil
