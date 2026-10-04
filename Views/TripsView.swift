@@ -736,6 +736,13 @@ struct NativePlaceListDrop: UIViewRepresentable {
         var nativeRowTargets: [IndexPath: String] = [:]
         private var publishedTarget: String?
         private var animationGate = NativeDropAnimationGate()
+        private var fixedFrames: [String: CGRect] = [:]
+        private var cellFrames: [IndexPath: CGRect] = [:]
+        private var fixedSource: IndexPath?
+        private var feedbackTarget: String?
+        private var feedbackOffsets: [IndexPath: CGFloat] = [:]
+        private let reorderFeedback = UISelectionFeedbackGenerator()
+
         let recordsDragUpdates = ProcessInfo.processInfo.arguments.contains("--route-drag-diagnostics")
         private var diagnosticDragActive = false
         private var diagnosticUpdates = 0
@@ -777,6 +784,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             view.addInteraction(interaction); host = view; self.interaction = interaction
         }
         func detach() {
+            clearFixedFeedback()
             if let list = host as? UICollectionView, let originalReorderingCadence,
                list.reorderingCadence == .slow { list.reorderingCadence = originalReorderingCadence }
             originalReorderingCadence = nil
@@ -798,7 +806,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
         func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool {
             if dragFrames == nil {
                 diagnosticDragActive = true; diagnosticUpdates = 0
+                reorderFeedback.prepare()
                 dragFrames = parent.currentFrames
+                cellFrames = Dictionary(uniqueKeysWithValues: collectionView.indexPathsForVisibleItems.compactMap { path in
+                    collectionView.cellForItem(at: path).map { (path, $0.frame) }
+                })
                 nativeRowTargets = [:]
                 if let window = collectionView.window {
                     if let pool = parent.currentFrames["unplanned"] {
@@ -815,7 +827,73 @@ struct NativePlaceListDrop: UIViewRepresentable {
                     }
                 }
             }
+            if fixedFrames.isEmpty {
+                for (path, key) in nativeRowTargets {
+                    if let frame = cellFrames[path] { fixedFrames[key] = fixedFrames[key].map { $0.union(frame) } ?? frame }
+                }
+                if let payload = localPayload(session) {
+                    let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
+                    if parts.count == 2, let key = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])] {
+                        fixedSource = nativeRowTargets.first { $0.value == key }?.key
+                    }
+                }
+            }
             return session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
+        }
+        private func fixedTarget(_ session: UIDropSession) -> String? {
+            guard let list = host as? UICollectionView else { return nil }
+            let point = session.location(in: list)
+            guard list.bounds.contains(point) else { return nil }
+            return NativeRouteDropGeometry.target(at: point, frames: fixedFrames)
+                ?? (fixedFrames["unplanned"]?.contains(point) == true ? "unplanned" : nil)
+        }
+        private func updateFixedFeedback(_ target: String?, list: UICollectionView) {
+            guard feedbackTarget != target else { return }
+            feedbackTarget = target
+            var offsets: [IndexPath: CGFloat] = [:]
+            if let source = fixedSource, let target,
+               let key = nativeRowTargets[source], key.split(separator: "/").first == target.split(separator: "/").first {
+                let rows = nativeRowTargets.filter { path, key in
+                    path.section == source.section && Int(key.split(separator: "/").last ?? "") != nil
+                }.keys.sorted()
+                if let old = rows.firstIndex(of: source) {
+                    let parts = target.split(separator: "/")
+                    var insertion = (parts.count > 1 ? Int(parts[1]) : nil).map { $0 + (parts.last == "after" ? 1 : 0) } ?? rows.count
+                    var order = rows; order.remove(at: old)
+                    // Frozen rows may begin midway through a scrolled route.
+                    // Convert the model boundary using their actual ordinals.
+                    insertion = order.filter { path in
+                        guard let key = nativeRowTargets[path], let ordinal = Int(key.split(separator: "/").last ?? "") else { return false }
+                        return ordinal < insertion
+                    }.count
+                    order.insert(source, at: min(order.count, max(0, insertion)))
+                    var top = rows.compactMap { cellFrames[$0]?.minY }.min() ?? 0
+                    for path in order {
+                        guard let frame = cellFrames[path] else { continue }
+                        if path != source { offsets[path] = top - frame.minY }
+                        top += frame.height
+                    }
+                }
+            }
+            let changedOffsets = offsets.filter { abs($0.value) > 0.5 }
+            if target != nil, changedOffsets != feedbackOffsets {
+                reorderFeedback.selectionChanged()
+                reorderFeedback.prepare()
+            }
+            feedbackOffsets = changedOffsets
+            let animations = {
+                for path in list.indexPathsForVisibleItems where path != self.fixedSource {
+                    list.cellForItem(at: path)?.transform = CGAffineTransform(translationX: 0, y: offsets[path] ?? 0)
+                }
+            }
+            if UIAccessibility.isReduceMotionEnabled { animations() }
+            else { UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: animations) }
+        }
+        private func clearFixedFeedback() {
+            if let list = host as? UICollectionView {
+                for cell in list.visibleCells { cell.layer.removeAllAnimations(); cell.transform = .identity }
+            }
+            feedbackTarget = nil; feedbackOffsets = [:]
         }
         /// Every day-place drag uses this resolver, regardless of its source.
         /// Native insertion remains authoritative; live geometry covers missing
@@ -835,6 +913,14 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
+            if fixedSource != nil {
+                let target = fixedTarget(session)
+                publishTarget(target)
+                updateFixedFeedback(target, list: collectionView)
+                // The fixed boundary owns both feedback and commit. Do not ask
+                // UIKit to create a second moving insertion gap.
+                return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: .unspecified)
+            }
             let target = resolvedTarget(session, destination: destinationIndexPath)
             publishTarget(target)
             if parent.prefix.hasPrefix("day-place/") {
@@ -888,13 +974,15 @@ struct NativePlaceListDrop: UIViewRepresentable {
             return nil
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
+            clearFixedFeedback(); fixedFrames = [:]; cellFrames = [:]; fixedSource = nil
             finishDiagnostics()
             originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
             publishTarget(nil); animationGate = NativeDropAnimationGate(); dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             finishDiagnostics()
-            guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
+            guard let target = fixedSource != nil ? fixedTarget(coordinator.session) : resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
+            clearFixedFeedback()
             publishTarget(nil)
             acceptDrop(coordinator.session, target: target)
             // The native lifted snapshot contains the old ordinal. A day move
@@ -918,6 +1006,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             DispatchQueue.main.async { self.parent.onTarget(target) }
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidExit session: UIDropSession) {
+            clearFixedFeedback()
             publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {

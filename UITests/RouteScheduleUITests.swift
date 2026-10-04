@@ -37,7 +37,7 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertTrue(b.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["10号线"].exists)
         b.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
-            thenDragTo: c.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.8)), withVelocity: .slow, thenHoldForDuration: 1)
+            thenDragTo: app.cells.containing(.button, identifier: "route-0-marker-demo-2").firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.9)), withVelocity: .slow, thenHoldForDuration: 1)
         XCTAssertEqual(b.value as? String, "3")
         XCTAssertEqual(c.value as? String, "2")
         XCTAssertFalse(app.staticTexts["10号线"].exists)
@@ -67,10 +67,14 @@ final class RouteScheduleUITests: XCTestCase {
             let source = app.buttons["route-0-marker-demo-2"]
             let destination = app.cells.containing(.button, identifier: "route-0-marker-demo-1").firstMatch
             XCTAssertTrue(source.waitForExistence(timeout: 5))
+            app.swipeUp()
+            let frame = destination.frame
+            let end = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.minX + frame.width * 0.3, dy: frame.minY + frame.height * fraction))
             source.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
-                thenDragTo: destination.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: fraction)),
-                withVelocity: .slow, thenHoldForDuration: 4)
+                thenDragTo: end,
+                withVelocity: XCUIGestureVelocity(rawValue: 15), thenHoldForDuration: 4)
             XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-demo-2").count, 1)
+            XCTAssertEqual(app.staticTexts["route-drag-diagnostics"].value as? String, "0")
             app.terminate()
         }
     }
