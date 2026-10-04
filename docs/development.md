@@ -192,7 +192,7 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 
 导航设置可选择 Google，通过官方 HTTPS Maps URLs 传入 WGS-84 目的地、api=1 和 dir_action=navigate，已安装时可由系统打开 App，否则浏览器打开，无需地图 SDK Key。
 
-地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向箭头统一使用 RouteMotionOverlay，三个 SDK 仅提供屏幕坐标投影。连线样式统一由 RouteLineAppearance 定义：选中彩线 6pt、未选中 3.5pt，外描边比彩线宽 2pt，颜色为路线色与白色混合的浅色描边。三个 SDK 都画相同的描边与彩线双层几何。相邻地点的已绘制路径从起点 45pt 开始，每隔固定 90pt 绘制静态白色双折角箭头；局部切线决定方向，缩放更新屏幕累计长度并增减箭头，绝不把间距平均分摊到整段。箭头宽度限制在彩线内，叠加路线形状 mask 防止弯道处突出描边。无 CADisplayLink、位移或淡入淡出动画；镜头变化时重建屏幕投影，静止镜头复用缓存，只绘制可见箭头。后台、搜索及低缩放时隐藏，减少动态效果不改变静态箭头。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。
+地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向箭头统一使用 RouteMotionOverlay，三个 SDK 仅提供屏幕坐标投影。连线样式统一由 RouteLineAppearance 定义：选中彩线 6pt、未选中 3.5pt，外描边比彩线宽 2pt，颜色为路线色与白色混合的浅色描边。三个 SDK 都画相同的描边与彩线双层几何。相邻地点的已绘制路径从起点 45pt 开始，每隔固定 90pt 绘制静态白色单折角箭头；局部切线决定方向，缩放更新屏幕累计长度并增减箭头，绝不把间距平均分摊到整段。箭头宽度限制在彩线内，叠加路线形状 mask 防止弯道处突出描边。无 CADisplayLink、位移或淡入淡出动画；镜头变化时重建屏幕投影，静止镜头复用缓存，只绘制可见箭头。后台、搜索及低缩放时隐藏，减少动态效果不改变静态箭头。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。
 
 定位交互共用 LocationFollowMode：idle→centered→heading→centered；第二次实心location.fill，第三次空心location并恢复北朝上，手动地图操作退回idle。MapKit/高德原生followWithHeading，Google使用CoreLocation heading驱动镜头bearing；退出Google销毁时停止方向监听。方向跟随需真机传感器验证。
 

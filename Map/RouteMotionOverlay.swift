@@ -98,7 +98,7 @@ import UIKit
         while self.arrows.count < arrows.count {
             let arrow = CAShapeLayer()
             let shape = UIBezierPath()
-            for x: CGFloat in [-3, 1] {
+            for x: CGFloat in [0] {
                 shape.move(to: CGPoint(x: x - 2, y: -2.2))
                 shape.addLine(to: CGPoint(x: x + 1, y: 0))
                 shape.addLine(to: CGPoint(x: x - 2, y: 2.2))

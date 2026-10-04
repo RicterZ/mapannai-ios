@@ -718,7 +718,7 @@ struct PreviewMap: View {
                             for arrow in path.arrows(timestamp: timeline.date.timeIntervalSinceReferenceDate,
                                                      reducedMotion: reduceMotion, bounds: CGRect(origin: .zero, size: size)) {
                                 var glyph = Path()
-                                for x: CGFloat in [-3, 1] {
+                                for x: CGFloat in [0] {
                                     glyph.move(to: CGPoint(x: x - 2, y: -2.2)); glyph.addLine(to: CGPoint(x: x + 1, y: 0)); glyph.addLine(to: CGPoint(x: x - 2, y: 2.2))
                                 }
                                 var drawing = context; drawing.opacity = Double(arrow.opacity)
