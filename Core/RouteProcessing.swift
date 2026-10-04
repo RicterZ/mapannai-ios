@@ -23,7 +23,8 @@ actor RouteProcessing {
                                                dayID: day.id, tripID: day.tripId,
                                                colorIndex: day.colorIndex ?? (selectedTrip?.days.firstIndex { $0.id == day.id } ?? 0),
                                                points: RouteGeometry.curve(a.coordinates, b.coordinates), isPlanned: false)
-                    if preserve, let old = oldRoutes[display.id], old.isPlanned,
+                    display.transportMode = day.scheduledRoute(at: chainIndex)?.leg(at: i-1)?.mode
+                    if preserve, let old = oldRoutes[display.id], old.isPlanned, old.transportMode == display.transportMode,
                        old.points.first == a.coordinates, old.points.last == b.coordinates {
                         display.points = old.unseparatedPoints ?? old.points
                         display.isPlanned = true
@@ -38,16 +39,17 @@ actor RouteProcessing {
     /// Hydrate every cached segment before exposing a new selection to the map.
     /// Previously hidden days must not pass through an unrelated fallback curve.
     func restoringCachedGeometry(_ segments: [RouteSegment], cache: RouteCache,
-                                 mode: TravelMode, provider: MapServiceProvider, server: String) async throws -> [RouteSegment] {
+                                 provider: MapServiceProvider, server: String) async throws -> [RouteSegment] {
         var restored = segments
         for index in restored.indices {
             try Task.checkCancellation()
             let segment = restored[index]
             if segment.display.isPlanned { continue }
-            let key = RouteCache.key(segment.origin, segment.destination, mode: mode, provider: provider, server: server)
+            let key = RouteCache.key(segment.origin, segment.destination, mode: segment.display.transportMode, provider: provider, server: server)
             guard let cached = await cache.get(key) else { continue }
             restored[index].display.points = try displayPoints(cached, origin: segment.origin, destination: segment.destination)
             restored[index].display.isPlanned = !cached.isFallback
+            restored[index].display.isDashed = cached.isFallback
             restored[index].display.distance = cached.isFallback ? nil : cached.distance
         }
         try Task.checkCancellation()

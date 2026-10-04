@@ -43,7 +43,7 @@ protocol MapServices {
     func searchPage(_ query: String, bounds: SearchBounds?, request: PlaceSearchRequest) async throws -> PlaceSearchPage
     func search(_ query: String, bounds: SearchBounds?) async throws -> [Place]
     func details(at coordinate: Coordinate) async throws -> Place
-    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TravelMode) async throws -> PlannedRoute
+    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TransportMode?) async throws -> PlannedRoute
 }
 extension MapServices {
     // Compatibility for older implementations: one page, without guessing more.
@@ -101,9 +101,12 @@ struct ServerMapServices: MapServices {
         guard response.success, response.data.coordinates.isValid else { throw AppError.message("未获取到有效地点详情") }
         return response.data.place
     }
-    nonisolated func route(_ origin: Coordinate, _ destination: Coordinate, mode: TravelMode) async throws -> PlannedRoute {
-        let route: PlannedRoute = try await client.request("directions", method: "POST", body: ["origin": ["lat": origin.latitude, "lng": origin.longitude], "destination": ["lat": destination.latitude, "lng": destination.longitude], "mode": mode.resolved(from: origin, to: destination).rawValue])
-        guard route.path.count > 1, route.path.allSatisfy({ $0.coordinate.isValid }) else { throw AppError.message("服务未返回有效路线，请尝试另一种出行方式") }
+    nonisolated func route(_ origin: Coordinate, _ destination: Coordinate, mode: TransportMode?) async throws -> PlannedRoute {
+        var body: [String: Any] = ["origin": ["lat": origin.latitude, "lng": origin.longitude],
+                                   "destination": ["lat": destination.latitude, "lng": destination.longitude]]
+        if let mode { body["transportMode"] = mode.rawValue }
+        let route: PlannedRoute = try await client.request("directions", method: "POST", body: body)
+        guard route.path.count > 1, route.path.allSatisfy({ $0.coordinate.isValid }) else { throw AppError.message("服务未返回有效路线") }
         return route
     }
 }

@@ -279,7 +279,6 @@ struct HomeView: View {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
         .onChange(of: settings.planning) { _, _ in store.rebuildRoutes() }
-        .onChange(of: settings.mode) { _, _ in store.rebuildRoutes() }
     }
 
     private func restoreJourneyAfterMarker() {

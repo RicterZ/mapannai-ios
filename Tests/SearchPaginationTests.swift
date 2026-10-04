@@ -8,7 +8,7 @@ private actor PagedServicesMock: MapServices {
     func failNextSecondPage() { failSecond = true }
     func search(_ query: String, bounds: SearchBounds?) async throws -> [Place] { [] }
     func details(at coordinate: Coordinate) async throws -> Place { throw AppError.message("unused") }
-    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TravelMode) async throws -> PlannedRoute { throw AppError.message("unused") }
+    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TransportMode?) async throws -> PlannedRoute { throw AppError.message("unused") }
     func searchPage(_ query: String, bounds: SearchBounds?, request: PlaceSearchRequest) async throws -> PlaceSearchPage {
         calls.append((query, request.page, bounds))
         do { try await Task.sleep(for: .milliseconds(query == "slow" ? 2000 : 30)) }

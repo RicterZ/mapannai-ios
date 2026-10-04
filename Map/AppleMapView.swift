@@ -38,7 +38,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false; var isDashed = false }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
@@ -103,7 +103,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                     var coordinates = route.points.map(Pin.coordinate)
                     for casing in [true, false] {
                         let line = Line(coordinates: &coordinates, count: coordinates.count)
-                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.casing = casing
+                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.casing = casing; line.isDashed = route.isDashed
                         map.addOverlay(line)
                     }
                 }
@@ -225,6 +225,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
             renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
             renderer.lineCap = .round; renderer.lineJoin = .round
+            renderer.lineDashPattern = line.isDashed ? [8, 6] : nil
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let pin = annotation as? Pin {

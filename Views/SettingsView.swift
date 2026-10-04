@@ -29,9 +29,6 @@ struct SettingsView: View {
                 Section("路线规划") {
                     Toggle("路线规划", isOn: $settings.planning).accessibilityIdentifier("planning-toggle")
                     if settings.planning {
-                        Picker("出行方式", selection: $settings.mode) {
-                            ForEach(TravelMode.allCases, id: \.self) { Text($0.label).tag($0) }
-                        }.pickerStyle(.segmented).accessibilityIdentifier("route-mode-picker")
                         if !store.routeProgress.isEmpty {
                             HStack { ProgressView(); Text("正在规划").font(.subheadline).foregroundStyle(.secondary) }
                         }

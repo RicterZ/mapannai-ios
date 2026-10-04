@@ -516,13 +516,26 @@ final class MapServiceTests: XCTestCase {
             XCTAssertEqual(request.url?.path, "/api/directions"); XCTAssertEqual(request.httpMethod,"POST")
             let body = requestBody(request)
             let object = try JSONSerialization.jsonObject(with: body) as! [String:Any]
-            XCTAssertEqual(object["mode"] as? String, "driving")
+            XCTAssertEqual(object["transportMode"] as? String, "driving")
             XCTAssertEqual((object["origin"] as? [String:Double])?["lat"], 31.2)
             XCTAssertEqual((object["destination"] as? [String:Double])?["lng"], 121.5)
             return (200,Data(#"{"path":[{"lat":31.2,"lng":121.4},{"lat":31.3,"lng":121.5}],"distance":100,"duration":20}"#.utf8))
         }
         let route = try await services.route(.init(latitude:31.2,longitude:121.4), .init(latitude:31.3,longitude:121.5), mode:.driving)
         XCTAssertEqual(route.path.count,2); XCTAssertEqual(route.distance,100)
+    }
+    func testEveryTransportModeIsDelegatedToServer() async throws {
+        for mode in TransportMode.allCases {
+            let services = services { request in
+                let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+                XCTAssertNil(body["mode"])
+                XCTAssertEqual(body["transportMode"] as? String, mode.rawValue)
+                return (200, Data(#"{"path":[{"lat":31,"lng":121},{"lat":35,"lng":139}],"distance":100,"duration":null,"distanceKind":"straight","fallback":"UNSUPPORTED_MODE"}"#.utf8))
+            }
+            let route = try await services.route(.init(latitude:31,longitude:121),.init(latitude:35,longitude:139),mode:mode)
+            XCTAssertTrue(route.isFallback)
+            XCTAssertEqual(route.distanceKind,"straight")
+        }
     }
     func testDetailsUsesServerAndClickedWGSCoordinates() async throws {
         let services = services { request in
@@ -538,17 +551,17 @@ final class MapServiceTests: XCTestCase {
     func testRouteFallbackServerResponseAcceptsNullMetrics() async throws {
         let services = services { request in
             let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
-            XCTAssertEqual(body["mode"] as? String, "driving")
+            XCTAssertNil(body["mode"]); XCTAssertNil(body["transportMode"])
             return (200, Data(#"{"path":[{"lat":31,"lng":121},{"lat":35,"lng":139}],"distance":null,"duration":null,"fallback":"UNSUPPORTED_REGION"}"#.utf8))
         }
-        let route = try await services.route(.init(latitude:31, longitude:121), .init(latitude:35, longitude:139), mode: .auto)
+        let route = try await services.route(.init(latitude:31, longitude:121), .init(latitude:35, longitude:139), mode: nil)
         XCTAssertTrue(route.isFallback); XCTAssertNil(route.distance)
     }
     @MainActor func testConfigurationSourceAndCacheProviderIsolation() async throws {
         let source = FixedMapConfigurationSource(configuration: .init(renderer: .google, searchProvider: .amap, detailsProvider: .amap, directionsProvider: .google))
         let config = try await source.load(using: APIClient(baseURL:"https://example.invalid",token:""))
         XCTAssertEqual(config.renderer,.google)
-        XCTAssertNil(MapRendererRegistry.renderer(for: .google))
+        XCTAssertNotNil(MapRendererRegistry.renderer(for: .google))
         XCTAssertNotNil(MapRendererRegistry.renderer(for: .amap))
         let a = Coordinate(latitude:31.2,longitude:121.4), b = Coordinate(latitude:31.3,longitude:121.5)
         XCTAssertNotEqual(RouteCache.key(a,b,mode:.walking,provider:.amap),RouteCache.key(a,b,mode:.walking,provider:.google))
@@ -606,26 +619,21 @@ final class RoutePolicyTests: XCTestCase {
         let cache = RouteCache(directory: directory), processing = RouteProcessing()
         let a = Coordinate(latitude: 31, longitude: 121), b = Coordinate(latitude: 31.01, longitude: 121.01)
         let display = DisplayRoute(id: "segment", dayID: "day", tripID: "trip", colorIndex: 0, points: [a, b], isPlanned: false)
-        let segment = RouteSegment(display: display, origin: a, destination: b)
+        var segment = RouteSegment(display: display, origin: a, destination: b)
+        segment.display.transportMode = .walking
         let key = RouteCache.key(a, b, mode: .walking, provider: .amap, server: "test")
         for fallback in [nil, "UNSUPPORTED_REGION"] as [String?] {
             await cache.put(PlannedRoute(path: [RoutePoint(lat: a.latitude, lng: a.longitude), RoutePoint(lat: b.latitude, lng: b.longitude)], distance: 1234, duration: 900, fallback: fallback), key: key)
-            let result = try await processing.restoringCachedGeometry([segment], cache: cache, mode: .walking, provider: .amap, server: "test")
+            let result = try await processing.restoringCachedGeometry([segment], cache: cache, provider: .amap, server: "test")
             XCTAssertEqual(result[0].display.distance, fallback == nil ? 1234 : nil)
             XCTAssertEqual(result[0].display.isPlanned, fallback == nil)
         }
     }
 
-    @MainActor func testAutomaticModeAtTwoKilometreBoundaryAndCacheReuse() {
-        let start = Coordinate(latitude: 0, longitude: 0)
-        func point(_ metres: Double) -> Coordinate {
-            Coordinate(latitude: metres / 6_371_000 * 180 / .pi, longitude: 0)
-        }
-        XCTAssertEqual(TravelMode.auto.resolved(from: start, to: point(1999.999)), .walking)
-        XCTAssertEqual(TravelMode.auto.resolved(from: start, to: point(2000)), .driving)
-        XCTAssertEqual(TravelMode.auto.resolved(from: start, to: point(2001)), .driving)
-        XCTAssertEqual(RouteCache.key(start, point(1000), mode: .auto), RouteCache.key(start, point(1000), mode: .walking))
-        XCTAssertEqual(RouteCache.key(start, point(3000), mode: .auto), RouteCache.key(start, point(3000), mode: .driving))
+    func testServerDefaultCacheIsSeparateFromExplicitTransport() {
+        let a = Coordinate(latitude: 31, longitude: 121), b = Coordinate(latitude: 32, longitude: 122)
+        XCTAssertNotEqual(RouteCache.key(a,b,mode:nil), RouteCache.key(a,b,mode:.walking))
+        XCTAssertNotEqual(RouteCache.key(a,b,mode:.train), RouteCache.key(a,b,mode:.driving))
     }
     @MainActor func testTerminalFallbackDecodesNullMetricsAndSurvivesDiskCache() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -645,7 +653,7 @@ final class RoutePolicyTests: XCTestCase {
 private struct PlaceLookupMock: MapServices {
     var fails = false
     func search(_ query: String, bounds: SearchBounds?) async throws -> [Place] { [] }
-    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TravelMode) async throws -> PlannedRoute { throw AppError.message("unused") }
+    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TransportMode?) async throws -> PlannedRoute { throw AppError.message("unused") }
     func details(at coordinate: Coordinate) async throws -> Place {
         try await Task.sleep(for: .milliseconds(10))
         if fails { throw AppError.message("mock failure") }

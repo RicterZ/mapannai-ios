@@ -267,7 +267,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
 
         private func highlightRoutes(_ selected: Set<String>, map: MAMapView) {
-            let textured = store.placeSearchPresented ? Set<String>() : selected
+            let textured = store.placeSearchPresented ? Set<String>() : selected.filter { id in store.displayRoutes.first(where: { $0.id == id })?.isDashed != true }
             let changed = highlightedRouteIDs.symmetricDifference(selected).union(texturedRouteIDs.symmetricDifference(textured))
             highlightedRouteIDs = selected; texturedRouteIDs = textured
             CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -279,7 +279,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 if let color = map.renderer(for: pair.1) as? MAPolylineRenderer {
                     color.lineWidth = RouteLineAppearance.width(selected: active)
-                    color.strokeImage = active && !store.placeSearchPresented ? RouteMotionOverlay.texture(color: color.strokeColor, google: false) : nil
+                    color.strokeImage = active && !store.placeSearchPresented && store.displayRoutes.first(where: { $0.id == id })?.isDashed != true ? RouteMotionOverlay.texture(color: color.strokeColor, google: false) : nil
                     color.setNeedsUpdate()
                 }
             }
@@ -355,10 +355,15 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 // The SDK requires renderer invalidation when its overlay model changes.
                 overlayStyle[ObjectIdentifier(white)] = (RouteLineAppearance.outline(route.colorIndex), true)
                 if let renderer = map.renderer(for: white) as? MAPolylineRenderer {
-                    renderer.strokeColor = RouteLineAppearance.outline(route.colorIndex); renderer.setNeedsUpdate()
+                    renderer.strokeColor = RouteLineAppearance.outline(route.colorIndex)
+                    renderer.lineDashType = route.isDashed ? kMALineDashTypeSquare : kMALineDashTypeNone
+                    renderer.setNeedsUpdate()
                 }
                 if let renderer = map.renderer(for: colored) as? MAPolylineRenderer {
-                    renderer.strokeColor = tint; renderer.setNeedsUpdate()
+                    renderer.strokeColor = tint
+                    renderer.lineDashType = route.isDashed ? kMALineDashTypeSquare : kMALineDashTypeNone
+                    if route.isDashed { renderer.strokeImage = nil }
+                    renderer.setNeedsUpdate()
                 }
             } else {
                 guard let white = MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count)),
@@ -518,7 +523,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let id = lines.first { $0.value.0 === line || $0.value.1 === line }?.key
             let selected = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.dayID == store.dayID && store.dayID != nil
             renderer.lineWidth = style.1 ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
-            if !style.1 && selected && !store.placeSearchPresented {
+            let dashed = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.isDashed == true
+            renderer.lineDashType = dashed ? kMALineDashTypeSquare : kMALineDashTypeNone
+            if !style.1 && selected && !store.placeSearchPresented && !dashed {
                 renderer.strokeImage = RouteMotionOverlay.texture(color: style.0, google: false)
             }
             return renderer
@@ -699,14 +706,14 @@ struct PreviewMap: View {
                         var path = Path(); for (index, p) in route.points.enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                         }
-                        context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID), lineCap: .round))
-                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID), lineCap: .round))
+                        context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID), lineCap: .round, dash: route.isDashed ? [8, 6] : []))
+                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID), lineCap: .round, dash: route.isDashed ? [8, 6] : []))
                     }
                 }
                 TimelineView(.animation(paused: true)) { timeline in
                     Canvas { context, size in
                         guard motionActive, !MapZoomPresentation.isCompact(zoom) else { return }
-                        let routes = store.displayRoutes.filter { $0.dayID == store.dayID }
+                        let routes = store.displayRoutes.filter { $0.dayID == store.dayID && !$0.isDashed }
                         for route in routes {
                             let path = RouteDirectionPath(points: route.points.map { point($0, size: size) }, bounds: CGRect(origin: .zero, size: size))
                             for arrow in path.arrows(timestamp: timeline.date.timeIntervalSinceReferenceDate,

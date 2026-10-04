@@ -5,9 +5,10 @@ struct RouteOverlayGeometry: Equatable {
     let id: String
     let points: [Coordinate]
     let colorIndex: Int
+    let isDashed: Bool
 
     init(_ route: DisplayRoute) {
-        id = route.id; points = route.points; colorIndex = route.colorIndex
+        id = route.id; points = route.points; colorIndex = route.colorIndex; isDashed = route.isDashed
     }
 }
 

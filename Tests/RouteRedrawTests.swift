@@ -6,7 +6,7 @@ private actor NoRouteRequests: MapServices {
     private(set) var requests = 0
     func search(_ query: String, bounds: SearchBounds?) async throws -> [Place] { [] }
     func details(at coordinate: Coordinate) async throws -> Place { throw AppError.message("Unused") }
-    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TravelMode) async throws -> PlannedRoute {
+    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TransportMode?) async throws -> PlannedRoute {
         requests += 1
         throw AppError.message("Cached navigation must not request routes")
     }
@@ -35,7 +35,7 @@ final class RouteRedrawTests: XCTestCase {
                         RoutePoint(lat: (a.coordinates.latitude + b.coordinates.latitude) / 2 + 0.002,
                                    lng: (a.coordinates.longitude + b.coordinates.longitude) / 2),
                         RoutePoint(lat: b.coordinates.latitude, lng: b.coordinates.longitude)], distance: 0, duration: 0)
-                    let key = RouteCache.key(a.coordinates, b.coordinates, mode: settings.mode,
+                    let key = RouteCache.key(a.coordinates, b.coordinates, mode: nil,
                         provider: store.mapConfiguration.directionsProvider, server: settings.baseURL)
                     await cache.put(route, key: key)
                     expected["\(day.id)|\(chainIndex)|\(index)|\(a.id)|\(b.id)"] = try await processor.displayPoints(route, origin: a.coordinates, destination: b.coordinates)
@@ -71,15 +71,18 @@ final class RouteRedrawTests: XCTestCase {
         let a = Coordinate(latitude: 31, longitude: 121), b = Coordinate(latitude: 31.01, longitude: 121.02)
         let markers = [Marker(id: "a", coordinates: a, content: MarkerContent(id: "a", markdownContent: "")),
                        Marker(id: "b", coordinates: b, content: MarkerContent(id: "b", markdownContent: ""))]
-        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-01", colorIndex: 2, markerIds: ["a", "b"], chains: [["a", "b"]])
-        let segments = try await processor.build(days: [day], markers: markers, selectedTrip: nil, previous: [], preserve: true)
+        var day = TripDay(id: "day", tripId: "trip", date: "2026-10-01", colorIndex: 2, markerIds: ["a", "b"], chains: [["a", "b"]])
+        day.routeChains = [RouteChain(id: "chain", stops: [ChainStop(id:"a",markerId:"a"), ChainStop(id:"b",markerId:"b")], legs: [ChainLeg(fromStopId:"a",toStopId:"b",mode:.walking)])]
+        var segments = try await processor.build(days: [day], markers: markers, selectedTrip: nil, previous: [], preserve: true)
+        segments[0].display.transportMode = .walking
         let planned = PlannedRoute(path: [RoutePoint(lat: 31, lng: 121), RoutePoint(lat: 31.006, lng: 121.013),
             RoutePoint(lat: 31.01, lng: 121.02)], distance: nil, duration: nil)
         await cache.put(planned, key: RouteCache.key(a, b, mode: .walking, provider: .amap, server: "https://a.invalid"))
-        let restored = try await processor.restoringCachedGeometry(segments, cache: cache, mode: .walking, provider: .amap, server: "https://a.invalid")
+        let restored = try await processor.restoringCachedGeometry(segments, cache: cache, provider: .amap, server: "https://a.invalid")
         XCTAssertTrue(try XCTUnwrap(restored.first).display.isPlanned)
-        for (mode, server) in [(TravelMode.driving, "https://a.invalid"), (.walking, "https://b.invalid")] {
-            let isolated = try await processor.restoringCachedGeometry(segments, cache: cache, mode: mode, provider: .amap, server: server)
+        for (mode, server) in [(TransportMode.driving, "https://a.invalid"), (.walking, "https://b.invalid")] {
+            var changed = segments; changed[0].display.transportMode = mode
+            let isolated = try await processor.restoringCachedGeometry(changed, cache: cache, provider: .amap, server: server)
             XCTAssertFalse(try XCTUnwrap(isolated.first).display.isPlanned)
         }
         var recolored = day; recolored.colorIndex = 4
@@ -91,7 +94,7 @@ final class RouteRedrawTests: XCTestCase {
         let movedSegments = try await processor.build(days: [day], markers: moved, selectedTrip: nil,
             previous: restored.map(\.display), preserve: true)
         let movedRestored = try await processor.restoringCachedGeometry(movedSegments, cache: cache,
-            mode: .walking, provider: .amap, server: "https://a.invalid")
+            provider: .amap, server: "https://a.invalid")
         XCTAssertFalse(try XCTUnwrap(movedRestored.first).display.isPlanned)
         XCTAssertEqual(movedRestored.first?.display.points.last, moved[1].coordinates)
     }

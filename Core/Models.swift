@@ -152,7 +152,8 @@ struct PlannedRoute: Codable {
     var distance: Double?
     var duration: Double?
     var fallback: String? = nil
-    var isFallback: Bool { fallback == "OVER_DIRECTION_RANGE" || fallback == "UNSUPPORTED_REGION" }
+    var distanceKind: String? = nil
+    var isFallback: Bool { fallback != nil }
 }
 struct Place: Identifiable, Hashable {
     var id: String
@@ -170,14 +171,9 @@ struct DisplayRoute: Identifiable {
     var points: [Coordinate]
     var isPlanned: Bool
     var distance: Double? = nil
+    var transportMode: TransportMode? = nil
+    var isDashed = false
     var unseparatedPoints: [Coordinate]? = nil
-}
-enum TravelMode: String, Codable, CaseIterable { case auto, walking, driving
-    var label: String { switch self { case .auto: "自动"; case .walking: "步行"; case .driving: "驾车" } }
-    func resolved(from a: Coordinate, to b: Coordinate) -> TravelMode {
-        guard self == .auto else { return self }
-        return (Coordinates.distance(a, b) * 1_000_000).rounded() < 2_000 * 1_000_000 ? .walking : .driving
-    }
 }
 enum AppError: LocalizedError {
     case message(String)

@@ -605,7 +605,11 @@ struct TripSaveDraft: Identifiable {
         guard revision == connectionRevision,
               let ti = trips.firstIndex(where: { $0.id == day.tripId }),
               let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
+        let previous = trips[ti].days[di]
         trips[ti].days[di] = day
+        let before = previous.chains.indices.map { previous.scheduledRoute(at: $0).map { route in route.stops.indices.dropLast().map { route.leg(at: $0)?.mode } } }
+        let after = day.chains.indices.map { day.scheduledRoute(at: $0).map { route in route.stops.indices.dropLast().map { route.leg(at: $0)?.mode } } }
+        if before != after { rebuildRoutes(preservingPlannedGeometry: true) }
     }
     static func dayPath(_ day: TripDay) -> String { "trips/\(APIClient.id(day.tripId))/days/\(APIClient.id(day.id))" }
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
@@ -1025,7 +1029,7 @@ struct TripSaveDraft: Identifiable {
         // before committing navigation, and do not publish partially built route arrays.
         let days = visibleDays, snapshotMarkers = markers, selectedTrip = trip, previous = displayRoutes
         let planning = settings.planning && !demo
-        let mode = settings.mode, services = mapServices, provider = mapConfiguration.directionsProvider, server = settings.baseURL
+        let services = mapServices, provider = mapConfiguration.directionsProvider, server = settings.baseURL
         routeError = nil; routeProgress = ""
         routeTask = Task {
             defer { if self.routeGeneration == generation { routeProgress = "" } }
@@ -1036,11 +1040,11 @@ struct TripSaveDraft: Identifiable {
             #endif
             guard var segments = try? await routeProcessing.build(days: days, markers: snapshotMarkers,
                                                                   selectedTrip: selectedTrip, previous: previous,
-                                                                  preserve: preservingPlannedGeometry),
+                                                                  preserve: preservingPlannedGeometry && !planning),
                   !Task.isCancelled, self.routeGeneration == generation else { return }
             if planning {
                 guard let restored = try? await routeProcessing.restoringCachedGeometry(segments, cache: routeCache,
-                            mode: mode, provider: provider, server: server),
+                            provider: provider, server: server),
                       !Task.isCancelled, self.routeGeneration == generation else { return }
                 segments = restored
             }
@@ -1061,11 +1065,11 @@ struct TripSaveDraft: Identifiable {
             for segment in segments {
                 let display = segment.display, a = segment.origin, b = segment.destination
                 guard !Task.isCancelled, self.routeGeneration == generation else { return }
-                let key = RouteCache.key(a, b, mode: mode, provider: provider, server: server)
+                let key = RouteCache.key(a, b, mode: display.transportMode, provider: provider, server: server)
                 do {
                     var route = await routeCache.get(key)
                     if route == nil {
-                        route = try await services.route(a, b, mode: mode)
+                        route = try await services.route(a, b, mode: display.transportMode)
                         try Task.checkCancellation()
                         guard self.routeGeneration == generation else { return }
                         if let route { await routeCache.put(route, key: key) }
@@ -1077,9 +1081,10 @@ struct TripSaveDraft: Identifiable {
                     if let index = displays.firstIndex(where: { $0.id == display.id }) {
                         var updated = displays[index]
                         let distance = route.isFallback ? nil : route.distance
-                        if updated.points != points || updated.isPlanned != !route.isFallback || updated.distance != distance {
+                        if updated.points != points || updated.isPlanned != !route.isFallback || updated.distance != distance || updated.isDashed != route.isFallback {
                             updated.points = points; updated.isPlanned = !route.isFallback
                             updated.distance = distance
+                            updated.isDashed = route.isFallback
                             var transaction = Transaction(); transaction.disablesAnimations = true
                             displays[index] = updated
                             let presented = try await routeProcessing.separatingOverlaps(displays)

@@ -80,6 +80,7 @@
 		A292D855F2E570ABB25B79F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1C4EE1D4A3CFED767F0CC73D /* Assets.xcassets */; };
 		A344F20E430BC2B3F431BBDA /* WebRouteGeometryParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBC86E75EB553A64F69DCFA /* WebRouteGeometryParityTests.swift */; };
 		A46DB7C6125137C883E819A0 /* MapMarkerAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B450235965289010509590A /* MapMarkerAppearance.swift */; };
+		A848178B36D1AC2EBF3AF00E /* TransportRoutePlanningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D2B3B4CA639051EC71D17F6 /* TransportRoutePlanningTests.swift */; };
 		A84AB72A4DDDDCE73C8F9F47 /* MapZoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 401E2D25019885A304E0676C /* MapZoomTests.swift */; };
 		A9F6407DE636ABED000B181E /* RouteRedrawTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB69B65CFD0B0604D5476A1 /* RouteRedrawTests.swift */; };
 		B13C16980AC0CF8CF7E227EB /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DC8A3EBC540A61F7259026E /* TripsView.swift */; };
@@ -151,6 +152,7 @@
 		1B01B7D0E0377DDA8508CED5 /* MarkerPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerPresentation.swift; sourceTree = "<group>"; };
 		1C4EE1D4A3CFED767F0CC73D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1D05C6D25966F6717D9418A3 /* MapAnNai.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MapAnNai.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1D2B3B4CA639051EC71D17F6 /* TransportRoutePlanningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportRoutePlanningTests.swift; sourceTree = "<group>"; };
 		1EE4DC6DD0A68391E9F7832E /* JourneyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyViews.swift; sourceTree = "<group>"; };
 		20FE4064B67BA89D296FCAFB /* RouteProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteProcessing.swift; sourceTree = "<group>"; };
 		2146BC6CB6A7DB6BE807D4A3 /* RouteSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSelectionTests.swift; sourceTree = "<group>"; };
@@ -365,6 +367,7 @@
 				2146BC6CB6A7DB6BE807D4A3 /* RouteSelectionTests.swift */,
 				879F810511ACB01618962440 /* SearchPaginationTests.swift */,
 				C335E3944995E33E94762A45 /* SearchSelectionTests.swift */,
+				1D2B3B4CA639051EC71D17F6 /* TransportRoutePlanningTests.swift */,
 				4FBC86E75EB553A64F69DCFA /* WebRouteGeometryParityTests.swift */,
 			);
 			path = Tests;
@@ -665,6 +668,7 @@
 				38923053CF1C60938E3DA1A0 /* RouteSelectionTests.swift in Sources */,
 				248B5EF5261AB46C680B894E /* SearchPaginationTests.swift in Sources */,
 				8FC298524B1D52C0FBF7C80B /* SearchSelectionTests.swift in Sources */,
+				A848178B36D1AC2EBF3AF00E /* TransportRoutePlanningTests.swift in Sources */,
 				A344F20E430BC2B3F431BBDA /* WebRouteGeometryParityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -770,7 +774,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 154;
+				CURRENT_PROJECT_VERSION = 155;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -910,7 +914,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 154;
+				CURRENT_PROJECT_VERSION = 155;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

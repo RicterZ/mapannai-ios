@@ -12,7 +12,6 @@ enum NavigationMapApp: String, CaseIterable {
     var amapKey: String { AppConfiguration.amapKey }
     @Published private(set) var privacyAccepted: Bool
     @Published var planning: Bool { didSet { UserDefaults.standard.set(planning, forKey: "planning") } }
-    @Published var mode: TravelMode { didSet { UserDefaults.standard.set(mode.rawValue, forKey: "travelMode") } }
     @Published var navigationMapApp: NavigationMapApp {
         didSet { UserDefaults.standard.set(navigationMapApp.rawValue, forKey: "navigationMapApp") }
     }
@@ -29,7 +28,6 @@ enum NavigationMapApp: String, CaseIterable {
         token = Keychain.read("api-token")
         privacyAccepted = UserDefaults.standard.bool(forKey: "amapPrivacy")
         planning = UserDefaults.standard.bool(forKey: "planning")
-        mode = TravelMode(rawValue: UserDefaults.standard.string(forKey: "travelMode") ?? "walking") ?? .walking
     }
     func save(url: String, token: String) throws {
         let normalized = url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : try Self.normalizedURL(url)

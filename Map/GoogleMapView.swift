@@ -135,7 +135,14 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 line.strokeWidth = RouteLineAppearance.width(selected: selectedIDs.contains(id))
                 casings[id]?.strokeWidth = RouteLineAppearance.outlineWidth(selected: selectedIDs.contains(id))
                 casings[id]?.map = line.map
-                if selectedIDs.contains(id) && !store.placeSearchPresented {
+                if geometries.first(where: { $0.id == id })?.isDashed == true, let path = line.path {
+                    let unit = 2 / (256 * pow(2, Double(map.camera.zoom)))
+                    let lengths = [NSNumber(value: 8 * unit), NSNumber(value: 6 * unit)]
+                    line.spans = GMSStyleSpans(path, [GMSStrokeStyle.solidColor(line.strokeColor), GMSStrokeStyle.solidColor(.clear)], lengths, .projected)
+                    if let casing = casings[id] {
+                        casing.spans = GMSStyleSpans(path, [GMSStrokeStyle.solidColor(casing.strokeColor), GMSStrokeStyle.solidColor(.clear)], lengths, .projected)
+                    }
+                } else if selectedIDs.contains(id) && !store.placeSearchPresented {
                     let style = GMSStrokeStyle.solidColor(line.strokeColor)
                     style.stampStyle = GMSTextureStyle(image: RouteMotionOverlay.texture(color: nil, google: true))
                     if let path = line.path {
