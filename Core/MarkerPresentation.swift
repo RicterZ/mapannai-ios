@@ -32,6 +32,14 @@ enum MarkerPresentation {
         ]
         return url.url
     }
+    static func googleNavigationURL(for marker: Marker) -> URL? {
+        guard marker.coordinates.isValid else { return nil }
+        var url = URLComponents(string: "https://www.google.com/maps/dir/")!
+        url.queryItems = [URLQueryItem(name: "api", value: "1"),
+            URLQueryItem(name: "destination", value: "\(marker.coordinates.latitude),\(marker.coordinates.longitude)"),
+            URLQueryItem(name: "dir_action", value: "navigate")]
+        return url.url
+    }
     static func appleMapsItem(for marker: Marker) -> MKMapItem? {
         guard marker.coordinates.isValid else { return nil }
         // Match the Web popup's Apple Maps boundary conversion; stored coordinates stay WGS-84.

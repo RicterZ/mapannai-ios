@@ -13,6 +13,10 @@ final class MapBackgroundTests: XCTestCase {
         app.buttons["系统地图"].tap()
         app.buttons["close-settings"].tap()
         XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 10))
+        settings.tap(); picker.tap(); app.buttons["Google 地图"].tap()
+        app.buttons["close-settings"].tap()
+        // Empty Google key must quietly keep a usable native system map.
+        XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 10))
         settings.tap(); picker.tap(); app.buttons["高德地图"].tap()
         app.buttons["close-settings"].tap()
         XCTAssertFalse(app.maps.firstMatch.exists)

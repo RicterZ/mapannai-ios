@@ -65,7 +65,7 @@ TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与�
 | `Views/` | 旅途、搜索、地点详情与编辑界面 |
 | `Tests/`、`UITests/` | 单元测试与界面测试 |
 
-服务 provider 元数据的配置源固定为高德；客户端底图可选择高德或系统地图（Apple MapKit），Google renderer 尚未实现。未来配置接口需依据实际服务端合约接入，不应自行假定端点。内部与 API 坐标使用 WGS-84，高德渲染边界转换为 GCJ-02。
+服务 provider 元数据的配置源固定为高德；客户端底图可选择高德或系统地图（Apple MapKit），Google renderer 通过官方 GoogleMaps Swift Package（固定11.2.0）接入。未来配置接口需依据实际服务端合约接入，不应自行假定端点。内部与 API 坐标使用 WGS-84，高德渲染边界转换为 GCJ-02。
 
 ## 验证修改
 
@@ -184,4 +184,12 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 
 定位按钮在取得高德有效位置后，一次性设置中心、zoom15 和当前面板遮挡对应的视口锚点，不沿用点击前的缩放；首次定位等待位置回调，减少动态效果时立即更新。
 
-底图由设置的本地 mapRenderer 偏好选择（默认系统地图/Apple MapKit，保留已保存选择），独立于 MapConfiguration 的服务端 provider 元数据。苹果使用 MKMapView，国内底图渲染边界与高德统一使用现有 GCJ 转换；标记、路线及镜头正向转换，POI、长按、地图视口与原生定位蓝点返回内部时逆向转换。国外沿用现有坐标适用范围判断。API 与存储保持 WGS-84，不要求高德隐私同意或 Key。Google 入口暂不可选。苹果首版支持地点、搜索标记、路线显示/点击、POI、长按添加、视口搜索和定位；高德选中路线的流动小球效果尚未移植到苹果。
+底图由设置的本地 mapRenderer 偏好选择（默认系统地图/Apple MapKit，保留已保存选择），独立于 MapConfiguration 的服务端 provider 元数据。苹果使用 MKMapView，国内底图渲染边界与高德统一使用现有 GCJ 转换；标记、路线及镜头正向转换，POI、长按、地图视口与原生定位蓝点返回内部时逆向转换。国外沿用现有坐标适用范围判断。API 与存储保持 WGS-84，不要求高德隐私同意或 Key。Google 可选，Key 为空时静默返回系统地图渲染，不初始化 Google SDK。苹果首版支持地点、搜索标记、路线显示/点击、POI、长按添加、视口搜索和定位；高德选中路线的流动小球效果尚未移植到苹果。
+
+## Google 地图配置与共享标点
+
+在被忽略的 `Config/Local.xcconfig` 填写 `GOOGLE_MAPS_IOS_KEY = <key>` 后重新构建即可使用 Google 底图。Google Cloud 项目需启用 Maps SDK for iOS 和计费，Key 的 iOS 应用限制绑定实际 Bundle ID（默认 me.mapannai.ios）。Key 从 Info.plist 的 GoogleMapsIOSKey 读取，初始化仅执行一次；不把 Key 放进服务器/API请求，也不接入原生 Places 或 Directions SDK。CI 的同名 Secret 可选，缺失仍可构建。GoogleMaps 由官方 SPM 包固定版本并保存 Package.resolved；校验 GoogleMaps_GoogleMapsTarget.bundle/GoogleMaps.bundle。
+
+导航设置可选择 Google，通过官方 HTTPS Maps URLs 传入 WGS-84 目的地、api=1 和 dir_action=navigate，已安装时可由系统打开 App，否则浏览器打开，无需地图 SDK Key。
+
+地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线流动小球仍由高德适配层实现，苹果和Google首版显示静态路线。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。

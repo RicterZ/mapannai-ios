@@ -19,3 +19,8 @@ for file in files:
     if not copied.is_file() or hashlib.sha256(file.read_bytes()).digest() != hashlib.sha256(copied.read_bytes()).digest():
         raise SystemExit(f'Missing or mismatched SDK resource: {relative}')
 print(f'Verified {len(files)} SDK resource files')
+
+google = app / 'GoogleMaps_GoogleMapsTarget.bundle' / 'GoogleMaps.bundle'
+if not google.is_dir() or not any(google.rglob('*.strings')):
+    raise SystemExit('Missing Google Maps SDK resource bundle')
+print('Verified Google Maps SDK resource bundle')

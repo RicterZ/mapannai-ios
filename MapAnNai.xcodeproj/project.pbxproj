@@ -14,6 +14,7 @@
 		094AD351688781CAF39E4064 /* ConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB25B1C797DC9C67FC988C2 /* ConcurrencyTests.swift */; };
 		0A3C38A375DBE8FF853161E1 /* RouteCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4960F0B624456BC80191B2F2 /* RouteCache.swift */; };
 		0D8DA2E591B528E9625BE0C1 /* TripEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5405CAA1777E9322D0EC643D /* TripEditorTests.swift */; };
+		0D91BDAF33E1564B4AB87964 /* GoogleMapIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9141FA533CC90A4942D040 /* GoogleMapIntegrationTests.swift */; };
 		0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */; };
 		0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */; };
 		1090057AE077861B9DFB1180 /* MarkerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425DF5BCBE1273228F07E613 /* MarkerViews.swift */; };
@@ -65,7 +66,9 @@
 		987DA7E82DF827A042CB40CE /* RouteSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9EAD315E471CD5B0A43F17 /* RouteSchedule.swift */; };
 		9AA3D451340B9A78DBD31C91 /* RouteDayPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */; };
 		9B10601417C914FADA9A378B /* IPadBackButtonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */; };
+		A0E3970C784A4F568574A973 /* GoogleMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4140415A9DAD22E98BB13192 /* GoogleMapView.swift */; };
 		A292D855F2E570ABB25B79F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1C4EE1D4A3CFED767F0CC73D /* Assets.xcassets */; };
+		A46DB7C6125137C883E819A0 /* MapMarkerAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B450235965289010509590A /* MapMarkerAppearance.swift */; };
 		A84AB72A4DDDDCE73C8F9F47 /* MapZoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 401E2D25019885A304E0676C /* MapZoomTests.swift */; };
 		A9F6407DE636ABED000B181E /* RouteRedrawTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB69B65CFD0B0604D5476A1 /* RouteRedrawTests.swift */; };
 		B13C16980AC0CF8CF7E227EB /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DC8A3EBC540A61F7259026E /* TripsView.swift */; };
@@ -76,6 +79,7 @@
 		BD107C091E8E4C753CB7D72E /* AMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1D7BACAED41D3AB875D71B /* AMapView.swift */; };
 		C4D5DDD576313DAB75D72D1E /* JourneyEditingActionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */; };
 		CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1DE90E8066F7692BEC6055 /* AppStore.swift */; };
+		CF042A2BC70E2C527E1844A0 /* GoogleMaps in Frameworks */ = {isa = PBXBuildFile; productRef = C15FA87F5F0BB5B7E3CB4AC0 /* GoogleMaps */; };
 		D34B30E8151C3DFF8428D7E3 /* NativeMapControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DE00593E8084F5D51D56A4 /* NativeMapControls.swift */; };
 		D35081C38CB650DFA49D2085 /* JourneyBackgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */; };
 		D61C89014A16E20523662687 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1579B0865582F6FFBD7E34E0 /* APIClient.swift */; };
@@ -140,6 +144,7 @@
 		3E64E5D5CCD66C47F3724D18 /* AIPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerView.swift; sourceTree = "<group>"; };
 		3F55A919B31EC92357E58F47 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		401E2D25019885A304E0676C /* MapZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapZoomTests.swift; sourceTree = "<group>"; };
+		4140415A9DAD22E98BB13192 /* GoogleMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleMapView.swift; sourceTree = "<group>"; };
 		425DF5BCBE1273228F07E613 /* MarkerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerViews.swift; sourceTree = "<group>"; };
 		42CAE74097153A4CF3C81CE1 /* MapAnNaiTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MapAnNaiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		44F803700132C621981E8417 /* MapAnNai-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MapAnNai-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -165,6 +170,7 @@
 		643D80F501C97FDAC85C6252 /* RouteSpatialIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSpatialIndex.swift; sourceTree = "<group>"; };
 		676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyTitleTests.swift; sourceTree = "<group>"; };
 		6871690DA4224A68B7D97B4F /* AppleMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMapView.swift; sourceTree = "<group>"; };
+		6B450235965289010509590A /* MapMarkerAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapMarkerAppearance.swift; sourceTree = "<group>"; };
 		6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyBackgroundTests.swift; sourceTree = "<group>"; };
 		71A017E8694F055DAB5D395B /* AIPlannerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerUITests.swift; sourceTree = "<group>"; };
 		7242A04536ED3C50E6452593 /* MarkerImageCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompression.swift; sourceTree = "<group>"; };
@@ -201,6 +207,7 @@
 		CEA9209DA30A602DD938E864 /* SettingsAboutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsAboutTests.swift; sourceTree = "<group>"; };
 		CEB25B1C797DC9C67FC988C2 /* ConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConcurrencyTests.swift; sourceTree = "<group>"; };
 		DE1B1BE0D10CFCEBB91BDC15 /* MapServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapServices.swift; sourceTree = "<group>"; };
+		DE9141FA533CC90A4942D040 /* GoogleMapIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleMapIntegrationTests.swift; sourceTree = "<group>"; };
 		E2F3FCD6BC9CEDC7B46793F1 /* NoteComposerPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteComposerPreviewTests.swift; sourceTree = "<group>"; };
 		E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IPadBackButtonTests.swift; sourceTree = "<group>"; };
 		E45FECFBB8C13A6617DE0148 /* NativeJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeJourneyTests.swift; sourceTree = "<group>"; };
@@ -214,6 +221,17 @@
 		FDB69B65CFD0B0604D5476A1 /* RouteRedrawTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRedrawTests.swift; sourceTree = "<group>"; };
 		FDE47B8C60F714C73753A59B /* AppMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMotion.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A5E541A8BF418CC70BBBB7C2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CF042A2BC70E2C527E1844A0 /* GoogleMaps in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		1EF9154FA46CC75A2451A6C7 /* App */ = {
@@ -294,6 +312,7 @@
 				8ED85B293D18534AAB521985 /* CoreTests.swift */,
 				908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */,
 				BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */,
+				DE9141FA533CC90A4942D040 /* GoogleMapIntegrationTests.swift */,
 				629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */,
 				CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */,
 				CBC1E75B71BD3626B83A19E4 /* NativeRouteDropGeometryTests.swift */,
@@ -311,6 +330,8 @@
 			children = (
 				8D1D7BACAED41D3AB875D71B /* AMapView.swift */,
 				6871690DA4224A68B7D97B4F /* AppleMapView.swift */,
+				4140415A9DAD22E98BB13192 /* GoogleMapView.swift */,
+				6B450235965289010509590A /* MapMarkerAppearance.swift */,
 				538108F21D71668426EA9A48 /* MapRenderer.swift */,
 				2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */,
 			);
@@ -400,6 +421,7 @@
 			buildPhases = (
 				394CA53E81478605526371FD /* Sources */,
 				A4360F7BFACD436B8BD3F8EF /* Resources */,
+				A5E541A8BF418CC70BBBB7C2 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -407,6 +429,7 @@
 			);
 			name = MapAnNai;
 			packageProductDependencies = (
+				C15FA87F5F0BB5B7E3CB4AC0 /* GoogleMaps */,
 			);
 			productName = MapAnNai;
 			productReference = 1D05C6D25966F6717D9418A3 /* MapAnNai.app */;
@@ -471,6 +494,9 @@
 			);
 			mainGroup = AFAFD15A2BD898C54EFEC39A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BE5CB0D330BBA2B0CD7FA4C6 /* XCRemoteSwiftPackageReference "ios-maps-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F3A7794206A8FA1DB797F5D7 /* Products */;
 			projectDirPath = "";
@@ -513,12 +539,14 @@
 				5E5B7F87B301257F05899C5B /* CameraMotion.swift in Sources */,
 				98077213B5743CC94A28A49C /* ChatMarkdown.swift in Sources */,
 				94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */,
+				A0E3970C784A4F568574A973 /* GoogleMapView.swift in Sources */,
 				23CC06614DFD047642FEFB5F /* HomeView.swift in Sources */,
 				88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */,
 				74A88091D9ABF6D8AA712AB9 /* JourneySheetBackground.swift in Sources */,
 				E5E82A9A2F2526B35B873E8B /* JourneyViews.swift in Sources */,
 				B353F2DDCDACD295F7761889 /* MapAnNaiApp.swift in Sources */,
 				18DC608C17CAC7B4854B1504 /* MapLayout.swift in Sources */,
+				A46DB7C6125137C883E819A0 /* MapMarkerAppearance.swift in Sources */,
 				713D1F220F533D20CBEF44F5 /* MapRenderer.swift in Sources */,
 				22412999EF9F454257D4C2AA /* MapServices.swift in Sources */,
 				600AA5D63A9848C91732D1B2 /* MapZoomPresentation.swift in Sources */,
@@ -562,6 +590,7 @@
 				F454FB7809C094724227F0B8 /* CoreTests.swift in Sources */,
 				39485F3DE95106F278FE9E42 /* DayCameraTests.swift in Sources */,
 				1813F5E4A7C7AA606B7E96E7 /* DirectedRouteMoveTests.swift in Sources */,
+				0D91BDAF33E1564B4AB87964 /* GoogleMapIntegrationTests.swift in Sources */,
 				0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */,
 				77E5FBF26CBA7D5C9FA81B1C /* MarkerRepositoryTests.swift in Sources */,
 				EDACC92DB748C66C90FF7452 /* NativeRouteDropGeometryTests.swift in Sources */,
@@ -914,6 +943,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BE5CB0D330BBA2B0CD7FA4C6 /* XCRemoteSwiftPackageReference "ios-maps-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-maps-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 11.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C15FA87F5F0BB5B7E3CB4AC0 /* GoogleMaps */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BE5CB0D330BBA2B0CD7FA4C6 /* XCRemoteSwiftPackageReference "ios-maps-sdk" */;
+			productName = GoogleMaps;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 982C388814086B3B841106C2 /* Project object */;
 }

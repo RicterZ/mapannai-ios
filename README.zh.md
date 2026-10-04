@@ -25,7 +25,7 @@ MapAnNai iOS 是 MapAnNai Plus 的原生 iPhone 和 iPad 客户端。你可以�
 
 还没有服务端？按照 [MapAnNai Plus 的部署说明](https://github.com/RicterZ/mapannai-plus/blob/main/README.zh.md#部署自己的服务) 准备服务，再在客户端填写服务地址及服务需要的 API token。搜索、保存和路线规划需要网络连接。
 
-默认底图为系统地图（Apple MapKit）。在设置 → 地图底图中可选择高德或系统地图，Google 暂不可用。底图切换不改变所连服务器的搜索与寻路服务。
+默认底图为系统地图（Apple MapKit）。在设置 → 地图底图中可选择系统地图、高德或 Google 地图。未配置 Google SDK Key 时静默使用系统地图。底图切换不改变所连服务器的搜索与寻路服务。
 
 点击地图右上角的对话图标可使用 AI 助手规划行程，先在设置中配置模型 API。设置中可隐藏对话图标，默认不隐藏。短暂切到后台时会尝试继续接收回复；中断后保留已收到内容，不自动重发。回复支持 Markdown 表格，宽表可横向滑动查看各列。
 

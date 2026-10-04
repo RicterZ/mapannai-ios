@@ -57,13 +57,17 @@ jobs:
       - name: Configure native map key
         env:
           AMAP_IOS_KEY: ${{ secrets.AMAP_IOS_KEY }}
+          GOOGLE_MAPS_IOS_KEY: ${{ secrets.GOOGLE_MAPS_IOS_KEY }}
         run: |
           python3 - <<'PY'
           import os, pathlib, re
           key = os.environ.get('AMAP_IOS_KEY', '').strip()
           if not re.fullmatch(r'[A-Za-z0-9]+', key):
               raise SystemExit('Configure the AMAP_IOS_KEY repository secret before building')
-          pathlib.Path('Config/Local.xcconfig').write_text('AMAP_IOS_KEY = ' + key + '\n')
+          google_key = os.environ.get('GOOGLE_MAPS_IOS_KEY', '').strip()
+          if google_key and not re.fullmatch(r'[A-Za-z0-9_-]+', google_key):
+              raise SystemExit('Invalid GOOGLE_MAPS_IOS_KEY repository secret')
+          pathlib.Path('Config/Local.xcconfig').write_text('AMAP_IOS_KEY = ' + key + '\nGOOGLE_MAPS_IOS_KEY = ' + google_key + '\n')
           PY
       - name: Build and package unsigned device app
         env:

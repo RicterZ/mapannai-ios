@@ -46,8 +46,10 @@ struct AppleMapRenderer: UIViewRepresentable {
         var lastCamera: UUID?
         var lastLocate: UUID?
         var pendingLocate = false
+        var compact = false
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MKMapView) {
+            compact = isCompact(map)
             var desired: [String: (Coordinate, String, Marker?, Place?)] = [:]
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker, nil) }
             for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil, place) }
@@ -106,7 +108,15 @@ struct AppleMapRenderer: UIViewRepresentable {
             pendingLocate = false
             focus(map, command: CameraCommand(points: [Self.internalCoordinate(map.userLocation.coordinate)]))
         }
+        func isCompact(_ map: MKMapView) -> Bool {
+            let zoom = log2(MKMapSize.world.width * max(map.bounds.width, 1) / max(map.visibleMapRect.width, 1) / 256)
+            return MapZoomPresentation.isCompact(zoom)
+        }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            compact = isCompact(mapView)
+            for pin in pins.values { if let view = mapView.view(for: pin) { style(view, pin: pin) } }
+            for overlay in mapView.overlays { mapView.renderer(for: overlay)?.alpha = compact ? 0 : 1 }
+
             let a = Self.internalCoordinate(mapView.convert(CGPoint(x: 0, y: 0), toCoordinateFrom: mapView))
             let b = Self.internalCoordinate(mapView.convert(CGPoint(x: mapView.bounds.width, y: mapView.bounds.height), toCoordinateFrom: mapView))
             store.bounds = SearchBounds(west: min(a.longitude, b.longitude), south: min(a.latitude, b.latitude), east: max(a.longitude, b.longitude), north: max(a.latitude, b.latitude))
@@ -118,24 +128,21 @@ struct AppleMapRenderer: UIViewRepresentable {
             view.annotation = pin; view.canShowCallout = false; style(view, pin: pin); return view
         }
         func style(_ view: MKAnnotationView, pin: Pin) {
-            view.image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
-                let color = pin.marker.map { UIColor(red: CGFloat(($0.icon.colorRGB >> 16) & 255) / 255, green: CGFloat(($0.icon.colorRGB >> 8) & 255) / 255, blue: CGFloat($0.icon.colorRGB & 255) / 255, alpha: 1) } ?? .systemBlue
-                color.setFill(); context.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: 28, height: 28))
-                UIColor.white.setStroke(); context.cgContext.setLineWidth(2); context.cgContext.strokeEllipse(in: CGRect(x: 2, y: 2, width: 28, height: 28))
-                let symbol = (pin.marker?.icon.emoji ?? (pin.key == "draft" ? "○" : "●")) as NSString
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: 12), .foregroundColor: UIColor.white
-                ]
-                let size = symbol.size(withAttributes: attributes)
-                symbol.draw(at: CGPoint(x: (32 - size.width) / 2, y: (32 - size.height) / 2),
-                            withAttributes: attributes)
+            if let marker = pin.marker {
+                view.image = MapMarkerAppearance.image(icon: marker.icon, compact: compact, selected: store.selectedMarker?.id == marker.id)
+            } else if pin.key == "draft" {
+                view.image = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location)
+            } else {
+                view.image = SearchPinAppearance.image(selected: store.editingSearchPlaceID == pin.place?.id)
             }
-            view.transform = CGAffineTransform(scaleX: store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? 1.15 : 1, y: store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? 1.15 : 1)
+            view.centerOffset = pin.key == "draft" ? CGPoint(x: 0, y: -18) : pin.marker == nil ? CGPoint(x: 0, y: -14) : .zero
+            view.transform = .identity
+            view.zPriority = store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? .max : pin.marker != nil ? .defaultSelected : .defaultUnselected
             view.displayPriority = .required
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            let renderer = MKPolylineRenderer(polyline: line); renderer.strokeColor = UIColor(Theme.color(line.colorIndex)); renderer.lineWidth = 4
+            let renderer = MKPolylineRenderer(polyline: line); renderer.alpha = compact ? 0 : 1; renderer.strokeColor = UIColor(Theme.color(line.colorIndex)); renderer.lineWidth = 4
             return renderer
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
@@ -160,7 +167,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             for annotation in map.annotations {
                 if let view = map.view(for: annotation), view.frame.insetBy(dx: -6, dy: -6).contains(point) { return }
             }
-            guard !store.placeSearchPresented else { return }
+            guard !store.placeSearchPresented, !compact else { return }
             let candidates = RouteSelection.candidates(at: (point.x, point.y), routes: routes) { coordinate in
                 let projected = map.convert(Pin.coordinate(coordinate), toPointTo: map); return (projected.x, projected.y)
             }

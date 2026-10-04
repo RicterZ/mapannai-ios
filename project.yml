@@ -25,6 +25,10 @@ settings:
     SWIFT_OBJC_BRIDGING_HEADER: App/MapAnNai-Bridging-Header.h
     FRAMEWORK_SEARCH_PATHS: '$(inherited) $(PROJECT_DIR)/Vendor'
     'OTHER_LDFLAGS[sdk=iphoneos*]': '$(inherited) -ObjC -framework MAMapKit -framework AMapFoundationKit -framework CoreTelephony -framework SystemConfiguration -framework Security -framework OpenGLES -framework GLKit -lz -lc++'
+packages:
+  GoogleMaps:
+    url: https://github.com/googlemaps/ios-maps-sdk
+    exactVersion: 11.2.0
 targets:
   MapAnNai:
     type: application
@@ -37,6 +41,8 @@ targets:
       - path: Vendor/MAMapKit.framework/AMap.bundle
         buildPhase: resources
         type: file
+    dependencies:
+      - package: GoogleMaps
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.mapannai.ios

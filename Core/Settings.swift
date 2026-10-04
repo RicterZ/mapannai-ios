@@ -2,8 +2,8 @@ import Foundation
 import Security
 
 enum NavigationMapApp: String, CaseIterable {
-    case system, amap
-    var label: String { self == .system ? "系统地图" : "高德地图" }
+    case system, amap, google
+    var label: String { switch self { case .system: "系统地图"; case .amap: "高德地图"; case .google: "Google 地图" } }
 }
 
 @MainActor final class Settings: ObservableObject {
@@ -22,7 +22,7 @@ enum NavigationMapApp: String, CaseIterable {
     var configured: Bool { !baseURL.isEmpty }
     init() {
         let renderer = MapRendererKind(rawValue: UserDefaults.standard.string(forKey: "mapRenderer") ?? "apple") ?? .apple
-        mapRenderer = renderer == .google ? .apple : renderer
+        mapRenderer = renderer
         hideAIChatIcon = UserDefaults.standard.bool(forKey: "hideAIChatIcon")
         navigationMapApp = NavigationMapApp(rawValue: UserDefaults.standard.string(forKey: "navigationMapApp") ?? "system") ?? .system
         baseURL = UserDefaults.standard.string(forKey: "baseURL") ?? ""

@@ -53,6 +53,9 @@ struct MarkerDetailView: View {
                                     UIApplication.shared.open(url, options: [:]) { opened in
                                         Task { @MainActor in navigationUnavailable = !opened }
                                     }
+                                } else if store.settings.navigationMapApp == .google,
+                                          let url = MarkerPresentation.googleNavigationURL(for: current) {
+                                    UIApplication.shared.open(url)
                                 } else {
                                     item.openInMaps(launchOptions: nil)
                                 }

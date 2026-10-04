@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CADisableMinimumFrameDurationOnPhone</key><true/>
+<key>GoogleMapsIOSKey</key><string>$(GOOGLE_MAPS_IOS_KEY)</string>
 <key>AMapIOSKey</key><string>$(AMAP_IOS_KEY)</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
-<key>LSApplicationQueriesSchemes</key><array><string>iosamap</string></array>
+<key>LSApplicationQueriesSchemes</key><array><string>iosamap</string><string>comgooglemaps</string><string>googlechromes</string></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationPortraitUpsideDown</string></array>
 </dict></plist>

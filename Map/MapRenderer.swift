@@ -22,8 +22,7 @@ import SwiftUI
         switch kind {
         case .amap: AMapRendererFactory()
         case .apple: AppleMapRendererFactory()
-        // Register GoogleRendererFactory here when the Google SDK is introduced.
-        case .google: nil
+        case .google: GoogleMapRendererFactory()
         }
     }
 }
