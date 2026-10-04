@@ -31,13 +31,12 @@ struct GoogleMapRenderer: UIViewRepresentable {
     }
     func updateUIView(_ map: GMSMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: GMSMapView, coordinator: Coordinator) {
-        coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); coordinator.userDirection.stop(); coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
+        coordinator.tapArbiter.cancel(); coordinator.userDirection.stop(); coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
     }
     @MainActor final class Coordinator: NSObject, GMSMapViewDelegate, CLLocationManagerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
-        let routeMotion = RouteMotionOverlay()
-        var directionLines: [GMSPolyline] = []
+        var arrowZoom: Float?
         let userDirection = UserDirectionIndicator()
         let navigationGestures = MapNavigationGestures()
         var locationAnimationUntil = Date.distantPast
@@ -136,26 +135,16 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 line.strokeWidth = RouteLineAppearance.width(selected: selectedIDs.contains(id))
                 casings[id]?.strokeWidth = RouteLineAppearance.outlineWidth(selected: selectedIDs.contains(id))
                 casings[id]?.map = line.map
+                if selectedIDs.contains(id) && !store.placeSearchPresented {
+                    let style = GMSStrokeStyle.solidColor(line.strokeColor)
+                    style.stampStyle = GMSTextureStyle(image: RouteMotionOverlay.texture(color: nil, google: true))
+                    if let path = line.path {
+                        let unit = 2 / (256 * pow(2, Double(map.camera.zoom)))
+                        let plain = GMSStrokeStyle.solidColor(line.strokeColor)
+                        line.spans = GMSStyleSpansOffset(path, [style, plain], [NSNumber(value: 6 * unit), NSNumber(value: 84 * unit)], .projected, 48 * unit)
+                    }
+                } else { line.spans = nil }
             }
-            routeMotion.update(routes: selected, in: map, enabled: { [weak self, weak map] in
-                guard let self, let map else { return false }
-                return !MapZoomPresentation.isCompact(Double(map.camera.zoom)) && !self.store.placeSearchPresented
-            }, project: { [weak map] coordinate in
-                map?.projection.point(for: Self.coordinate(coordinate)) ?? .zero
-            }, unproject: { [weak map] point in
-                let coordinate = map?.projection.coordinate(for: point) ?? CLLocationCoordinate2D()
-                return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            }, cameraKey: { [weak map] in Double(map?.camera.zoom ?? 0) }, publish: { [weak self, weak map] paths in
-                guard let self, let map else { return }
-                let previous = self.directionLines
-                self.directionLines = paths.map { points in
-                    let path = GMSMutablePath(); points.forEach { path.add(Self.coordinate($0)) }
-                    let line = GMSPolyline(path: path)
-                    line.strokeColor = RouteMotionOverlay.strokeColor; line.strokeWidth = RouteMotionOverlay.strokeWidth
-                    line.isTappable = false; line.zIndex = 2; line.map = map; return line
-                }
-                previous.forEach { $0.map = nil }
-            })
             map.isBuildingsEnabled = !store.placeSearchPresented
             // Hide commercial POIs during server search; road labels remain visible.
             if searchStyleEnabled != store.placeSearchPresented {
@@ -244,7 +233,10 @@ struct GoogleMapRenderer: UIViewRepresentable {
         func mapView(_ mapView: GMSMapView, willMove gesture: Bool) {
             if gesture { navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() } }
         }
-        func mapView(_ mapView: GMSMapView, didChange position: GMSCameraPosition) { routeMotion.refresh(); userDirection.refresh() }
+        func mapView(_ mapView: GMSMapView, didChange position: GMSCameraPosition) {
+            userDirection.refresh()
+            if arrowZoom != position.zoom { arrowZoom = position.zoom; update(mapView) }
+        }
         func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
             update(mapView)
             let region = mapView.projection.visibleRegion()

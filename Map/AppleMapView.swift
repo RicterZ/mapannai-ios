@@ -24,7 +24,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         return map
     }
     func updateUIView(_ map: MKMapView, context: Context) { context.coordinator.update(map) }
-    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); coordinator.userDirection.stop(); map.delegate = nil; map.showsUserLocation = false }
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.tapArbiter.cancel(); coordinator.userDirection.stop(); map.delegate = nil; map.showsUserLocation = false }
 
     final class Pin: MKPointAnnotation {
         let key: String
@@ -42,10 +42,6 @@ struct AppleMapRenderer: UIViewRepresentable {
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
-        let routeMotion = RouteMotionOverlay()
-        var directionGlyphs: [[Coordinate]] = []
-        let directionOverlay = AppleDirectionOverlay()
-        var directionRenderer: AppleDirectionRenderer?
         let userDirection = UserDirectionIndicator()
         let navigationGestures = MapNavigationGestures()
         var lastTap: CGPoint?
@@ -116,30 +112,9 @@ struct AppleMapRenderer: UIViewRepresentable {
                 if let line = overlay as? Line, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
                     let width = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
                     if renderer.lineWidth != width { renderer.lineWidth = width }
+                    (renderer as? AppleRouteRenderer)?.showsDirections = !line.casing && line.dayID == store.dayID && !store.placeSearchPresented
                 }
             }
-            let arrowRoutes = routes.filter { $0.dayID == store.dayID }.map { route in
-                var rendered = route; rendered.points = route.points.map(Coordinates.gcj); return rendered
-            }
-            routeMotion.update(routes: arrowRoutes, in: map,
-                enabled: { [weak self, weak map] in
-                    guard let self, let map else { return false }
-                    return !self.isCompact(map) && !self.store.placeSearchPresented
-                }, project: { [weak map] coordinate in
-                    map?.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map) ?? .zero
-                }, unproject: { [weak map] point in
-                    guard let map else { return Coordinate(latitude: 0, longitude: 0) }
-                    let coordinate = map.convert(point, toCoordinateFrom: map)
-                    return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                }, cameraKey: { [weak map] in log2(max(map?.camera.centerCoordinateDistance ?? 1, 1)) }, publish: { [weak self, weak map] paths in
-                    guard let self, let map else { return }
-                    self.directionGlyphs = paths
-                    if let renderer = self.directionRenderer {
-                        renderer.updateGlyphs(paths)
-                    } else if !paths.isEmpty {
-                        map.addOverlay(self.directionOverlay, level: .aboveRoads)
-                    }
-                })
             if let command = store.camera, command.id != lastCamera {
                 lastCamera = command.id
                 focus(map, command: command)
@@ -200,9 +175,8 @@ struct AppleMapRenderer: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
             navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
         }
-        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { routeMotion.refresh(); userDirection.refresh() }
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { userDirection.refresh() }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            routeMotion.refresh()
             compact = isCompact(mapView)
             for pin in pins.values { if let view = mapView.view(for: pin) { style(view, pin: pin) } }
             for overlay in mapView.overlays { mapView.renderer(for: overlay)?.alpha = compact ? 0 : 1 }
@@ -236,18 +210,9 @@ struct AppleMapRenderer: UIViewRepresentable {
             view.displayPriority = .required
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if overlay === directionOverlay {
-                let renderer = AppleDirectionRenderer(overlay: overlay)
-                renderer.shouldRasterize = false
-                renderer.strokeColor = RouteMotionOverlay.strokeColor
-                renderer.lineWidth = RouteMotionOverlay.strokeWidth
-                renderer.lineCap = .round; renderer.lineJoin = .round
-                renderer.updateGlyphs(directionGlyphs)
-                directionRenderer = renderer
-                return renderer
-            }
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            let renderer = MKPolylineRenderer(polyline: line)
+            let renderer = AppleRouteRenderer(polyline: line)
+            renderer.showsDirections = !line.casing && line.dayID == store.dayID && !store.placeSearchPresented
             renderer.shouldRasterize = false
             renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
             renderer.lineCap = .round; renderer.lineJoin = .round

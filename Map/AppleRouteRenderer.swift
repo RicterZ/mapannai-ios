@@ -1,29 +1,39 @@
 import MapKit
 
-/// One persistent native vector overlay, transformed by MapKit with the route.
-/// No draw override: MapKit retains its vector rendering path instead of custom tiles.
-final class AppleDirectionOverlay: NSObject, MKOverlay {
-    let coordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
-    let boundingMapRect = MKMapRect.world
-}
-final class AppleDirectionRenderer: MKOverlayPathRenderer {
-    private let glyphLock = NSLock()
-    private var glyphs: [[MKMapPoint]] = []
-    func updateGlyphs(_ coordinates: [[Coordinate]]) {
-        let next = coordinates.map { $0.map { MKMapPoint(CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)) } }
-        glyphLock.lock(); glyphs = next; glyphLock.unlock()
-        invalidatePath()
-        setNeedsDisplay()
-    }
-    override func createPath() {
-        glyphLock.lock(); let snapshot = glyphs; glyphLock.unlock()
-        let result = CGMutablePath()
-        for glyph in snapshot {
-            for (index, mapPoint) in glyph.enumerated() {
-                let point = self.point(for: mapPoint)
-                if index == 0 { result.move(to: point) } else { result.addLine(to: point) }
+/// Direction glyphs are drawn inside the route's own drawing context at current scale.
+final class AppleRouteRenderer: MKPolylineRenderer {
+    var showsDirections = false { didSet { if oldValue != showsDirections { setNeedsDisplay() } } }
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        context.saveGState()
+        super.draw(mapRect, zoomScale: zoomScale, in: context)
+        context.restoreGState()
+        guard showsDirections, zoomScale > 0 else { return }
+        if path == nil { createPath() }
+        guard let path else { return }
+        let points = (0..<polyline.pointCount).map { index -> CGPoint in
+            let p = point(for: polyline.points()[index])
+            return CGPoint(x: p.x * zoomScale, y: p.y * zoomScale)
+        }
+        let rect = self.rect(for: mapRect)
+        let bounds = CGRect(x: rect.minX * zoomScale, y: rect.minY * zoomScale,
+                            width: rect.width * zoomScale, height: rect.height * zoomScale)
+        let directions = RouteDirectionPath(points: points, bounds: bounds)
+        context.saveGState()
+        context.beginPath()
+        context.addPath(path.copy(strokingWithWidth: lineWidth / zoomScale, lineCap: .round, lineJoin: .round, miterLimit: 10))
+        context.clip()
+        context.setStrokeColor(UIColor.white.cgColor)
+        context.setLineWidth(RouteArrowAppearance.strokeWidth / zoomScale)
+        context.setLineCap(.round); context.setLineJoin(.round)
+        context.beginPath()
+        for arrow in directions.arrows(timestamp: 0, reducedMotion: true, bounds: bounds) {
+            let c = cos(arrow.angle), s = sin(arrow.angle)
+            for (index, p) in RouteArrowAppearance.glyphPoints.enumerated() {
+                let vertex = CGPoint(x: (arrow.position.x + p.x * c - p.y * s) / zoomScale,
+                                     y: (arrow.position.y + p.x * s + p.y * c) / zoomScale)
+                if index == 0 { context.move(to: vertex) } else { context.addLine(to: vertex) }
             }
         }
-        path = result
+        context.strokePath(); context.restoreGState()
     }
 }

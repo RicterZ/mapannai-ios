@@ -23,7 +23,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
     }
     func updateUIView(_ map: MAMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: MAMapView, coordinator: Coordinator) {
-        coordinator.stopSelectionAnimation(); coordinator.userDirection.stop()
+        coordinator.userDirection.stop()
         coordinator.cancelRouteUpdates()
         coordinator.cancelPendingMapTap()
         coordinator.cancelPOIRefresh()
@@ -80,8 +80,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var selectionDay: String?
         private var selectionRequest: UUID?
         private var selectionRoutes: [DisplayRoute] = []
-        private let routeMotion = RouteMotionOverlay()
-        private var directionLines: [MAPolyline] = []
+        private var texturedRouteIDs: Set<String> = []
         let userDirection = UserDirectionIndicator()
         private let navigationGestures = MapNavigationGestures()
         private var locationAnimationUntil = Date.distantPast
@@ -256,43 +255,21 @@ struct AMapNativeRenderer: UIViewRepresentable {
             style(view, pin: pin, map: mapView)
             return view
         }
-        func stopSelectionAnimation() { routeMotion.stop() }
 
         private func updateRouteSelection(_ map: MAMapView, geometryChanged: Bool = false) {
             let day = store.dayID
             let changed = day != selectionDay
-            let resumeMotion = routesVisible && !routeMotion.isRunning && !selectionRoutes.isEmpty && !UIAccessibility.isReduceMotionEnabled
-            guard changed || geometryChanged || resumeMotion || selectionRequest != store.routeSelectionRequest else { return }
+            guard changed || geometryChanged || texturedRouteIDs != (store.placeSearchPresented ? [] : highlightedRouteIDs) || selectionRequest != store.routeSelectionRequest else { return }
             selectionDay = day; selectionRequest = store.routeSelectionRequest
             let selected = store.displayRoutes.filter { $0.dayID == day && lastRoutes[$0.id]?.points == $0.points }
             highlightRoutes(Set(selected.map(\.id)), map: map)
             selectionRoutes = selected
-            let converted = selected.map { route -> DisplayRoute in
-                var value = route; value.points = renderedCoordinates[route.id] ?? []
-                return value
-            }
-            routeMotion.update(routes: converted, in: map, enabled: { [weak self] in
-                self?.routesVisible == true && self?.store.placeSearchPresented == false
-            }, project: { [weak map] coordinate in
-                map?.convert(CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude), toPointTo: map) ?? .zero
-            }, unproject: { [weak map] point in
-                let coordinate = map?.convert(point, toCoordinateFrom: map) ?? CLLocationCoordinate2D()
-                return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            }, cameraKey: { [weak map] in Double(map?.zoomLevel ?? 0) }, publish: { [weak self, weak map] paths in
-                guard let self, let map else { return }
-                let previous = self.directionLines
-                self.directionLines = paths.compactMap { points in
-                    var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-                    return MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count))
-                }
-                map.addOverlays(self.directionLines)
-                map.removeOverlays(previous)
-            })
         }
 
         private func highlightRoutes(_ selected: Set<String>, map: MAMapView) {
-            let changed = highlightedRouteIDs.symmetricDifference(selected)
-            highlightedRouteIDs = selected
+            let textured = store.placeSearchPresented ? Set<String>() : selected
+            let changed = highlightedRouteIDs.symmetricDifference(selected).union(texturedRouteIDs.symmetricDifference(textured))
+            highlightedRouteIDs = selected; texturedRouteIDs = textured
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for id in changed {
                 guard let pair = lines[id] else { continue }
@@ -301,7 +278,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     white.lineWidth = RouteLineAppearance.outlineWidth(selected: active); white.setNeedsUpdate()
                 }
                 if let color = map.renderer(for: pair.1) as? MAPolylineRenderer {
-                    color.lineWidth = RouteLineAppearance.width(selected: active); color.setNeedsUpdate()
+                    color.lineWidth = RouteLineAppearance.width(selected: active)
+                    color.strokeImage = active && !store.placeSearchPresented ? RouteMotionOverlay.texture(color: color.strokeColor, google: false) : nil
+                    color.setNeedsUpdate()
                 }
             }
             CATransaction.commit()
@@ -507,7 +486,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let visible = !MapZoomPresentation.isCompact(Double(map.zoomLevel))
             guard visible != routesVisible else { return }
             routesVisible = visible
-            if !visible { routeMotion.refresh() }
             let overlays = lines.values.flatMap { [$0.0, $0.1] }
             if visible {
                 map.addOverlays(overlays)
@@ -517,10 +495,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
         func mapView(_ mapView: MAMapView!, regionWillChangeAnimated animated: Bool) {
             navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
             mapIsMoving = true; cancelPOIRefresh()
-            routeMotion.refresh()
         }
         func mapViewRegionChanged(_ mapView: MAMapView!) {
-            routeMotion.refresh(); userDirection.refresh()
+            userDirection.refresh()
             updateZoomPresentation(mapView)
         }
         private func updatePinStyles(_ map: MAMapView) {
@@ -535,19 +512,15 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
         }
         func mapView(_ mapView: MAMapView!, rendererFor overlay: MAOverlay!) -> MAOverlayRenderer! {
-            if let line = overlay as? MAPolyline, directionLines.contains(where: { $0 === line }) {
-                let renderer = MAPolylineRenderer(polyline: line)!
-                renderer.strokeColor = RouteMotionOverlay.strokeColor; renderer.lineWidth = RouteMotionOverlay.strokeWidth
-                renderer.reducePoint = false
-                renderer.lineCapType = kMALineCapRound; renderer.lineJoinType = kMALineJoinRound
-                return renderer
-            }
             guard let line = overlay as? MAPolyline, let style = overlayStyle[ObjectIdentifier(line)] else { return nil }
             let renderer = MAPolylineRenderer(polyline: line)!
             renderer.strokeColor = style.0
             let id = lines.first { $0.value.0 === line || $0.value.1 === line }?.key
             let selected = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.dayID == store.dayID && store.dayID != nil
             renderer.lineWidth = style.1 ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
+            if !style.1 && selected && !store.placeSearchPresented {
+                renderer.strokeImage = RouteMotionOverlay.texture(color: style.0, google: false)
+            }
             return renderer
         }
         func mapView(_ mapView: MAMapView!, didSelect view: MAAnnotationView!) {
@@ -671,7 +644,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
             updateZoomPresentation(mapView)
             updateSearchBounds(mapView)
             mapIsMoving = false
-            routeMotion.refresh()
             schedulePOIRefresh()
         }
         private func updateSearchBounds(_ mapView: MAMapView) {
