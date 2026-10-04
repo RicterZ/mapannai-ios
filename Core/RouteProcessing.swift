@@ -60,7 +60,7 @@ actor RouteProcessing {
         if route.isFallback { return RouteGeometry.curve(origin, destination) }
         var points = route.path.map(\.coordinate)
         points.insert(origin, at: 0); points.append(destination)
-        let result = RouteGeometry.smooth(points)
+        let result = try PlannedRoutePresentation.points(points)
         try Task.checkCancellation()
         return result
     }
