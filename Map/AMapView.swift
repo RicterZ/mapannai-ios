@@ -601,7 +601,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             cancelPendingMapTap()
             let coordinate = Coordinates.wgs(Coordinate(latitude: poi.coordinate.latitude,
                                                         longitude: poi.coordinate.longitude))
-            store.create(at: coordinate, poiName: poi.name)
+            store.create(at: coordinate, poiName: poi.name, placeReferences: poi.uid.isEmpty ? nil : PlaceReferences(amap: PlaceReference(placeId: poi.uid)))
         }
         func mapView(_ mapView: MAMapView!, didLongPressedAt coordinate: CLLocationCoordinate2D) {
             cancelPendingMapTap()

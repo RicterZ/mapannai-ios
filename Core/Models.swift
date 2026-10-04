@@ -49,10 +49,26 @@ struct MarkerContent: Codable, Hashable {
     var createdAt: String?
     var updatedAt: String?
 }
+struct PlaceReference: Codable, Hashable {
+    var placeId: String
+}
+struct PlaceReferences: Codable, Hashable {
+    var apple: PlaceReference? = nil
+    var google: PlaceReference? = nil
+    var amap: PlaceReference? = nil
+    var requestBody: [String: Any] {
+        var result: [String: Any] = [:]
+        if let apple { result["apple"] = ["placeId": apple.placeId] }
+        if let google { result["google"] = ["placeId": google.placeId] }
+        if let amap { result["amap"] = ["placeId": amap.placeId] }
+        return result
+    }
+}
 struct Marker: Codable, Identifiable, Hashable {
     var id: String
     var coordinates: Coordinate
     var content: MarkerContent
+    var placeReferences: PlaceReferences? = nil
     var title: String { content.title ?? "未命名地点" }
     var icon: MarkerIcon { content.iconType ?? .location }
 }
@@ -144,6 +160,7 @@ struct Place: Identifiable, Hashable {
     var address: String
     var coordinates: Coordinate
     var phone: String?
+    var placeReferences: PlaceReferences? = nil
 }
 struct DisplayRoute: Identifiable {
     var id: String
@@ -168,6 +185,7 @@ enum AppError: LocalizedError {
 struct MarkerDraft: Identifiable {
     var id = UUID()
     var marker: Marker?
+    var placeReferences: PlaceReferences? = nil
     var coordinates: Coordinate
     var title: String = ""
     var address: String = ""
@@ -176,10 +194,12 @@ struct MarkerDraft: Identifiable {
     var headerImage: String = ""
     var resolvingPlace = false
     var placeLookupFailed = false
-    init(coordinates: Coordinate, title: String = "", address: String = "") {
+    init(coordinates: Coordinate, title: String = "", address: String = "", placeReferences: PlaceReferences? = nil) {
+        self.placeReferences = placeReferences
         self.coordinates = coordinates; self.title = title; self.address = address
     }
     init(marker: Marker) {
+        self.placeReferences = marker.placeReferences
         self.marker = marker; coordinates = marker.coordinates; title = marker.title
         address = marker.content.address ?? ""; icon = marker.icon
         html = marker.content.markdownContent; headerImage = marker.content.headerImage ?? ""

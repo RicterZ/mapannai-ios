@@ -27,7 +27,7 @@ struct MarkerDetailView: View {
         detailContent
             .alert("无法打开高德地图", isPresented: $navigationUnavailable) {
                 Button("取消", role: .cancel) {}
-                Button("打开系统地图") { MarkerPresentation.appleMapsItem(for: current)?.openInMaps(launchOptions: nil) }
+                Button("打开系统地图") { Task { await MarkerPresentation.openAppleMaps(for: current, selectedItem: store.appleMapItem(for: current)) } }
             } message: { Text("请确认已安装高德地图，或使用系统地图打开此地点。") }
     }
     private var detailContent: some View {
@@ -46,7 +46,7 @@ struct MarkerDetailView: View {
                     Label(current.title, systemImage: current.icon.symbol).font(.title2.weight(.bold)).foregroundStyle(Theme.ink)
                     if let address = current.content.address { Text(address).font(.subheadline).foregroundStyle(.secondary) }
                     HStack(spacing: 12) {
-                        if let item = MarkerPresentation.appleMapsItem(for: current) {
+                        if current.coordinates.isValid {
                             Button {
                                 if store.settings.navigationMapApp == .amap,
                                    let url = MarkerPresentation.amapNavigationURL(for: current) {
@@ -57,7 +57,7 @@ struct MarkerDetailView: View {
                                           let url = MarkerPresentation.googleNavigationURL(for: current) {
                                     UIApplication.shared.open(url)
                                 } else {
-                                    item.openInMaps(launchOptions: nil)
+                                    Task { await MarkerPresentation.openAppleMaps(for: current, selectedItem: store.appleMapItem(for: current)) }
                                 }
                             } label: {
                                 Label("导航", systemImage: "location")

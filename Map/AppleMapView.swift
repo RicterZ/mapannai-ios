@@ -201,6 +201,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                     selectedPOI = feature
                     store.create(at: Self.internalCoordinate(feature.coordinate), poiName: feature.title)
                     selectedPOIDraftID = store.draft?.id
+                    store.resolveApplePOI(feature)
                     return // Keep the native POI selection; no duplicate custom pin.
                 }
             }

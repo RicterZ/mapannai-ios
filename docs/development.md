@@ -201,3 +201,9 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 POI反馈共用MapInteractionFeedback（0.22秒出现/消失，尊重减少动态效果）与revealTarget视口边缘避让；临时选点置顶。MapKit/Google的路线点击经MapTapArbiter短暂等待SDK POI回调，标点/POI优先取消路线提交；已保存标点优先44pt命中。各SDK底图POI命中范围由SDK提供，真实重叠点击仍需分别真机验证。
 
 底图POI反馈优先使用SDK能力：MapKit保留MKMapFeatureAnnotation原生选中，不叠加草稿图标；Google按官方示例使用无图标GMSMarker的默认信息窗口（SDK无默认POI点击UI）；高德保留共享自绘草稿标记。关闭/替换草稿清理原生选中，长按空白处仍用共享标记。添加页面、遮挡避让和点击优先级保持应用统一流程。
+
+## Official POI references
+
+Marker 顶层可选 `placeReferences` 采用服务端 apple/google/amap → `{placeId}` 合约，缺失/null 均兼容旧数据。搜索结果、草稿、创建请求和地点快照保留该字段；普通内容编辑省略引用 patch。附近反查只补名称/地址，不采用其身份；创建去重以服务端返回引用为准。高德 MATouchPoi.uid、Google 点击回调的 placeID 及 Apple MKMapItem.identifier 是唯一原生身份来源，不从内部搜索 ID、名称或坐标推断。
+
+Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一草稿/坐标/连接的解析结果，服务切换或换点取消旧请求。iOS 18+ 将 identifier 持久化；导航通过 identifier 恢复原生 MKMapItem，失败使用坐标兜底。iOS 17 在当前连接会话内保留新建地点的原生 MKMapItem，重启后使用坐标兜底。原生 MKMapItem 直接交给系统地图，不再转换坐标。Google URL 有引用时增加 destination_place_id；高德保留现有坐标导航，保存 uid 不代表其导航 URL 能打开官方详情。

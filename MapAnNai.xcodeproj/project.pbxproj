@@ -18,6 +18,7 @@
 		0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */; };
 		0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */; };
 		1090057AE077861B9DFB1180 /* MarkerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425DF5BCBE1273228F07E613 /* MarkerViews.swift */; };
+		13D4D9F5DCC66A4C51FFB3A2 /* PlaceReferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B34A1DDE8B2DEAE7787FF0 /* PlaceReferencesTests.swift */; };
 		151FFF5FCFC6E8A17EB4B5C3 /* MapInteractionFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0084520CC5A2A4CC036813D3 /* MapInteractionFeedbackTests.swift */; };
 		1813F5E4A7C7AA606B7E96E7 /* DirectedRouteMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */; };
 		18DC608C17CAC7B4854B1504 /* MapLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */; };
@@ -197,6 +198,7 @@
 		908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCameraTests.swift; sourceTree = "<group>"; };
 		91EFBD72522A19CC2A1A64B5 /* RouteScheduleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteScheduleUITests.swift; sourceTree = "<group>"; };
 		98A6A81018435A3992E39030 /* TripDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDeletionTests.swift; sourceTree = "<group>"; };
+		98B34A1DDE8B2DEAE7787FF0 /* PlaceReferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceReferencesTests.swift; sourceTree = "<group>"; };
 		9BFC9E44BED6AF2ED557266F /* RouteOverlaySnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteOverlaySnapshot.swift; sourceTree = "<group>"; };
 		9CA0DB7FCE4B26BA1A253D3F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9ED06A8F371A68F48D1B4F53 /* ChatMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdown.swift; sourceTree = "<group>"; };
@@ -329,6 +331,7 @@
 				629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */,
 				CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */,
 				CBC1E75B71BD3626B83A19E4 /* NativeRouteDropGeometryTests.swift */,
+				98B34A1DDE8B2DEAE7787FF0 /* PlaceReferencesTests.swift */,
 				FDB69B65CFD0B0604D5476A1 /* RouteRedrawTests.swift */,
 				37C16D7526C2682672D53176 /* RouteScheduleTests.swift */,
 				2146BC6CB6A7DB6BE807D4A3 /* RouteSelectionTests.swift */,
@@ -613,6 +616,7 @@
 				0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */,
 				77E5FBF26CBA7D5C9FA81B1C /* MarkerRepositoryTests.swift in Sources */,
 				EDACC92DB748C66C90FF7452 /* NativeRouteDropGeometryTests.swift in Sources */,
+				13D4D9F5DCC66A4C51FFB3A2 /* PlaceReferencesTests.swift in Sources */,
 				A9F6407DE636ABED000B181E /* RouteRedrawTests.swift in Sources */,
 				8D82153E326BE8226D9B4A5B /* RouteScheduleTests.swift in Sources */,
 				38923053CF1C60938E3DA1A0 /* RouteSelectionTests.swift in Sources */,
@@ -722,7 +726,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 120;
+				CURRENT_PROJECT_VERSION = 121;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -862,7 +866,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 120;
+				CURRENT_PROJECT_VERSION = 121;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

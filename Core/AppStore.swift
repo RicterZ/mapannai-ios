@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 struct TripSaveDraft: Identifiable {
     var id = UUID()
@@ -10,6 +11,31 @@ struct TripSaveDraft: Identifiable {
 }
 
 @MainActor final class AppStore: ObservableObject {
+    private var appleMapItems: [String: (coordinate: Coordinate, references: PlaceReferences?, item: MKMapItem)] = [:]
+    func appleMapItem(for marker: Marker) -> MKMapItem? {
+        guard let cached = appleMapItems[marker.id], cached.coordinate == marker.coordinates, cached.references == marker.placeReferences else { return nil }
+        return cached.item
+    }
+    private var applePOIRequest: (draftID: UUID, coordinate: Coordinate, revision: UUID, task: Task<MKMapItem?, Never>)?
+    func resolveApplePOI(_ feature: MKMapFeatureAnnotation) {
+        guard let draft else { return }
+        applePOIRequest?.task.cancel()
+        let request = MKMapItemRequest(mapFeatureAnnotation: feature)
+        let task = Task<MKMapItem?, Never> {
+            await withTaskCancellationHandler {
+                try? await request.mapItem
+            } onCancel: { request.cancel() }
+        }
+        applePOIRequest = (draft.id, draft.coordinates, connectionRevision, task)
+        Task {
+            guard let item = await task.value, !task.isCancelled,
+                  self.draft?.id == draft.id, self.draft?.coordinates == draft.coordinates,
+                  self.applePOIRequest?.revision == self.connectionRevision else { return }
+            if #available(iOS 18.0, *), let id = item.identifier?.rawValue {
+                self.draft?.placeReferences = PlaceReferences(apple: PlaceReference(placeId: id))
+            }
+        }
+    }
     let settings: Settings
     let configurationSource: any MapConfigurationSource
     private let servicesOverride: (any MapServices)?
@@ -104,6 +130,7 @@ struct TripSaveDraft: Identifiable {
         if demo { loadDemo() }
     }
     func connect() async {
+        applePOIRequest?.task.cancel(); applePOIRequest = nil; appleMapItems = [:]
         connectionRevision = UUID(); refreshGeneration = UUID(); dataRevision = UUID()
         loading = false; refreshing = false; saving = false
         failedSaveAction = nil; canResumeFailedSave = false; tripSaveRecovery = nil
@@ -439,9 +466,21 @@ struct TripSaveDraft: Identifiable {
         return true
     }
     func saveMarker(_ draft: MarkerDraft, using suppliedClient: APIClient? = nil, reserved: Bool = false, target: TripDay? = nil, expectedRevision: UUID? = nil, openCreatedDetail: Bool = true, joinExistingTarget: Bool = false, targetTripID: String? = nil) async -> Bool {
-        guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
+        let lookupRevision = connectionRevision
         let targetDay = draft.marker == nil || joinExistingTarget ? (reserved ? target : (addPlaceDay ?? day)) : nil
         let tripTarget = targetTripID ?? (reserved ? nil : addPlaceTripID)
+        var resolvedAppleItem: MKMapItem?
+        var draft = draft
+        if let lookup = applePOIRequest, lookup.draftID == draft.id,
+           lookup.coordinate == draft.coordinates, lookup.revision == connectionRevision,
+           let item = await lookup.task.value, !lookup.task.isCancelled {
+            resolvedAppleItem = item
+            if #available(iOS 18.0, *), let id = item.identifier?.rawValue {
+                draft.placeReferences = PlaceReferences(apple: PlaceReference(placeId: id))
+            }
+        }
+        guard lookupRevision == connectionRevision else { return false }
+        guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
         let revision = expectedRevision ?? connectionRevision
         var createdMarker: Marker?
         let ok = await perform(reserved: reserved, expectedRevision: revision) { defaultClient in
@@ -454,7 +493,7 @@ struct TripSaveDraft: Identifiable {
                     created = pending
                     try await client.mutate("markers/\(APIClient.id(pending.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": draft.html, "headerImage": draft.headerImage])
                 } else {
-                    created = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": draft.html])
+                    created = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": draft.html, "placeReferences": draft.placeReferences?.requestBody ?? [:]])
                     guard revision == self.connectionRevision else { throw CancellationError() }
                     self.pendingCreatedMarkers[draft.id] = created
                 }
@@ -473,6 +512,10 @@ struct TripSaveDraft: Identifiable {
         guard revision == connectionRevision else { return false }
         if ok {
             pendingCreatedMarkers[draft.id] = nil
+            if let createdMarker, createdMarker.coordinates == draft.coordinates,
+               createdMarker.placeReferences == draft.placeReferences, let resolvedAppleItem {
+                appleMapItems[createdMarker.id] = (createdMarker.coordinates, createdMarker.placeReferences, resolvedAppleItem)
+            }
             var saved = createdMarker ?? draft.marker
             if var updated = saved {
                 updated.content.title = draft.title; updated.content.iconType = draft.icon
@@ -732,7 +775,7 @@ struct TripSaveDraft: Identifiable {
         camera = CameraCommand(points: [marker.coordinates], detailLayout: detail)
     }
     func fly(_ points: [Coordinate]) { if !points.isEmpty { camera = CameraCommand(points: points) } }
-    func create(at coordinate: Coordinate, poiName: String? = nil) {
+    func create(at coordinate: Coordinate, poiName: String? = nil, placeReferences: PlaceReferences? = nil) {
         guard coordinate.isValid, draft?.marker == nil, !saving else { return }
         if draft?.coordinates == coordinate { return }
         if placeSearchPresented {
@@ -742,6 +785,8 @@ struct TripSaveDraft: Identifiable {
         selectedSearchPlaceID = nil; draftExpanded = false
         let selectedName = poiName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var pending = draft ?? MarkerDraft(coordinates: coordinate)
+        applePOIRequest?.task.cancel(); applePOIRequest = nil
+        pending.placeReferences = placeReferences
         pending.coordinates = coordinate
         pending.title = selectedName
         pending.address = ""
@@ -871,7 +916,7 @@ struct TripSaveDraft: Identifiable {
         }
         selectedSearchPlaceID = place.id; draftExpanded = false
         fly([place.coordinates])
-        draft = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+        draft = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address, placeReferences: place.placeReferences)
     }
     var selectedSearchPlace: Place? { searchResults.first { $0.id == selectedSearchPlaceID } }
     func savedMarker(for place: Place) -> Marker? {
@@ -892,7 +937,7 @@ struct TripSaveDraft: Identifiable {
         guard draft == nil else { return }
         editingSearchPlaceID = place.id
         draft = savedMarker(for: place).map(MarkerDraft.init(marker:))
-            ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+            ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address, placeReferences: place.placeReferences)
     }
     /// Keep the created ID after a partial failure so retry only completes membership.
     @discardableResult func addSearchPlace(_ place: Place, edited: MarkerDraft? = nil, using suppliedClient: APIClient? = nil, reserved: Bool = false) async -> Bool {
@@ -905,7 +950,7 @@ struct TripSaveDraft: Identifiable {
         }
         if edited == nil && isPlaceAdded(place) { return true }
         if tripPlacesPreview, target == nil, let tripID, suppliedClient == nil {
-            let value = edited ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+            let value = edited ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address, placeReferences: place.placeReferences)
             let marker = savedMarker(for: place) ?? Marker(id: "preview-" + place.id, coordinates: value.coordinates,
                 content: MarkerContent(id: "preview-" + place.id, title: value.title, address: value.address,
                     iconType: value.icon, markdownContent: value.html))
@@ -919,7 +964,7 @@ struct TripSaveDraft: Identifiable {
         guard !demo || suppliedClient != nil else {
             addPlaceError = "当前为只读示例，连接服务后可添加地点。"; return false
         }
-        let value = edited ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address)
+        let value = edited ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address, placeReferences: place.placeReferences)
         guard value.coordinates.isValid, !value.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             addPlaceError = "请输入名称与有效坐标"; return false
         }
@@ -933,7 +978,7 @@ struct TripSaveDraft: Identifiable {
             else {
                 marker = try await client.request("markers", method: "POST", body: [
                     "coordinates": ["latitude": value.coordinates.latitude, "longitude": value.coordinates.longitude],
-                    "title": value.title, "iconType": value.icon.rawValue, "address": value.address, "content": value.html])
+                    "title": value.title, "iconType": value.icon.rawValue, "address": value.address, "content": value.html, "placeReferences": value.placeReferences?.requestBody ?? [:]])
             }
             guard revision == connectionRevision, session == addSession else { return false }
             createdSearchMarkers[place.id] = marker

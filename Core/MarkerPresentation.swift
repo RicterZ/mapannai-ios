@@ -38,7 +38,20 @@ enum MarkerPresentation {
         url.queryItems = [URLQueryItem(name: "api", value: "1"),
             URLQueryItem(name: "destination", value: "\(marker.coordinates.latitude),\(marker.coordinates.longitude)"),
             URLQueryItem(name: "dir_action", value: "navigate")]
+        if let reference = marker.placeReferences?.google {
+            url.queryItems?.append(URLQueryItem(name: "destination_place_id", value: reference.placeId))
+        }
         return url.url
+    }
+    @MainActor static func openAppleMaps(for marker: Marker, selectedItem: MKMapItem? = nil) async {
+        if let selectedItem { selectedItem.openInMaps(launchOptions: nil); return }
+        if #available(iOS 18.0, *), let value = marker.placeReferences?.apple?.placeId,
+           let identifier = MKMapItem.Identifier(rawValue: value),
+           let item = try? await MKMapItemRequest(mapItemIdentifier: identifier).mapItem {
+            item.openInMaps(launchOptions: nil)
+            return
+        }
+        appleMapsItem(for: marker)?.openInMaps(launchOptions: nil)
     }
     static func appleMapsItem(for marker: Marker) -> MKMapItem? {
         guard marker.coordinates.isValid else { return nil }

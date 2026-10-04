@@ -180,7 +180,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 tapArbiter.claim(); store.focus(saved); return
             }
             tapArbiter.claim()
-            store.noteMapInteraction(); store.create(at: Coordinate(latitude: location.latitude, longitude: location.longitude), poiName: name)
+            store.noteMapInteraction(); store.create(at: Coordinate(latitude: location.latitude, longitude: location.longitude), poiName: name, placeReferences: PlaceReferences(google: PlaceReference(placeId: placeID)))
             poiInfoMarker?.map = nil
             let info = GMSMarker(position: location)
             info.title = name
