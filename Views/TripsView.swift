@@ -795,16 +795,15 @@ struct NativePlaceListDrop: UIViewRepresentable {
             }
             let point = session.location(in: window)
             let bounds = host.convert(host.bounds, to: window)
-            if let pool = livePoolTarget(session) { return pool }
             guard bounds.contains(point) else { return nil }
             let geometric = NativeRouteDropGeometry.target(at: point, frames: parent.frames)
             let native = destination.flatMap { insertionTarget(at: $0, session: session) }
-            if native == "unplanned" { return "unplanned" }
             if let geometric {
                 let route = geometric.split(separator: "/").first
                 if let native, native.split(separator: "/").first == route { return native }
                 return geometric
             }
+            if let pool = livePoolTarget(session) { return pool }
             return native ?? target(session)
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
@@ -816,15 +815,9 @@ struct NativePlaceListDrop: UIViewRepresentable {
         private func livePoolTarget(_ session: UIDropSession) -> String? {
             guard let window = host?.window else { return nil }
             let point = session.location(in: window)
-            if parent.frames["unplanned"]?.contains(point) == true || dragFrames?["unplanned"]?.contains(point) == true { return "unplanned" }
-            // Native insertion pushes the pool below the pointer. Keep its original
-            // region eligible, translated with a stable header to account for scrolling.
-            if let pool = dragFrames?["unplanned"],
-               let anchor = dragFrames?.keys.sorted().first(where: { $0.hasSuffix("/header") }),
-               let original = dragFrames?[anchor], let current = parent.frames[anchor],
-               pool.offsetBy(dx: current.minX - original.minX, dy: current.minY - original.minY).contains(point) {
-                return "unplanned"
-            }
+            // Only the currently visible pool can receive a drop. Frozen source
+            // frames overlap route rows after UIKit makes space for insertion.
+            if parent.frames["unplanned"]?.contains(point) == true { return "unplanned" }
             return nil
         }
         private func insertionTarget(at destination: IndexPath, session: UIDropSession) -> String? {
@@ -862,7 +855,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             publishTarget(nil); dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
+            guard let target = publishedTarget ?? resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
             publishTarget(nil)
             acceptDrop(coordinator.session, target: target)
             // The native lifted snapshot contains the old ordinal. A day move
@@ -900,7 +893,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
-            guard let target = resolvedTarget(session, destination: nil) else { return }
+            guard let target = publishedTarget ?? resolvedTarget(session, destination: nil) else { return }
             publishTarget(nil)
             acceptDrop(session, target: target)
         }
