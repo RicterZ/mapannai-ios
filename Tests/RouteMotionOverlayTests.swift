@@ -63,6 +63,12 @@ final class RouteMotionOverlayTests: XCTestCase {
 }
 
 @MainActor private final class RouteMapTestDelegate: NSObject, MKMapViewDelegate {
+    private var distance: CLLocationDistance?
+    func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+        guard distance != mapView.camera.centerCoordinateDistance else { return }
+        distance = mapView.camera.centerCoordinateDistance
+        for overlay in mapView.overlays { mapView.renderer(for: overlay)?.setNeedsDisplay() }
+    }
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         let renderer = AppleRouteRenderer(polyline: overlay as! MKPolyline)
         renderer.lineWidth = 6; renderer.strokeColor = .systemOrange; renderer.showsDirections = true

@@ -54,6 +54,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         var pendingLocate = false
         var lastFollowMode: LocationFollowMode = .idle
         var compact = false
+        private var routeRenderDistance: CLLocationDistance?
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MKMapView) {
             navigationGestures.onTransformEnded = { [weak self, weak map] in
@@ -175,7 +176,17 @@ struct AppleMapRenderer: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
             navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
         }
-        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { userDirection.refresh() }
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            userDirection.refresh()
+            let distance = mapView.camera.centerCoordinateDistance
+            guard routeRenderDistance != distance else { return }
+            routeRenderDistance = distance
+            // Custom drawing is cached by MapKit. Repaint at the current scale during
+            // the gesture; otherwise MapKit scales the old stroke along with the map.
+            for overlay in mapView.overlays {
+                (mapView.renderer(for: overlay) as? AppleRouteRenderer)?.setNeedsDisplay()
+            }
+        }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             compact = isCompact(mapView)
             for pin in pins.values { if let view = mapView.view(for: pin) { style(view, pin: pin) } }
