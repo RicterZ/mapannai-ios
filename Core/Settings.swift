@@ -16,10 +16,13 @@ enum NavigationMapApp: String, CaseIterable {
     @Published var navigationMapApp: NavigationMapApp {
         didSet { UserDefaults.standard.set(navigationMapApp.rawValue, forKey: "navigationMapApp") }
     }
+    @Published var mapRenderer: MapRendererKind { didSet { UserDefaults.standard.set(mapRenderer.rawValue, forKey: "mapRenderer") } }
     @Published var hideAIChatIcon: Bool { didSet { UserDefaults.standard.set(hideAIChatIcon, forKey: "hideAIChatIcon") } }
     @Published var revision = UUID()
     var configured: Bool { !baseURL.isEmpty }
     init() {
+        let renderer = MapRendererKind(rawValue: UserDefaults.standard.string(forKey: "mapRenderer") ?? "amap") ?? .amap
+        mapRenderer = renderer == .google ? .amap : renderer
         hideAIChatIcon = UserDefaults.standard.bool(forKey: "hideAIChatIcon")
         navigationMapApp = NavigationMapApp(rawValue: UserDefaults.standard.string(forKey: "navigationMapApp") ?? "system") ?? .system
         baseURL = UserDefaults.standard.string(forKey: "baseURL") ?? ""

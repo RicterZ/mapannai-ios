@@ -1,7 +1,7 @@
 import Foundation
 
 // Renderers and server-side services are independently selectable, just as in the Web app.
-enum MapRendererKind: String, Codable { case amap, google }
+enum MapRendererKind: String, Codable { case amap, apple, google }
 enum MapServiceProvider: String, Codable { case amap, google }
 struct MapConfiguration: Codable, Equatable {
     var renderer: MapRendererKind

@@ -65,7 +65,7 @@ TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与�
 | `Views/` | 旅途、搜索、地点详情与编辑界面 |
 | `Tests/`、`UITests/` | 单元测试与界面测试 |
 
-当前地图配置源固定为高德，Google renderer 尚未实现。未来配置接口需依据实际服务端合约接入，不应自行假定端点。内部与 API 坐标使用 WGS-84，高德渲染边界转换为 GCJ-02。
+服务 provider 元数据的配置源固定为高德；客户端底图可选择高德或苹果，Google renderer 尚未实现。未来配置接口需依据实际服务端合约接入，不应自行假定端点。内部与 API 坐标使用 WGS-84，高德渲染边界转换为 GCJ-02。
 
 ## 验证修改
 
@@ -183,3 +183,5 @@ AI 回复的管道 Markdown 表格使用原生 SwiftUI Layout 与横向 ScrollVi
 AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执行时间，结束、停止、失败和到期均释放。到期保存部分回复、取消请求并失效 generation，显示后台中断说明；不自动重发写入请求，不承诺长期后台运行。隐藏 AI 对话图标为 UserDefaults 本地偏好，默认 false，仅控制地图右上角入口，不删除配置或历史。
 
 定位按钮在取得高德有效位置后，一次性设置中心、zoom15 和当前面板遮挡对应的视口锚点，不沿用点击前的缩放；首次定位等待位置回调，减少动态效果时立即更新。
+
+底图由设置的本地 mapRenderer 偏好选择（默认高德），独立于 MapConfiguration 的服务端 provider 元数据。苹果使用 MKMapView，坐标直接使用 WGS-84；不使用高德 GCJ 转换，不要求高德隐私同意或 Key。Google 入口暂不可选。苹果首版支持地点、搜索标记、路线显示/点击、POI、长按添加、视口搜索和定位；高德选中路线的流动小球效果尚未移植到苹果。

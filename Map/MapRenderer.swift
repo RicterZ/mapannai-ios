@@ -21,6 +21,7 @@ import SwiftUI
     static func renderer(for kind: MapRendererKind) -> (any MapRendererFactory)? {
         switch kind {
         case .amap: AMapRendererFactory()
+        case .apple: AppleMapRendererFactory()
         // Register GoogleRendererFactory here when the Google SDK is introduced.
         case .google: nil
         }
@@ -31,7 +32,7 @@ struct MapSurface: View {
     @ObservedObject var settings: Settings
     var onOpenSettings: () -> Void
     var body: some View {
-        if let renderer = MapRendererRegistry.renderer(for: store.mapConfiguration.renderer) {
+        if let renderer = MapRendererRegistry.renderer(for: settings.mapRenderer) {
             renderer.makeMap(store: store, settings: settings, onOpenSettings: onOpenSettings)
                 .overlay { RouteDayPicker(store: store).ignoresSafeArea() }
         } else {

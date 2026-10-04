@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		023F481F94F75F757435852F /* AIPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5543717B3FBF113B9D8669E9 /* AIPlanner.swift */; };
+		035FC9DBD53A130ECB9EF159 /* MapBackgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79073B6C556CA5650266332B /* MapBackgroundTests.swift */; };
 		0679CC248D57929A408668B1 /* JourneyTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */; };
 		08F6D4B5CBC0095BC47A4100 /* LongPressPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 038EF71F79FF50630DC220E9 /* LongPressPresentationTests.swift */; };
 		094AD351688781CAF39E4064 /* ConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB25B1C797DC9C67FC988C2 /* ConcurrencyTests.swift */; };
@@ -78,6 +79,7 @@
 		D35081C38CB650DFA49D2085 /* JourneyBackgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */; };
 		D61C89014A16E20523662687 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1579B0865582F6FFBD7E34E0 /* APIClient.swift */; };
 		D69B2CB94D1270DA835B774D /* AppMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDE47B8C60F714C73753A59B /* AppMotion.swift */; };
+		D70143FF5E7F6EA42305BABF /* AppleMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6871690DA4224A68B7D97B4F /* AppleMapView.swift */; };
 		DA349CCCD8C4953A7B89C9E2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA0DB7FCE4B26BA1A253D3F /* Models.swift */; };
 		DA9CD0CDD537652D05E8EE9E /* AIPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD8D5E25A1C9E0E2FACB862 /* AIPlannerTests.swift */; };
 		DC1D46E954FB9A2F0D7C464E /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B1BBFF8F1D29583F6C7FF1 /* Settings.swift */; };
@@ -161,10 +163,12 @@
 		629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompressionTests.swift; sourceTree = "<group>"; };
 		643D80F501C97FDAC85C6252 /* RouteSpatialIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSpatialIndex.swift; sourceTree = "<group>"; };
 		676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyTitleTests.swift; sourceTree = "<group>"; };
+		6871690DA4224A68B7D97B4F /* AppleMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMapView.swift; sourceTree = "<group>"; };
 		6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyBackgroundTests.swift; sourceTree = "<group>"; };
 		71A017E8694F055DAB5D395B /* AIPlannerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerUITests.swift; sourceTree = "<group>"; };
 		7242A04536ED3C50E6452593 /* MarkerImageCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompression.swift; sourceTree = "<group>"; };
 		77B1BBFF8F1D29583F6C7FF1 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		79073B6C556CA5650266332B /* MapBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapBackgroundTests.swift; sourceTree = "<group>"; };
 		7DC8A3EBC540A61F7259026E /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
 		7DCC62887180493DD5274D78 /* MarkerRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerRepository.swift; sourceTree = "<group>"; };
 		879F810511ACB01618962440 /* SearchPaginationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPaginationTests.swift; sourceTree = "<group>"; };
@@ -303,6 +307,7 @@
 			isa = PBXGroup;
 			children = (
 				8D1D7BACAED41D3AB875D71B /* AMapView.swift */,
+				6871690DA4224A68B7D97B4F /* AppleMapView.swift */,
 				538108F21D71668426EA9A48 /* MapRenderer.swift */,
 				2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */,
 			);
@@ -332,6 +337,7 @@
 				A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */,
 				676BF728262A724D1F0EA38F /* JourneyTitleTests.swift */,
 				038EF71F79FF50630DC220E9 /* LongPressPresentationTests.swift */,
+				79073B6C556CA5650266332B /* MapBackgroundTests.swift */,
 				401E2D25019885A304E0676C /* MapZoomTests.swift */,
 				AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */,
 				E45FECFBB8C13A6617DE0148 /* NativeJourneyTests.swift */,
@@ -500,6 +506,7 @@
 				68FF0B51308420440E8B1B0B /* AppConfiguration.swift in Sources */,
 				D69B2CB94D1270DA835B774D /* AppMotion.swift in Sources */,
 				CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */,
+				D70143FF5E7F6EA42305BABF /* AppleMapView.swift in Sources */,
 				5E5B7F87B301257F05899C5B /* CameraMotion.swift in Sources */,
 				98077213B5743CC94A28A49C /* ChatMarkdown.swift in Sources */,
 				94A01BA374D7E4FEB1418E35 /* Geometry.swift in Sources */,
@@ -577,6 +584,7 @@
 				8ACAB632ABC3011A72B69678 /* JourneySwitchingTests.swift in Sources */,
 				0679CC248D57929A408668B1 /* JourneyTitleTests.swift in Sources */,
 				08F6D4B5CBC0095BC47A4100 /* LongPressPresentationTests.swift in Sources */,
+				035FC9DBD53A130ECB9EF159 /* MapBackgroundTests.swift in Sources */,
 				A84AB72A4DDDDCE73C8F9F47 /* MapZoomTests.swift in Sources */,
 				4ACB817D344D263D4236929F /* MarkerEditorTests.swift in Sources */,
 				90547715CCA2328EA998204F /* NativeJourneyTests.swift in Sources */,
