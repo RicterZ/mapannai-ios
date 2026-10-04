@@ -38,7 +38,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false; var decoration = false }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
@@ -54,7 +54,6 @@ struct AppleMapRenderer: UIViewRepresentable {
         var pendingLocate = false
         var lastFollowMode: LocationFollowMode = .idle
         var compact = false
-        private var routeRenderDistance: CLLocationDistance?
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MKMapView) {
             navigationGestures.onTransformEnded = { [weak self, weak map] in
@@ -102,18 +101,16 @@ struct AppleMapRenderer: UIViewRepresentable {
                 map.removeOverlays(map.overlays.filter { $0 is Line })
                 for route in routes {
                     var coordinates = route.points.map(Pin.coordinate)
-                    for casing in [true, false] {
+                    for layer in 0..<3 {
                         let line = Line(coordinates: &coordinates, count: coordinates.count)
-                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.casing = casing
+                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.casing = layer == 0; line.decoration = layer == 2
                         map.addOverlay(line)
                     }
                 }
             }
             for overlay in map.overlays {
                 if let line = overlay as? Line, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
-                    let width = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
-                    if renderer.lineWidth != width { renderer.lineWidth = width }
-                    (renderer as? AppleRouteRenderer)?.showsDirections = !line.casing && line.dayID == store.dayID && !store.placeSearchPresented
+                    styleRoute(renderer, line: line)
                 }
             }
             if let command = store.camera, command.id != lastCamera {
@@ -178,19 +175,14 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             userDirection.refresh()
-            let distance = mapView.camera.centerCoordinateDistance
-            guard routeRenderDistance != distance else { return }
-            routeRenderDistance = distance
-            // Custom drawing is cached by MapKit. Repaint at the current scale during
-            // the gesture; otherwise MapKit scales the old stroke along with the map.
-            for overlay in mapView.overlays {
-                (mapView.renderer(for: overlay) as? AppleRouteRenderer)?.setNeedsDisplay()
-            }
+
         }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             compact = isCompact(mapView)
             for pin in pins.values { if let view = mapView.view(for: pin) { style(view, pin: pin) } }
-            for overlay in mapView.overlays { mapView.renderer(for: overlay)?.alpha = compact ? 0 : 1 }
+            for overlay in mapView.overlays {
+                if let line = overlay as? Line, let renderer = mapView.renderer(for: line) as? MKPolylineRenderer { styleRoute(renderer, line: line) }
+            }
 
             let a = Self.internalCoordinate(mapView.convert(CGPoint(x: 0, y: 0), toCoordinateFrom: mapView))
             let b = Self.internalCoordinate(mapView.convert(CGPoint(x: mapView.bounds.width, y: mapView.bounds.height), toCoordinateFrom: mapView))
@@ -222,12 +214,18 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            let renderer = AppleRouteRenderer(polyline: line)
-            renderer.showsDirections = !line.casing && line.dayID == store.dayID && !store.placeSearchPresented
+            let renderer = MKPolylineRenderer(polyline: line)
             renderer.shouldRasterize = false
-            renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
-            renderer.lineCap = .round; renderer.lineJoin = .round
+            styleRoute(renderer, line: line)
             return renderer
+        }
+        private func styleRoute(_ renderer: MKPolylineRenderer, line: Line) {
+            let selected = line.dayID == store.dayID
+            renderer.alpha = compact || (line.decoration && (!selected || store.placeSearchPresented)) ? 0 : 1
+            renderer.strokeColor = line.decoration ? .white : line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
+            renderer.lineWidth = line.decoration ? RouteArrowAppearance.strokeWidth : line.casing ? RouteLineAppearance.outlineWidth(selected: selected) : RouteLineAppearance.width(selected: selected)
+            renderer.lineCap = .round; renderer.lineJoin = .round
+            renderer.lineDashPattern = line.decoration ? [5, 85] : nil
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let pin = annotation as? Pin {
