@@ -1040,7 +1040,7 @@ struct TripSaveDraft: Identifiable {
             #endif
             guard var segments = try? await routeProcessing.build(days: days, markers: snapshotMarkers,
                                                                   selectedTrip: selectedTrip, previous: previous,
-                                                                  preserve: preservingPlannedGeometry && !planning),
+                                                                  preserve: preservingPlannedGeometry && !planning, planning: planning),
                   !Task.isCancelled, self.routeGeneration == generation else { return }
             if planning {
                 guard let restored = try? await routeProcessing.restoringCachedGeometry(segments, cache: routeCache,

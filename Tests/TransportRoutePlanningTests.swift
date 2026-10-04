@@ -1,4 +1,6 @@
 import XCTest
+import Combine
+import MapKit
 @testable import MapAnNai
 
 final class TransportRoutePlanningTests: XCTestCase {
@@ -20,6 +22,50 @@ final class TransportRoutePlanningTests: XCTestCase {
         day.chains = [["b","a"]]; day.routeChains = [chain.reordered(to:["b","a"])]
         let reversed = try await processing.build(days:[day],markers:markers,selectedTrip:nil,previous:[old],preserve:true)
         XCTAssertNil(reversed[0].display.transportMode)
+    }
+    @MainActor func testMissingAndFailedPlanningStayDashedUntilPlanningIsDisabled() async throws {
+        let settings = Settings(), original = Settings().planning
+        settings.planning = true
+        defer { settings.planning = original }
+        let demo = AppStore(settings:settings,demo:true)
+        await demo.awaitRouteUpdates()
+        let trip = try XCTUnwrap(demo.trip)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store = AppStore(settings:settings,demo:false,services:FailedPlanningService(),routeCache:RouteCache(directory:directory))
+        store.markers = demo.markers; store.trips = [trip]
+        var missingWasDashed = true
+        let observation = store.$displayRoutes.dropFirst().sink { routes in
+            if routes.contains(where: { !$0.isPlanned && !$0.isDashed }) { missingWasDashed = false }
+        }
+        store.select(trip:trip,day:trip.days[0],focus:false)
+        await store.awaitRouteUpdates()
+        observation.cancel()
+        XCTAssertFalse(store.displayRoutes.isEmpty)
+        XCTAssertNotNil(store.routeError)
+        XCTAssertTrue(missingWasDashed)
+        XCTAssertTrue(store.displayRoutes.allSatisfy { $0.isDashed && !$0.isPlanned })
+        settings.planning = false
+        store.rebuildRoutes()
+        await store.awaitRouteUpdates()
+        XCTAssertTrue(store.displayRoutes.allSatisfy { !$0.isDashed && !$0.isPlanned })
+    }
+    @MainActor func testNativeAppleDashGapsSurviveSelectedCasingWidth() async throws {
+        let store = AppStore(settings:Settings(),demo:true)
+        await store.awaitRouteUpdates()
+        let coordinator = AppleMapRenderer.Coordinator(store)
+        let map = MKMapView()
+        var points = [CLLocationCoordinate2D(latitude:31,longitude:121),CLLocationCoordinate2D(latitude:31.01,longitude:121.01)]
+        for selected in [false,true] {
+            for casing in [false,true] {
+                let line = AppleMapRenderer.Line(coordinates:&points,count:points.count)
+                line.dayID = selected ? (store.dayID ?? "") : "unselected"
+                line.casing = casing; line.isDashed = true
+                let renderer = try XCTUnwrap(coordinator.mapView(map,rendererFor:line) as? MKPolylineRenderer)
+                XCTAssertEqual(renderer.lineDashPattern,[8,6])
+                XCTAssertEqual(renderer.lineCap,.butt, "Round caps consume the 6pt gap when selected")
+            }
+        }
     }
     func testFallbackIsDashedAndTransitExpirySurvivesDiskReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -47,5 +93,13 @@ final class TransportRoutePlanningTests: XCTestCase {
         await cache.put(success,key:key)
         let expired = await cache.get(key,now:Date().addingTimeInterval(3601))
         XCTAssertNil(expired)
+    }
+}
+
+private struct FailedPlanningService: MapServices {
+    func search(_ query: String, bounds: SearchBounds?) async throws -> [Place] { [] }
+    func details(at coordinate: Coordinate) async throws -> Place { throw AppError.message("Unused") }
+    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TransportMode?) async throws -> PlannedRoute {
+        throw AppError.message("Test offline response")
     }
 }

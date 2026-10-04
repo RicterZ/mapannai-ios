@@ -706,8 +706,8 @@ struct PreviewMap: View {
                         var path = Path(); for (index, p) in route.points.enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                         }
-                        context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID), lineCap: .round, dash: route.isDashed ? [8, 6] : []))
-                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID), lineCap: .round, dash: route.isDashed ? [8, 6] : []))
+                        context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))
+                        context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))
                     }
                 }
                 TimelineView(.animation(paused: true)) { timeline in

@@ -8,7 +8,7 @@ struct RouteSegment {
 
 /// Pure value snapshots enter this actor; UIKit/SwiftUI and store mutations never do.
 actor RouteProcessing {
-    func build(days: [TripDay], markers: [Marker], selectedTrip: Trip?, previous: [DisplayRoute], preserve: Bool) throws -> [RouteSegment] {
+    func build(days: [TripDay], markers: [Marker], selectedTrip: Trip?, previous: [DisplayRoute], preserve: Bool, planning: Bool = false) throws -> [RouteSegment] {
         assert(!Thread.isMainThread, "Route building must stay off the UI thread")
         let lookup = Dictionary(markers.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let oldRoutes = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
@@ -23,11 +23,13 @@ actor RouteProcessing {
                                                dayID: day.id, tripID: day.tripId,
                                                colorIndex: day.colorIndex ?? (selectedTrip?.days.firstIndex { $0.id == day.id } ?? 0),
                                                points: RouteGeometry.curve(a.coordinates, b.coordinates), isPlanned: false)
+                    display.isDashed = planning
                     display.transportMode = day.scheduledRoute(at: chainIndex)?.leg(at: i-1)?.mode
                     if preserve, let old = oldRoutes[display.id], old.isPlanned, old.transportMode == display.transportMode,
                        old.points.first == a.coordinates, old.points.last == b.coordinates {
                         display.points = old.unseparatedPoints ?? old.points
                         display.isPlanned = true
+                        display.isDashed = false
                         display.distance = old.distance
                     }
                     segments.append(RouteSegment(display: display, origin: a.coordinates, destination: b.coordinates))
