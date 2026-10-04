@@ -280,12 +280,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
             }, cameraKey: { [weak map] in Double(map?.zoomLevel ?? 0) }, publish: { [weak self, weak map] paths in
                 guard let self, let map else { return }
-                map.removeOverlays(self.directionLines)
+                let previous = self.directionLines
                 self.directionLines = paths.compactMap { points in
                     var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
                     return MAPolyline(coordinates: &coordinates, count: UInt(coordinates.count))
                 }
                 map.addOverlays(self.directionLines)
+                map.removeOverlays(previous)
             })
         }
 

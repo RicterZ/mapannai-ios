@@ -4,7 +4,7 @@ import MapKit
 @testable import MapAnNai
 
 final class RouteMotionOverlayTests: XCTestCase {
-    @MainActor func testNativeArrowsStayGeographicallyFixedDuringPanAndRegenerateOnZoom() {
+    @MainActor func testNativeArrowsStayGeographicallyFixedDuringPanAndRegenerateOnZoom() async throws {
         let view = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
         let overlay = RouteMotionOverlay()
         let route = DisplayRoute(id: "route", dayID: "day", tripID: "trip", colorIndex: 0,
@@ -19,7 +19,7 @@ final class RouteMotionOverlayTests: XCTestCase {
                                y: x * sin(rotation) + y * cos(rotation) + 100)
             },
             unproject: { Coordinate(latitude: 31 + ($0.y - 100) / scale, longitude: 121 + ($0.x - pan) / scale) },
-            cameraKey: { Double(scale) }, publish: { publications.append($0) })
+            cameraKey: { log2(Double(scale)) }, publish: { publications.append($0) })
         XCTAssertEqual(publications.count, 1)
         XCTAssertEqual(publications[0].count, 3)
         let original = publications[0]
@@ -34,7 +34,13 @@ final class RouteMotionOverlayTests: XCTestCase {
             XCTAssertEqual(publications.count, 1, "Rotation must not resubmit native geometry")
             XCTAssertEqual(publications[0], original)
         }
+        scale *= 1.0001; overlay.refresh()
+        try await Task.sleep(for: .milliseconds(220))
+        XCTAssertEqual(publications.count, 1, "Tiny camera noise must not replace overlays")
+        scale = 15000; overlay.refresh()
         scale = 20000; overlay.refresh()
+        XCTAssertEqual(publications.count, 1, "Zoom keeps old native geometry until the camera settles")
+        try await Task.sleep(for: .milliseconds(220))
         XCTAssertEqual(publications.count, 2)
         XCTAssertGreaterThan(publications[1].count, original.count)
         enabled = false; overlay.refresh()

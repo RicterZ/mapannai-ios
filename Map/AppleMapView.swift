@@ -38,12 +38,12 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false; var directionArrow = false }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
         let routeMotion = RouteMotionOverlay()
-        var directionLines: [Line] = []
+        var directionGlyphs: [[Coordinate]] = []
         let userDirection = UserDirectionIndicator()
         let navigationGestures = MapNavigationGestures()
         var lastTap: CGPoint?
@@ -100,7 +100,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             map.selectableMapFeatures = store.placeSearchPresented ? [] : [.pointsOfInterest]
             if routes.map(RouteOverlayGeometry.init) != store.displayRoutes.map(RouteOverlayGeometry.init) {
                 routes = store.displayRoutes
-                map.removeOverlays(map.overlays.filter { !($0 is Line && ($0 as! Line).directionArrow) })
+                map.removeOverlays(map.overlays)
                 for route in routes {
                     var coordinates = route.points.map(Pin.coordinate)
                     for casing in [true, false] {
@@ -111,8 +111,9 @@ struct AppleMapRenderer: UIViewRepresentable {
                 }
             }
             for overlay in map.overlays {
-                if let line = overlay as? Line, !line.directionArrow, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
-                    renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
+                if let line = overlay as? Line, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
+                    let width = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
+                    if renderer.lineWidth != width { renderer.lineWidth = width }
                 }
             }
             let arrowRoutes = routes.filter { $0.dayID == store.dayID }.map { route in
@@ -128,15 +129,12 @@ struct AppleMapRenderer: UIViewRepresentable {
                     guard let map else { return Coordinate(latitude: 0, longitude: 0) }
                     let coordinate = map.convert(point, toCoordinateFrom: map)
                     return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                }, cameraKey: { [weak map] in map?.camera.centerCoordinateDistance ?? 0 }, publish: { [weak self, weak map] paths in
+                }, cameraKey: { [weak map] in log2(max(map?.camera.centerCoordinateDistance ?? 1, 1)) }, publish: { [weak self, weak map] paths in
                     guard let self, let map else { return }
-                    map.removeOverlays(self.directionLines)
-                    self.directionLines = paths.map { points in
-                        var coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-                        let line = Line(coordinates: &coordinates, count: coordinates.count)
-                        line.directionArrow = true; return line
+                    self.directionGlyphs = paths
+                    for overlay in map.overlays {
+                        (map.renderer(for: overlay) as? AppleRouteRenderer)?.updateGlyphs(paths)
                     }
-                    map.addOverlays(self.directionLines, level: .aboveRoads)
                 })
             if let command = store.camera, command.id != lastCamera {
                 lastCamera = command.id
@@ -188,7 +186,11 @@ struct AppleMapRenderer: UIViewRepresentable {
             userDirection.refresh()
         }
         func isCompact(_ map: MKMapView) -> Bool {
-            let zoom = log2(MKMapSize.world.width * max(map.bounds.width, 1) / max(map.visibleMapRect.width, 1) / 256)
+            // Derive scale from a fixed-distance camera, never from the rotated viewport box.
+            let camera = map.camera
+            let metersPerPoint = max(camera.centerCoordinateDistance, 1) * 0.8284271247461901 / max(map.bounds.height, 1)
+            let worldMeters = 40075016.68557849 * max(cos(camera.centerCoordinate.latitude * .pi / 180), 0.01)
+            let zoom = log2(worldMeters / (256 * metersPerPoint))
             return MapZoomPresentation.isCompact(zoom)
         }
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
@@ -231,12 +233,9 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }
-            if line.directionArrow {
-                let renderer = MKPolylineRenderer(polyline: line)
-                renderer.strokeColor = RouteMotionOverlay.strokeColor; renderer.lineWidth = RouteMotionOverlay.strokeWidth
-                renderer.lineCap = .round; renderer.lineJoin = .round; return renderer
-            }
-            let renderer = MKPolylineRenderer(polyline: line); renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
+            let renderer: MKPolylineRenderer = line.casing ? MKPolylineRenderer(polyline: line) : AppleRouteRenderer(polyline: line)
+            (renderer as? AppleRouteRenderer)?.updateGlyphs(directionGlyphs)
+            renderer.alpha = compact ? 0 : 1; renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex); renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: line.dayID == store.dayID) : RouteLineAppearance.width(selected: line.dayID == store.dayID)
             renderer.lineCap = .round; renderer.lineJoin = .round
             return renderer
         }

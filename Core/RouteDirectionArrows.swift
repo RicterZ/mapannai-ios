@@ -67,3 +67,8 @@ struct RouteDirectionPath {
         return result
     }
 }
+
+/// Shared line style is also available from SDK renderer background drawing callbacks.
+enum RouteArrowAppearance {
+    static let strokeWidth: CGFloat = 1.82
+}

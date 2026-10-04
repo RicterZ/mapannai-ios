@@ -147,13 +147,14 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
             }, cameraKey: { [weak map] in Double(map?.camera.zoom ?? 0) }, publish: { [weak self, weak map] paths in
                 guard let self, let map else { return }
-                self.directionLines.forEach { $0.map = nil }
+                let previous = self.directionLines
                 self.directionLines = paths.map { points in
                     let path = GMSMutablePath(); points.forEach { path.add(Self.coordinate($0)) }
                     let line = GMSPolyline(path: path)
                     line.strokeColor = RouteMotionOverlay.strokeColor; line.strokeWidth = RouteMotionOverlay.strokeWidth
                     line.isTappable = false; line.zIndex = 2; line.map = map; return line
                 }
+                previous.forEach { $0.map = nil }
             })
             map.isBuildingsEnabled = !store.placeSearchPresented
             // Hide commercial POIs during server search; road labels remain visible.

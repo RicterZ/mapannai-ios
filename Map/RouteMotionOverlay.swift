@@ -12,8 +12,9 @@ import UIKit
     private var cameraKey: (() -> Double)?
     private var renderedKey: Double?
     private var visible = false
+    private var zoomUpdate: Task<Void, Never>?
     private(set) var isRunning = false
-    static let strokeWidth: CGFloat = 1.82
+    static let strokeWidth = RouteArrowAppearance.strokeWidth
     static let strokeColor = UIColor.white
     static let glyphPoints = [CGPoint(x: -2, y: -1.8), CGPoint(x: 1, y: 0), CGPoint(x: -2, y: 1.8)]
 
@@ -23,19 +24,32 @@ import UIKit
                 cameraKey: @escaping () -> Double,
                 publish: @escaping ([[Coordinate]]) -> Void) {
         let snapshot = routes.map(RouteOverlayGeometry.init)
-        if host !== view || geometry != snapshot { renderedKey = nil }
+        if host !== view || geometry != snapshot { zoomUpdate?.cancel(); renderedKey = nil }
         host = view; geometry = snapshot; self.enabled = enabled
         self.project = project; self.unproject = unproject; self.cameraKey = cameraKey; self.publish = publish
         refresh()
     }
-    @objc func refresh() {
+    @objc func refresh() { refresh(settled: false) }
+    private func refresh(settled: Bool) {
         guard host != nil, let project, let unproject, let cameraKey, let publish else { return }
         guard enabled?() == true, !geometry.isEmpty else {
+            zoomUpdate?.cancel()
             if visible { publish([]) }
             visible = false; renderedKey = nil; return
         }
         let key = cameraKey()
-        if visible, let renderedKey, abs(renderedKey - key) <= max(abs(key), 1) * 0.000001 { return }
+        if visible, let renderedKey, abs(renderedKey - key) < 0.002 {
+            zoomUpdate?.cancel(); return
+        }
+        if visible && !settled {
+            zoomUpdate?.cancel()
+            zoomUpdate = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+                guard !Task.isCancelled, let self else { return }
+                self.refresh(settled: true)
+            }
+            return
+        }
         // Generate the complete route, not a viewport-dependent selection. The SDK clips
         // native geometry; camera translation and rotation never resubmit arrow vertices.
         let paths = geometry.flatMap { route -> [[Coordinate]] in
@@ -60,6 +74,7 @@ import UIKit
         renderedKey = key; visible = true; publish(paths)
     }
     func stop() {
+        zoomUpdate?.cancel(); zoomUpdate = nil
         if visible { publish?([]) }
         visible = false; renderedKey = nil; geometry = []
     }
