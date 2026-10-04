@@ -54,6 +54,8 @@ struct AppleMapRenderer: UIViewRepresentable {
         var pendingLocate = false
         var lastFollowMode: LocationFollowMode = .idle
         var compact = false
+        var dashScale = 0.0
+        var dashCoverage = MKMapRect.null
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MKMapView) {
             navigationGestures.onTransformEnded = { [weak self, weak map] in
@@ -99,7 +101,8 @@ struct AppleMapRenderer: UIViewRepresentable {
             if routes.map(RouteOverlayGeometry.init) != store.displayRoutes.map(RouteOverlayGeometry.init) {
                 routes = store.displayRoutes
                 map.removeOverlays(map.overlays.filter { $0 is Line })
-                for route in routes {
+                dashScale = 0
+                for route in routes where !route.isDashed {
                     var coordinates = route.points.map(Pin.coordinate)
                     for casing in [true, false] {
                         let line = Line(coordinates: &coordinates, count: coordinates.count)
@@ -108,6 +111,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                     }
                 }
             }
+            updateDashedRoutes(map)
             for overlay in map.overlays {
                 if let line = overlay as? Line, let renderer = map.renderer(for: line) as? MKPolylineRenderer {
                     styleRoute(renderer, line: line)
@@ -170,12 +174,39 @@ struct AppleMapRenderer: UIViewRepresentable {
             let zoom = log2(worldMeters / (256 * metersPerPoint))
             return MapZoomPresentation.isCompact(zoom)
         }
+        func updateDashedRoutes(_ map: MKMapView) {
+            let dashed = routes.filter(\.isDashed)
+            guard !dashed.isEmpty, map.bounds.width > 0, map.bounds.height > 0 else { return }
+            // Ground scale from camera distance, independent of the rotated viewport box.
+            let metersPerPoint = max(map.camera.centerCoordinateDistance,1) * 0.8284271247461901 / map.bounds.height
+            let scale = metersPerPoint * MKMapPointsPerMeterAtLatitude(map.camera.centerCoordinate.latitude)
+            let visible = map.visibleMapRect
+            guard dashScale == 0 || abs(log2(scale/dashScale)) >= 0.125 || !dashCoverage.contains(visible) else { return }
+            dashScale = scale
+            dashCoverage = visible.insetBy(dx:-visible.size.width,dy:-visible.size.height)
+            let clip = CGRect(x:dashCoverage.minX,y:dashCoverage.minY,width:dashCoverage.width,height:dashCoverage.height)
+            var added: [Line] = []
+            for route in dashed {
+                let points = route.points.map { point -> CGPoint in
+                    let p = MKMapPoint(Pin.coordinate(point)); return CGPoint(x:p.x,y:p.y)
+                }
+                for segment in RouteDashGeometry.segments(points,unitsPerPoint:scale,clip:clip) {
+                    var coordinates = segment.map { MKMapPoint(x:$0.x,y:$0.y).coordinate }
+                    let line = Line(coordinates:&coordinates,count:coordinates.count)
+                    line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.isDashed = true
+                    added.append(line)
+                }
+            }
+            let old = map.overlays.compactMap { $0 as? Line }.filter(\.isDashed)
+            // Only replace dash geometry at zoom steps; solid renderer owns stroke width.
+            UIView.performWithoutAnimation { map.addOverlays(added); map.removeOverlays(old) }
+        }
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
             navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
         }
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             userDirection.refresh()
-
+            updateDashedRoutes(mapView)
         }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             compact = isCompact(mapView)
@@ -225,7 +256,8 @@ struct AppleMapRenderer: UIViewRepresentable {
             renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
             renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: selected, dashed: line.isDashed) : RouteLineAppearance.width(selected: selected, dashed: line.isDashed)
             renderer.lineCap = line.isDashed ? .butt : .round; renderer.lineJoin = .round
-            renderer.lineDashPattern = line.isDashed ? [8, 6] : nil
+            // Dashed routes are native solid polylines; never use rasterized dash styling.
+            renderer.lineDashPattern = nil
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let pin = annotation as? Pin {

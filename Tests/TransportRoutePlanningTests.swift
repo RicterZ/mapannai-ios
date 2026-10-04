@@ -63,7 +63,7 @@ final class TransportRoutePlanningTests: XCTestCase {
                 line.casing = casing; line.isDashed = true
                 let renderer = try XCTUnwrap(coordinator.mapView(map,rendererFor:line) as? MKPolylineRenderer)
                 XCTAssertEqual(renderer.lineWidth, selected ? 3 : 2.5)
-                XCTAssertEqual(renderer.lineDashPattern,[8,6])
+                XCTAssertNil(renderer.lineDashPattern)
                 XCTAssertEqual(renderer.lineCap,.butt, "Round caps consume the 6pt gap when selected")
             }
         }
@@ -81,17 +81,20 @@ final class TransportRoutePlanningTests: XCTestCase {
         let points = RouteGeometry.curve(Coordinate(latitude:31.225,longitude:121.466),Coordinate(latitude:31.235,longitude:121.474))
         for before in [true,false] {
             map.removeOverlays(map.overlays)
-            var coordinates = points.map { CLLocationCoordinate2D(latitude:$0.latitude,longitude:$0.longitude) }
-            for casing in [true,false] {
+            coordinator.routes = [DisplayRoute(id:"review",dayID:store.dayID ?? "",tripID:"trip",colorIndex:0,points:points,isPlanned:false,isDashed:true)]
+            coordinator.dashScale = 0
+            if before {
+                var coordinates = points.map(AppleMapRenderer.Pin.coordinate)
                 let line = AppleMapRenderer.Line(coordinates:&coordinates,count:coordinates.count)
-                line.dayID = store.dayID ?? ""; line.casing = casing; line.isDashed = true
+                line.dayID = store.dayID ?? ""; line.isDashed = true
                 map.addOverlay(line)
-            }
+            } else { coordinator.updateDashedRoutes(map) }
             try await Task.sleep(for:.seconds(2))
             if before {
                 for overlay in map.overlays {
                     if let line = overlay as? AppleMapRenderer.Line, let renderer = map.renderer(for:line) as? MKPolylineRenderer {
-                        renderer.lineWidth = line.casing ? 8 : 6
+                        renderer.lineWidth = 3
+                        renderer.lineDashPattern = [8,6]
                         renderer.setNeedsDisplay()
                     }
                 }
@@ -99,10 +102,45 @@ final class TransportRoutePlanningTests: XCTestCase {
             try await Task.sleep(for:.milliseconds(250))
             let image = UIGraphicsImageRenderer(bounds:map.bounds).image { _ in map.drawHierarchy(in:map.bounds,afterScreenUpdates:true) }
             let attachment = XCTAttachment(image:image)
-            attachment.name = before ? "Before 8pt casing" : "After 3pt dashed"
+            attachment.name = before ? "Before native dash pattern" : "After solid segments"
             attachment.lifetime = .keepAlways; add(attachment)
+            if !before {
+                let initial = map.camera.centerCoordinateDistance
+                for (step,factor) in [0.55,1.4].enumerated() {
+                    let camera = map.camera.copy() as! MKMapCamera
+                    camera.centerCoordinateDistance = initial*factor
+                    map.setCamera(camera,animated:true)
+                    for frame in 0..<10 {
+                        try await Task.sleep(for:.milliseconds(100))
+                        for overlay in map.overlays {
+                            if let line = overlay as? AppleMapRenderer.Line, let renderer = map.renderer(for:line) as? MKPolylineRenderer {
+                                XCTAssertNil(renderer.lineDashPattern)
+                                XCTAssertEqual(renderer.lineWidth,3)
+                            }
+                        }
+                        if frame == 3 || frame == 9 {
+                            let image = UIGraphicsImageRenderer(bounds:map.bounds).image { _ in map.drawHierarchy(in:map.bounds,afterScreenUpdates:true) }
+                            let capture = XCTAttachment(image:image); capture.name = "Zoom-\(step)-\(frame)"; capture.lifetime = .keepAlways; add(capture)
+                        }
+                    }
+                }
+            }
         }
         window.isHidden = true
+    }
+    func testDashSegmentsKeepPhaseAndScreenLengthsAcrossZoomAndClipping() {
+        let path = [CGPoint(x:0,y:0),CGPoint(x:10000,y:0)]
+        for scale in [0.5,1.0,4.0] {
+            let segments = RouteDashGeometry.segments(path,unitsPerPoint:scale,clip:CGRect(x:100,y:-10,width:500,height:20))
+            XCTAssertFalse(segments.isEmpty)
+            for segment in segments {
+                XCTAssertLessThanOrEqual((segment.last!.x-segment.first!.x)/scale,8.000001)
+                let phase = segment.first!.x.truncatingRemainder(dividingBy:14*scale)
+                XCTAssertTrue(abs(phase) < 0.00001 || abs(segment.first!.x-100) < 0.00001)
+            }
+        }
+        let corner = RouteDashGeometry.segments([.zero,CGPoint(x:4,y:0),CGPoint(x:4,y:20)],unitsPerPoint:1,clip:CGRect(x:-10,y:-10,width:50,height:50))
+        XCTAssertEqual(corner[0],[.zero,CGPoint(x:4,y:0),CGPoint(x:4,y:4)])
     }
     func testFallbackIsDashedAndTransitExpirySurvivesDiskReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
