@@ -734,6 +734,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
         var dragFrames: [String: CGRect]?
         var nativeRowTargets: [IndexPath: String] = [:]
         private var publishedTarget: String?
+        private var animationGate = NativeDropAnimationGate()
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
@@ -753,7 +754,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
             let interaction = UIDropInteraction(delegate: self)
             view.addInteraction(interaction); host = view; self.interaction = interaction
         }
-        func detach() { if let list = host as? UICollectionView, list.dropDelegate === self { list.dropDelegate = originalDropDelegate }; if let interaction { host?.removeInteraction(interaction) }; interaction = nil; host = nil }
+        func detach() {
+            if let list = host as? UICollectionView, list.dropDelegate === self { list.dropDelegate = originalDropDelegate }
+            if let interaction { host?.removeInteraction(interaction) }
+            interaction = nil; host = nil
+        }
         func target(_ session: UIDropSession) -> String? {
             guard let host, let window = host.window else { return nil }
             let point = session.location(in: window)
@@ -796,21 +801,27 @@ struct NativePlaceListDrop: UIViewRepresentable {
             let point = session.location(in: window)
             let bounds = host.convert(host.bounds, to: window)
             guard bounds.contains(point) else { return nil }
-            let geometric = NativeRouteDropGeometry.target(at: point, frames: parent.frames)
-            let native = destination.flatMap { insertionTarget(at: $0, session: session) }
-            if let geometric {
-                let route = geometric.split(separator: "/").first
-                if let native, native.split(separator: "/").first == route { return native }
-                return geometric
-            }
+            // UIKit's insertion boundary is also the boundary used by its
+            // make-space animation. Never replace it with moving row geometry.
+            if let destination { return insertionTarget(at: destination, session: session) }
             if let pool = livePoolTarget(session) { return pool }
-            return native ?? target(session)
+            return NativeRouteDropGeometry.target(at: point, frames: parent.frames)
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
             let target = resolvedTarget(session, destination: destinationIndexPath)
             publishTarget(target)
-            return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: parent.prefix.hasPrefix("day-place/") ? .insertAtDestinationIndexPath : .insertIntoDestinationIndexPath)
+            if parent.prefix.hasPrefix("day-place/") {
+                // Make-space animation belongs to UIKit. Eligibility must not
+                // depend on rows which that same animation is moving around.
+                // Use the stationary list viewport with edge hysteresis instead.
+                let eligible = animationGate.update(point: session.location(in: collectionView),
+                    bounds: collectionView.bounds, hasPayload: localPayload(session) != nil)
+                return UICollectionViewDropProposal(operation: eligible ? .move : .cancel,
+                    intent: eligible ? .insertAtDestinationIndexPath : .unspecified)
+            }
+            return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move,
+                intent: .insertIntoDestinationIndexPath)
         }
         private func livePoolTarget(_ session: UIDropSession) -> String? {
             guard let window = host?.window else { return nil }
@@ -852,10 +863,10 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
-            publishTarget(nil); dragFrames = nil; nativeRowTargets = [:]
+            publishTarget(nil); animationGate = NativeDropAnimationGate(); dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            guard let target = publishedTarget ?? resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
+            guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
             publishTarget(nil)
             acceptDrop(coordinator.session, target: target)
             // The native lifted snapshot contains the old ordinal. A day move
@@ -890,10 +901,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
             publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+            animationGate = NativeDropAnimationGate()
             publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
-            guard let target = publishedTarget ?? resolvedTarget(session, destination: nil) else { return }
+            guard let target = publishedTarget else { return }
             publishTarget(nil)
             acceptDrop(session, target: target)
         }
@@ -950,5 +962,17 @@ enum NativeRouteDropGeometry {
             return prefix + "header"
         }
         return nil
+    }
+}
+
+/// Prevent animation feedback from switching move/cancel as moving row frames
+/// pass under a stationary finger. A 12pt viewport exit band absorbs edge jitter.
+struct NativeDropAnimationGate {
+    private(set) var active = false
+    mutating func update(point: CGPoint, bounds: CGRect, hasPayload: Bool) -> Bool {
+        guard hasPayload else { active = false; return false }
+        let region = active ? bounds.insetBy(dx: -12, dy: -12) : bounds
+        active = region.contains(point)
+        return active
     }
 }

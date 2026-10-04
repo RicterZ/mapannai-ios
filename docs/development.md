@@ -207,3 +207,9 @@ POI反馈共用MapInteractionFeedback（0.22秒出现/消失，尊重减少动�
 Marker 顶层可选 `placeReferences` 采用服务端 apple/google/amap → `{placeId}` 合约，缺失/null 均兼容旧数据。搜索结果、草稿、创建请求和地点快照保留该字段；普通内容编辑省略引用 patch。附近反查只补名称/地址，不采用其身份；创建去重以服务端返回引用为准。高德 MATouchPoi.uid、Google 点击回调的 placeID 及 Apple MKMapItem.identifier 是唯一原生身份来源，不从内部搜索 ID、名称或坐标推断。
 
 Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一草稿/坐标/连接的解析结果，服务切换或换点取消旧请求。iOS 18+ 将 identifier 持久化；导航通过 identifier 恢复原生 MKMapItem，失败使用坐标兜底。iOS 17 在当前连接会话内保留新建地点的原生 MKMapItem，重启后使用坐标兜底。原生 MKMapItem 直接交给系统地图，不再转换坐标。Google URL 有引用时增加 destination_place_id；高德保留现有坐标导航，保存 uid 不代表其导航 URL 能打开官方详情。
+
+## Native route drag insertion
+
+每日路线拖动的让位动画由 UICollectionView 原生插入处理，松手提交直接转换 UIKit 最终 destinationIndexPath；不再用移动中的行几何覆盖原生插入位置，也不使用上一次 hover 索引覆盖最终落点。同路线移动仅在模型边界转换时补偿一次源元素移除。原生位置缺失时才使用几何兜底。
+
+动画可接受状态按本地拖动 payload 和列表视口判定，不跟随正在让位的行矩形切换 move/cancel。离开视口采用 12pt 空间滞回，避免边缘抖动反复启动/撤销让位；不为松手增加定时等待。未收入路线和路线内部排序共用同一 UICollectionView drop delegate。

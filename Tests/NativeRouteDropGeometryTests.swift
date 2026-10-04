@@ -2,6 +2,19 @@ import XCTest
 @testable import MapAnNai
 
 final class NativeRouteDropGeometryTests: XCTestCase {
+    func testAnimationEligibilityIgnoresMovingRowsAndAbsorbsEdgeJitter() {
+        var gate = NativeDropAnimationGate()
+        let bounds = CGRect(x: 0, y: 0, width: 300, height: 600)
+        XCTAssertFalse(gate.update(point: CGPoint(x: 50, y: -2), bounds: bounds, hasPayload: true))
+        XCTAssertTrue(gate.update(point: CGPoint(x: 50, y: 2), bounds: bounds, hasPayload: true))
+        for y in [0.0, -2, 3, -10, 5] {
+            XCTAssertTrue(gate.update(point: CGPoint(x: 50, y: y), bounds: bounds, hasPayload: true))
+        }
+        XCTAssertFalse(gate.update(point: CGPoint(x: 50, y: -13), bounds: bounds, hasPayload: true))
+        XCTAssertFalse(gate.update(point: CGPoint(x: 50, y: -1), bounds: bounds, hasPayload: true))
+        XCTAssertTrue(gate.update(point: CGPoint(x: 50, y: 300), bounds: bounds, hasPayload: true))
+        XCTAssertFalse(gate.update(point: CGPoint(x: 50, y: 300), bounds: bounds, hasPayload: false))
+    }
     func testWholeRouteAcceptsMarginsTrafficAndGaps() {
         let frames = ["0/header": CGRect(x: 20, y: 100, width: 300, height: 48),
                       "0/0": CGRect(x: 20, y: 148, width: 300, height: 120),

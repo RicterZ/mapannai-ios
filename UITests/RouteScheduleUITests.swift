@@ -69,6 +69,8 @@ final class RouteScheduleUITests: XCTestCase {
             thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 1)
         XCTAssertTrue(app.buttons["route-0-marker-demo-3"].waitForExistence(timeout: 5))
         XCTAssertFalse(source.exists)
+        XCTAssertEqual(app.buttons["route-0-marker-demo-3"].value as? String, "2")
+        XCTAssertEqual(app.buttons["route-0-marker-demo-1"].value as? String, "3")
     }
 
 }
