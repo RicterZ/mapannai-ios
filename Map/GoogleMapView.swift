@@ -25,18 +25,19 @@ struct GoogleMapRenderer: UIViewRepresentable {
         let options = GMSMapViewOptions()
         options.camera = GMSCameraPosition(latitude: 31.2304, longitude: 121.4737, zoom: 13)
         let map = GMSMapView(options: options)
-        map.delegate = context.coordinator
+        map.delegate = context.coordinator; map.isMyLocationEnabled = true
         map.settings.compassButton = false; map.settings.myLocationButton = false
         return map
     }
     func updateUIView(_ map: GMSMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: GMSMapView, coordinator: Coordinator) {
-        coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
+        coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); coordinator.userDirection.stop(); coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
     }
     @MainActor final class Coordinator: NSObject, GMSMapViewDelegate, CLLocationManagerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
         let routeMotion = RouteMotionOverlay()
+        let userDirection = UserDirectionIndicator()
         var poiInfoMarker: GMSMarker?
         var poiDraftID: UUID?
         private let headingManager = CLLocationManager()
@@ -56,11 +57,19 @@ struct GoogleMapRenderer: UIViewRepresentable {
         }
         func update(_ map: GMSMapView) {
             self.map = map
+            userDirection.attach(to: map, project: { [weak map] in
+                guard let map, let location = map.myLocation else { return nil }
+                return map.projection.point(for: location.coordinate)
+            }, bearing: { [weak map] in map?.camera.bearing ?? 0 })
+            userDirection.onHeading = { [weak self, weak map] _ in
+                guard let self, let map, self.store.locationMode == .heading else { return }
+                self.centerUser(map, animated: false)
+            }
             if locationObservation == nil {
                 locationObservation = map.observe(\.myLocation, options: [.new]) { [weak self, weak map] _, _ in
                     Task { @MainActor in
                         guard let self, let map else { return }
-                        self.locate(map)
+                        self.locate(map); self.userDirection.refresh()
                     }
                 }
             }
@@ -137,7 +146,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 map.mapStyle = store.placeSearchPresented ? try? GMSMapStyle(jsonString: "[{\"featureType\":\"poi\",\"stylers\":[{\"visibility\":\"off\"}]}]") : nil
             }
             if let command = store.camera, command.id != lastCamera { lastCamera = command.id; focus(map, command) }
-            if store.locationMode == .heading { headingManager.startUpdatingHeading() } else { headingManager.stopUpdatingHeading() }
+            headingManager.stopUpdatingHeading()
             if lastLocate == nil { lastLocate = store.locating }
             else if lastLocate != store.locating {
                 lastLocate = store.locating; pendingLocate = true; map.isMyLocationEnabled = true; locate(map)
@@ -169,14 +178,16 @@ struct GoogleMapRenderer: UIViewRepresentable {
         func locate(_ map: GMSMapView) {
             guard pendingLocate, let location = map.myLocation, location.horizontalAccuracy >= 0 else { return }
             pendingLocate = false
-            focus(map, CameraCommand(points: [Coordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)]))
+            centerUser(map, animated: !UIAccessibility.isReduceMotionEnabled)
         }
-        func locationManager(_ manager: CLLocationManager, didUpdateHeading heading: CLHeading) {
-            guard store.locationMode == .heading, heading.headingAccuracy >= 0, let map,
-                  let location = map.myLocation else { return }
-            let bearing = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
-            let camera = GMSCameraPosition(target: location.coordinate, zoom: map.camera.zoom, bearing: bearing, viewingAngle: map.camera.viewingAngle)
-            map.camera = camera
+        private func centerUser(_ map: GMSMapView, animated: Bool) {
+            guard let location = map.myLocation else { return }
+            let insets = store.mapViewportInsets
+            map.padding = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
+            let camera = GMSCameraPosition(target: location.coordinate, zoom: 15,
+                bearing: store.locationMode == .heading ? (userDirection.heading ?? map.camera.bearing) : 0, viewingAngle: 0)
+            if animated { map.animate(to: camera) } else { map.camera = camera }
+            userDirection.refresh()
         }
         func stopHeading() { headingManager.stopUpdatingHeading() }
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
@@ -214,7 +225,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
             tapArbiter.scheduleRoute { [weak self] in self?.store.selectRoute(route) }
         }
         func mapView(_ mapView: GMSMapView, willMove gesture: Bool) { if gesture { store.noteMapInteraction() } }
-        func mapView(_ mapView: GMSMapView, didChange position: GMSCameraPosition) { routeMotion.refresh() }
+        func mapView(_ mapView: GMSMapView, didChange position: GMSCameraPosition) { routeMotion.refresh(); userDirection.refresh() }
         func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
             update(mapView)
             let region = mapView.projection.visibleRegion()

@@ -18,12 +18,12 @@ struct AMapNativeRenderer: UIViewRepresentable {
         routeTap.delaysTouchesEnded = false
         routeTap.delegate = context.coordinator
         map.addGestureRecognizer(routeTap)
-        context.coordinator.map = map
+        context.coordinator.map = map; map.showsUserLocation = true
         return map
     }
     func updateUIView(_ map: MAMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: MAMapView, coordinator: Coordinator) {
-        coordinator.stopSelectionAnimation()
+        coordinator.stopSelectionAnimation(); coordinator.userDirection.stop()
         coordinator.cancelRouteUpdates()
         coordinator.cancelPendingMapTap()
         coordinator.cancelPOIRefresh()
@@ -81,6 +81,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var selectionRequest: UUID?
         private var selectionRoutes: [DisplayRoute] = []
         private let routeMotion = RouteMotionOverlay()
+        let userDirection = UserDirectionIndicator()
         private var pendingRouteTap: DispatchWorkItem?
         private var mapTapAnnotation: MAAnnotation?
         private var mapTapPoint: CGPoint?
@@ -89,6 +90,14 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var renderedCoordinates: [String: [Coordinate]] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
+            userDirection.attach(to: map, project: { [weak map] in
+                guard let map, map.userLocation.location != nil else { return nil }
+                return map.convert(map.userLocation.coordinate, toPointTo: map)
+            }, bearing: { [weak map] in Double(map?.rotationDegree ?? 0) })
+            userDirection.onHeading = { [weak self, weak map] _ in
+                guard let self, let map, self.store.locationMode == .heading, let location = map.userLocation.location else { return }
+                self.pendingLocate = true; self.focusUserLocation(map, location: location, followsHeading: true)
+            }
             updateRouteSelection(map)
             if let draft = store.draft, draft.marker == nil, !store.placeSearchPresented {
                 let point = Coordinates.gcj(draft.coordinates)
@@ -188,18 +197,19 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
         }
         func mapView(_ mapView: MAMapView!, didUpdate userLocation: MAUserLocation!, updatingLocation: Bool) {
+            userDirection.refresh()
             guard pendingLocate, updatingLocation, let mapView, let location = userLocation?.location,
                   location.horizontalAccuracy >= 0 else { return }
             focusUserLocation(mapView, location: location)
         }
-        private func focusUserLocation(_ map: MAMapView, location: CLLocation) {
+        private func focusUserLocation(_ map: MAMapView, location: CLLocation, followsHeading: Bool = false) {
             guard pendingLocate, let status = map.getMapStatus() else { return }
             pendingLocate = false
             map.setUserTrackingMode(.none, animated: false)
             let insets = padding(map)
             status.centerCoordinate = location.coordinate
             status.zoomLevel = 15
-            if store.locationMode != .heading { status.rotationDegree = 0 }
+            status.rotationDegree = store.locationMode == .heading ? CGFloat(userDirection.heading ?? 0) : 0
             status.screenAnchor = CGPoint(
                 x: (map.bounds.width + insets.left - insets.right) / (2 * max(1, map.bounds.width)),
                 y: (map.bounds.height + insets.top - insets.bottom) / (2 * max(1, map.bounds.height)))
@@ -207,11 +217,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
                 to: Coordinates.wgs(Coordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)),
                 currentZoom: Double(map.zoomLevel), targetZoom: 15,
-                reduceMotion: UIAccessibility.isReduceMotionEnabled)
+                reduceMotion: UIAccessibility.isReduceMotionEnabled || followsHeading)
             withCameraAnimation(duration: duration) {
                 map.setMapStatus(status, animated: duration > 0, duration: duration)
             }
-            if store.locationMode == .heading { map.setUserTrackingMode(.followWithHeading, animated: duration > 0) }
+            userDirection.refresh()
         }
         private func padding(_ map: MAMapView, command: CameraCommand? = nil) -> UIEdgeInsets {
             let insets = (command ?? CameraCommand(points: [])).viewportInsets(base: store.mapViewportInsets,
@@ -495,7 +505,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             routeMotion.refresh()
         }
         func mapViewRegionChanged(_ mapView: MAMapView!) {
-            routeMotion.refresh()
+            routeMotion.refresh(); userDirection.refresh()
             updateZoomPresentation(mapView)
         }
         private func updatePinStyles(_ map: MAMapView) {

@@ -14,7 +14,7 @@ struct AppleMapRenderer: UIViewRepresentable {
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
         map.delegate = context.coordinator
-        map.showsCompass = false; map.showsScale = true
+        map.showsCompass = false; map.showsScale = true; map.showsUserLocation = true
         map.selectableMapFeatures = [.pointsOfInterest]
         map.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737), latitudinalMeters: 8000, longitudinalMeters: 8000), animated: false)
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
@@ -24,7 +24,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         return map
     }
     func updateUIView(_ map: MKMapView, context: Context) { context.coordinator.update(map) }
-    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); map.delegate = nil; map.showsUserLocation = false }
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.tapArbiter.cancel(); coordinator.routeMotion.stop(); coordinator.userDirection.stop(); map.delegate = nil; map.showsUserLocation = false }
 
     final class Pin: MKPointAnnotation {
         let key: String
@@ -43,6 +43,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
         let routeMotion = RouteMotionOverlay()
+        let userDirection = UserDirectionIndicator()
         var lastTap: CGPoint?
         var selectedPOI: MKMapFeatureAnnotation?
         var selectedPOIDraftID: UUID?
@@ -56,6 +57,14 @@ struct AppleMapRenderer: UIViewRepresentable {
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MKMapView) {
             compact = isCompact(map)
+            userDirection.attach(to: map, project: { [weak map] in
+                guard let map, map.userLocation.location != nil else { return nil }
+                return map.convert(map.userLocation.coordinate, toPointTo: map)
+            }, bearing: { [weak map] in map?.camera.heading ?? 0 })
+            userDirection.onHeading = { [weak self, weak map] _ in
+                guard let self, let map, self.store.locationMode == .heading, let location = map.userLocation.location else { return }
+                self.centerUser(map, location: location, animated: false)
+            }
             var desired: [String: (Coordinate, String, Marker?, Place?)] = [:]
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker, nil) }
             for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil, place) }
@@ -145,15 +154,22 @@ struct AppleMapRenderer: UIViewRepresentable {
         func locate(_ map: MKMapView, location: CLLocation) {
             guard pendingLocate, location.horizontalAccuracy >= 0 else { return }
             pendingLocate = false
+            centerUser(map, location: location, animated: !UIAccessibility.isReduceMotionEnabled)
+        }
+        private func centerUser(_ map: MKMapView, location: CLLocation, animated: Bool) {
             map.setUserTrackingMode(.none, animated: false)
-            focus(map, command: CameraCommand(points: [Self.internalCoordinate(map.userLocation.coordinate)]))
-            if store.locationMode == .heading {
-                map.setUserTrackingMode(.followWithHeading, animated: !UIAccessibility.isReduceMotionEnabled)
-            } else {
-                let camera = map.camera.copy() as! MKMapCamera
-                camera.heading = 0
-                map.setCamera(camera, animated: !UIAccessibility.isReduceMotionEnabled)
-            }
+            let camera = map.camera.copy() as! MKMapCamera
+            camera.centerCoordinate = map.userLocation.coordinate
+            camera.heading = store.locationMode == .heading ? (userDirection.heading ?? camera.heading) : 0
+            camera.altitude = 1200; camera.pitch = 0
+            map.setCamera(camera, animated: false)
+            let insets = store.mapViewportInsets
+            let visible = map.bounds.inset(by: UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right))
+            guard visible.width > 0, visible.height > 0 else { return }
+            let screen = map.convert(map.userLocation.coordinate, toPointTo: map)
+            let center = CGPoint(x: map.bounds.midX + screen.x - visible.midX, y: map.bounds.midY + screen.y - visible.midY)
+            camera.centerCoordinate = map.convert(center, toCoordinateFrom: map)
+            map.setCamera(camera, animated: animated); userDirection.refresh()
         }
         func isCompact(_ map: MKMapView) -> Bool {
             let zoom = log2(MKMapSize.world.width * max(map.bounds.width, 1) / max(map.visibleMapRect.width, 1) / 256)
@@ -165,7 +181,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                 store.noteMapInteraction()
             }
         }
-        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { routeMotion.refresh() }
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { routeMotion.refresh(); userDirection.refresh() }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             routeMotion.refresh()
             compact = isCompact(mapView)
@@ -176,7 +192,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             let b = Self.internalCoordinate(mapView.convert(CGPoint(x: mapView.bounds.width, y: mapView.bounds.height), toCoordinateFrom: mapView))
             store.bounds = SearchBounds(west: min(a.longitude, b.longitude), south: min(a.latitude, b.latitude), east: max(a.longitude, b.longitude), north: max(a.latitude, b.latitude))
         }
-        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) { if let location = userLocation.location { locate(mapView, location: location) } }
+        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) { if let location = userLocation.location { locate(mapView, location: location); userDirection.refresh() } }
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let pin = annotation as? Pin else { return nil }
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: "place") ?? MKAnnotationView(annotation: pin, reuseIdentifier: "place")

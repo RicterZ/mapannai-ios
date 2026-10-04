@@ -213,3 +213,5 @@ Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一�
 路线内排序在拖动开始时冻结列表内容坐标中的行边界，以固定行中线判定插入位置。相邻行只执行位移动画，不改变判定边界；同一目标不重复启动动画。实际让位顺序改变时用 UIImpactFeedbackGenerator(style: .medium) 提供一次清晰的换位反馈，停留及等价插入边界不重复触发。提起与放下不追加 UIImpactFeedbackGenerator，避免与系统拖动反馈叠加。松手使用与动画相同的固定几何判定，同路线移动仅在模型边界转换时补偿一次源元素移除。滚动通过列表内容坐标自然计入。系统保留拖起预览，内部排序使用 unspecified proposal，避免系统同时创建另一处让位空隙；结束、离开和取消时恢复行变换。路线内排序、未收入路线拖入及跨路线移动共用同一冻结边界、让位动画、触觉反馈和松手提交；外来地点按源行高度挪出空位，不改变行尺寸。
 
 动画可接受状态按本地拖动 payload、固定内容坐标及列表视口判定，不跟随正在让位的行矩形切换 move/cancel。所有当天地点拖动均返回 unspecified proposal，关闭 UIKit 的第二套自动让位；固定分界线越过后立即触发共享动画，不设置 slow cadence 或悬停定时等待。路线行不自定义缩短的地点预览，采用原生完整行快照，避免拖动预览与含交通/笔记的源行高度不一致。未收入路线和路线内部排序共用同一 UICollectionView drop delegate。 路线行几何保存在非观察型引用缓存中；GeometryReader preference 更新只改变命中数据，不发布 SwiftUI 状态、不重建 List。drop adapter 每次读取最新缓存，仍能处理滚动与宽度变化。`--route-drag-diagnostics` 仅供 UI 回归测试统计拖动开始到提交前的 representable 更新次数，测试要求为 0；正常启动不显示诊断内容。
+
+定位显示在启动时开启，前台持续更新；初次定位授权仍由系统决定。三个地图共用 UserDirectionIndicator 的传感器与蓝色方向扇形，获得有效 heading 后即显示，朝向相对地图 bearing 转换。定位按钮循环为居中→方向居中→居中；地图手势退出跟随但保留位置及方向标识。状态1北向上、状态2按用户 heading 旋转，两态均将当前位置放到 MapLayout 未遮挡区域中心并使用合适缩放；不用 SDK followWithHeading 覆盖视口锚点。无 heading 数据时保留位置点，不伪造方向。

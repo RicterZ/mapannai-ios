@@ -748,7 +748,7 @@ struct HomeView: View {
     func requestStartupLocation(_ action: @escaping (Coordinate) -> Void) {
         guard onLocation == nil else { return }
         onLocation = action
-        request { [weak self] in self?.manager.requestLocation() }
+        request { [weak self] in self?.manager.startUpdatingLocation() }
         if [.denied, .restricted].contains(manager.authorizationStatus) { onLocation = nil }
     }
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
