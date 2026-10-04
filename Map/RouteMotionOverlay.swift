@@ -63,7 +63,7 @@ import UIKit
             }.insetBy(dx: -12, dy: -12)
             let path = RouteDirectionPath(points: finite, bounds: extent)
             return path.arrows(timestamp: 0, reducedMotion: true, bounds: extent).map { arrow in
-                // Fits within the 6pt selected route, including the 1.82pt stroke.
+                // Fits within the 6pt selected route, including the shared stroke.
                 let cosine = cos(arrow.angle), sine = sin(arrow.angle)
                 return Self.glyphPoints.map { point in
                     unproject(CGPoint(x: arrow.position.x + point.x * cosine - point.y * sine,
