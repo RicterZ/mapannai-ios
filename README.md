@@ -18,7 +18,7 @@ MapAnNai iOS is the native iPhone and iPad client for MapAnNai Plus. Save restau
 
 Use the chat icon at the top right of the map to plan with the AI assistant. Configure your model API in Settings first. Settings also lets you hide the chat icon (off by default). Replies can continue briefly in the background; interrupted replies retain the text already received and are never automatically resent. Assistant replies support Markdown tables; swipe wide tables horizontally to read all columns.
 
-Choose AMap or Apple Maps in Settings → Map Background. Google Maps is listed but not yet available. This changes the in-app map; search and route planning continue to use your connected server.
+The default background is System Maps (Apple MapKit). Choose System Maps or AMap in Settings → Map Background. Google Maps is listed but not yet available. This changes the in-app map; search and route planning continue to use your connected server.
 
 ## Plan your first trip
 

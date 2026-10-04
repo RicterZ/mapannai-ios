@@ -21,8 +21,8 @@ enum NavigationMapApp: String, CaseIterable {
     @Published var revision = UUID()
     var configured: Bool { !baseURL.isEmpty }
     init() {
-        let renderer = MapRendererKind(rawValue: UserDefaults.standard.string(forKey: "mapRenderer") ?? "amap") ?? .amap
-        mapRenderer = renderer == .google ? .amap : renderer
+        let renderer = MapRendererKind(rawValue: UserDefaults.standard.string(forKey: "mapRenderer") ?? "apple") ?? .apple
+        mapRenderer = renderer == .google ? .apple : renderer
         hideAIChatIcon = UserDefaults.standard.bool(forKey: "hideAIChatIcon")
         navigationMapApp = NavigationMapApp(rawValue: UserDefaults.standard.string(forKey: "navigationMapApp") ?? "system") ?? .system
         baseURL = UserDefaults.standard.string(forKey: "baseURL") ?? ""

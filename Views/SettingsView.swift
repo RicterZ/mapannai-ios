@@ -22,7 +22,7 @@ struct SettingsView: View {
                 Section("地图底图") {
                     Picker("底图", selection: $settings.mapRenderer) {
                         Text("高德地图").tag(MapRendererKind.amap)
-                        Text("苹果地图").tag(MapRendererKind.apple)
+                        Text("系统地图").tag(MapRendererKind.apple)
                         Text("Google（暂不可用）").tag(MapRendererKind.google).disabled(true)
                     }.accessibilityIdentifier("map-renderer-picker")
                 }

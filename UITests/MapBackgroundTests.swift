@@ -10,7 +10,7 @@ final class MapBackgroundTests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
         let picker = app.buttons["map-renderer-picker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5)); picker.tap()
-        app.buttons["苹果地图"].tap()
+        app.buttons["系统地图"].tap()
         app.buttons["close-settings"].tap()
         XCTAssertTrue(app.maps.firstMatch.waitForExistence(timeout: 10))
         settings.tap(); picker.tap(); app.buttons["高德地图"].tap()
