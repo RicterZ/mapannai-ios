@@ -221,3 +221,5 @@ Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一�
 路线规划仅保留开关，移除全局自动/步行/驾车选择。`POST /api/directions` 发送起终点和当前有向相邻访问的 `transportMode`（无交通安排时省略），不发送旧 `mode`，映射及默认选择由服务端负责。开启规划后，没有可用规划路径的段（等待请求、请求失败、所有非空fallback，含NO_ROUTE/UNSUPPORTED_MODE）均绘制虚线贝塞尔；关闭规划时保留实线关联曲线，不展示为实际路线距离。缓存v2隔离服务器/provider/交通方式/有向端点；公交、地铁、火车成功和NO_ROUTE缓存1小时，其他终态fallback保留。交通方式修改或拖动改变相邻边后重新匹配；过期缓存不得被保留的显示几何跳过。正常路径仍使用共享Web展示剪枝及iOS往返分离，不改变服务端路径与距离。
 
 虚线示意路线共用轻量线宽：普通2.5pt、选中3pt，不外扩描边；实线路线宽度不变。MapKit不使用lineDashPattern，而由RouteDashGeometry按8pt短段/6pt间隔切割曲线，用普通MKPolylineRenderer实线绘制；缩放每1/8级更新切段，平移在预留一屏范围内复用，超出后仅补绘可见范围，原路线保留用于命中。高德/Google沿用SDK虚线。
+
+高德自由操作时缩放围绕双指中心（zoomingInPivotsAroundAnchorPoint=false）；选点镜头结束或面板遮挡改变后，将旋转锚点恢复到当前未遮挡区域中心，并用该屏幕点原地理坐标与锚点一次提交以保持画面位置。手势中不改锚点，定位跟踪保留用户位置锚点。
