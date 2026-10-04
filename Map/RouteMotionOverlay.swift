@@ -16,7 +16,8 @@ import UIKit
             let context = output.cgContext
             if let color { context.setFillColor(color.cgColor); context.fill(CGRect(origin: .zero, size: size)) }
             context.translateBy(x: size.width / 2, y: size.height / 2)
-            context.rotate(by: .pi / 2)
+            // The SDKs advance their texture V coordinate in opposite directions.
+            context.rotate(by: google ? .pi / 2 : -.pi / 2)
             context.setStrokeColor(UIColor.white.cgColor); context.setLineWidth(strokeWidth)
             context.setLineCap(.round); context.setLineJoin(.round)
             for (index, point) in glyphPoints.enumerated() {
