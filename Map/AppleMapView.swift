@@ -45,6 +45,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         let routeMotion = RouteMotionOverlay()
         var directionLines: [Line] = []
         let userDirection = UserDirectionIndicator()
+        let navigationGestures = MapNavigationGestures()
         var lastTap: CGPoint?
         var selectedPOI: MKMapFeatureAnnotation?
         var selectedPOIDraftID: UUID?
@@ -57,15 +58,24 @@ struct AppleMapRenderer: UIViewRepresentable {
         var compact = false
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MKMapView) {
+            navigationGestures.onTransformEnded = { [weak self, weak map] in
+                guard let self, let map, self.store.locationMode != .idle else { return }
+                let desired: MKUserTrackingMode = self.store.locationMode == .heading ? .followWithHeading : .follow
+                if map.userTrackingMode != desired {
+                    map.setUserTrackingMode(desired, animated: !UIAccessibility.isReduceMotionEnabled)
+                }
+            }
+            navigationGestures.observe(map) { [weak self] in self?.store.noteMapInteraction() }
+            let insets = store.mapViewportInsets
+            map.insetsLayoutMarginsFromSafeArea = false
+            map.layoutMargins = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
             compact = isCompact(map)
             userDirection.attach(to: map, project: { [weak map] in
                 guard let map, map.userLocation.location != nil else { return nil }
                 return map.convert(map.userLocation.coordinate, toPointTo: map)
             }, bearing: { [weak map] in map?.camera.heading ?? 0 })
-            userDirection.onHeading = { [weak self, weak map] _ in
-                guard let self, let map, self.store.locationMode == .heading, let location = map.userLocation.location else { return }
-                self.centerUser(map, location: location, animated: false)
-            }
+            // MapKit owns heading tracking, camera animation and pinch interaction.
+            userDirection.onHeading = nil
             var desired: [String: (Coordinate, String, Marker?, Place?)] = [:]
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker, nil) }
             for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil, place) }
@@ -174,29 +184,15 @@ struct AppleMapRenderer: UIViewRepresentable {
             centerUser(map, location: location, animated: !UIAccessibility.isReduceMotionEnabled)
         }
         private func centerUser(_ map: MKMapView, location: CLLocation, animated: Bool) {
-            map.setUserTrackingMode(.none, animated: false)
-            let camera = map.camera.copy() as! MKMapCamera
-            camera.centerCoordinate = map.userLocation.coordinate
-            camera.heading = store.locationMode == .heading ? (userDirection.heading ?? camera.heading) : 0
-            camera.altitude = 1200; camera.pitch = 0
-            map.setCamera(camera, animated: false)
-            let insets = store.mapViewportInsets
-            let visible = map.bounds.inset(by: UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right))
-            guard visible.width > 0, visible.height > 0 else { return }
-            let screen = map.convert(map.userLocation.coordinate, toPointTo: map)
-            let center = CGPoint(x: map.bounds.midX + screen.x - visible.midX, y: map.bounds.midY + screen.y - visible.midY)
-            camera.centerCoordinate = map.convert(center, toCoordinateFrom: map)
-            map.setCamera(camera, animated: animated); userDirection.refresh()
+            map.setUserTrackingMode(store.locationMode == .heading ? .followWithHeading : .follow, animated: animated)
+            userDirection.refresh()
         }
         func isCompact(_ map: MKMapView) -> Bool {
             let zoom = log2(MKMapSize.world.width * max(map.bounds.width, 1) / max(map.visibleMapRect.width, 1) / 256)
             return MapZoomPresentation.isCompact(zoom)
         }
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
-            let gestures: [UIGestureRecognizer] = mapView.subviews.flatMap { $0.gestureRecognizers ?? [] }
-            if gestures.contains(where: { $0.state == .began || $0.state == .changed }) {
-                store.noteMapInteraction()
-            }
+            navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
         }
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { routeMotion.refresh(); userDirection.refresh() }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {

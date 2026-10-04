@@ -15,8 +15,9 @@ import UIKit
     private var anchor: (Coordinate, CGPoint)?
     private var visible = false
     private(set) var isRunning = false
-    static let strokeWidth: CGFloat = 1.4
+    static let strokeWidth: CGFloat = 1.82
     static let strokeColor = UIColor.white
+    static let glyphPoints = [CGPoint(x: -2, y: -1.8), CGPoint(x: 1, y: 0), CGPoint(x: -2, y: 1.8)]
 
     func update(routes: [DisplayRoute], in view: UIView, enabled: @escaping () -> Bool,
                 project: @escaping (Coordinate) -> CGPoint,
@@ -47,9 +48,9 @@ import UIKit
         let paths = geometry.flatMap { route -> [[Coordinate]] in
             let path = RouteDirectionPath(points: route.points.map(project), bounds: coverage)
             return path.arrows(timestamp: 0, reducedMotion: true, bounds: coverage).map { arrow in
-                // Fits within the 6pt selected route, including the 1.4pt stroke.
+                // Fits within the 6pt selected route, including the 1.82pt stroke.
                 let cosine = cos(arrow.angle), sine = sin(arrow.angle)
-                return [CGPoint(x: -2, y: -1.8), CGPoint(x: 1, y: 0), CGPoint(x: -2, y: 1.8)].map { point in
+                return Self.glyphPoints.map { point in
                     unproject(CGPoint(x: arrow.position.x + point.x * cosine - point.y * sine,
                                       y: arrow.position.y + point.x * sine + point.y * cosine))
                 }

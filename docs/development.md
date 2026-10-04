@@ -192,9 +192,9 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 
 导航设置可选择 Google，通过官方 HTTPS Maps URLs 传入 WGS-84 目的地、api=1 和 dir_action=navigate，已安装时可由系统打开 App，否则浏览器打开，无需地图 SDK Key。
 
-地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向箭头统一使用 RouteMotionOverlay，三个 SDK 仅提供正反坐标投影、缩放值及原生折线提交。连线样式统一由 RouteLineAppearance 定义：选中彩线 6pt、未选中 3.5pt，外描边比彩线宽 2pt，颜色为路线色与白色混合的浅色描边。三个 SDK 都画相同的描边与彩线双层几何。相邻地点的已绘制路径从起点 45pt 开始，每隔固定 90pt 绘制静态白色单折角箭头；局部切线决定方向，缩放更新屏幕累计长度并增减箭头，绝不把间距平均分摊到整段。箭头为1.4pt白色原生折线，顶点由共享组件统一生成，尺寸限制在彩线内；不使用独立CALayer、屏幕遮罩或镜头回调补位。无CADisplayLink或箭头动画；平移时保持地理顶点不变，由SDK与路线一起变换。缩放或平移超出一屏预绘余量时更新几何，静止镜头复用原生覆盖物。后台、搜索及低缩放时隐藏，减少动态效果不改变静态箭头。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。
+地点绘制统一在 MapMarkerAppearance：44pt画布、28pt圆圈、12pt居中emoji，选中蓝色/放大/外圈，低缩放10pt圆点；图像按图标和状态缓存。高德、MapKit、Google适配层仅负责坐标、SDK覆盖物、锚点和事件。搜索标点复用SearchPinAppearance，临时选点复用MapMarkerAppearance.draftImage。路线方向箭头统一使用 RouteMotionOverlay，三个 SDK 仅提供正反坐标投影、缩放值及原生折线提交。连线样式统一由 RouteLineAppearance 定义：选中彩线 6pt、未选中 3.5pt，外描边比彩线宽 2pt，颜色为路线色与白色混合的浅色描边。三个 SDK 都画相同的描边与彩线双层几何。相邻地点的已绘制路径从起点 45pt 开始，每隔固定 90pt 绘制静态白色单折角箭头；局部切线决定方向，缩放更新屏幕累计长度并增减箭头，绝不把间距平均分摊到整段。箭头为1.82pt白色原生折线，顶点由共享组件统一生成，尺寸限制在彩线内；不使用独立CALayer、屏幕遮罩或镜头回调补位。无CADisplayLink或箭头动画；平移时保持地理顶点不变，由SDK与路线一起变换。缩放或平移超出一屏预绘余量时更新几何，静止镜头复用原生覆盖物。后台、搜索及低缩放时隐藏，减少动态效果不改变静态箭头。Google真地图加载需有效Key验证，空Key测试只验证系统地图兜底。
 
-定位交互共用 LocationFollowMode：idle→centered→heading→centered；第二次实心location.fill，第三次空心location并恢复北朝上，手动地图操作退回idle。MapKit/高德原生followWithHeading，Google使用CoreLocation heading驱动镜头bearing；退出Google销毁时停止方向监听。方向跟随需真机传感器验证。
+定位交互共用 LocationFollowMode：idle→centered→heading→centered；第二次实心location.fill，第三次空心location并恢复北朝上，单指拖动退回idle，双指缩放/旋转保持跟踪，第二根手指抬起也不转换为拖动。MapNavigationGestures只观察SDK已有识别器，不增加竞争手势。MapKit使用原生follow/followWithHeading及原生定位动画；高德与Google使用共享CoreLocation heading驱动镜头方向，手势期间暂停镜头更新，保留用户缩放；退出Google销毁时停止方向监听。方向跟随需真机传感器验证。
 
 本机地图凭据统一管理于被忽略的 Config/Local.xcconfig（建议权限0600），不另建含Key的env。AMAP_IOS_KEY与GOOGLE_MAPS_IOS_KEY是唯一嵌入App的字段；GOOGLE_API_KEY、AMAP_API_KEY、AMAP_JS_KEY、AMAP_JS_SECURITY_CODE可作为本地管理记录，代码不读取、不嵌入。服务器现有Key若用于iOS，须确认允许Maps SDK for iOS及实际Bundle ID；不能把服务端IP限制的Key视为已验证可用。Local.xcconfig不提交，example只保留空字段。
 
@@ -214,4 +214,4 @@ Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一�
 
 动画可接受状态按本地拖动 payload、固定内容坐标及列表视口判定，不跟随正在让位的行矩形切换 move/cancel。所有当天地点拖动均返回 unspecified proposal，关闭 UIKit 的第二套自动让位；固定分界线越过后立即触发共享动画，不设置 slow cadence 或悬停定时等待。路线行不自定义缩短的地点预览，采用原生完整行快照，避免拖动预览与含交通/笔记的源行高度不一致。未收入路线和路线内部排序共用同一 UICollectionView drop delegate。 路线行几何保存在非观察型引用缓存中；GeometryReader preference 更新只改变命中数据，不发布 SwiftUI 状态、不重建 List。drop adapter 每次读取最新缓存，仍能处理滚动与宽度变化。`--route-drag-diagnostics` 仅供 UI 回归测试统计拖动开始到提交前的 representable 更新次数，测试要求为 0；正常启动不显示诊断内容。
 
-定位显示在启动时开启，前台持续更新；初次定位授权仍由系统决定。三个地图共用 UserDirectionIndicator 的传感器与蓝色渐隐方向光束（无描边，从蓝点向外径向渐隐），获得有效 heading 后即显示，朝向相对地图 bearing 转换。定位按钮循环为居中→方向居中→居中；地图手势退出跟随但保留位置及方向标识。状态1北向上、状态2按用户 heading 旋转，两态均将当前位置放到 MapLayout 未遮挡区域中心并使用合适缩放；不用 SDK followWithHeading 覆盖视口锚点。无 heading 数据时保留位置点，不伪造方向。
+定位显示在启动时开启，前台持续更新；初次定位授权仍由系统决定。三个地图共用 UserDirectionIndicator 的传感器与蓝色渐隐方向光束（无描边，从蓝点向外径向渐隐），获得有效 heading 后即显示，朝向相对地图 bearing 转换。定位按钮循环为居中→方向居中→居中；单指拖动退出跟随但保留位置及方向标识；双指缩放和旋转不退出。状态1北向上、状态2按用户 heading 旋转，两态均将当前位置放到 MapLayout 未遮挡区域中心并使用合适缩放；MapKit使用layoutMargins计算未遮挡视口与原生跟踪动画；高德/Google使用SDK视口锚点与镜头动画。无 heading 数据时保留位置点，不伪造方向。

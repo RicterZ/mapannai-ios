@@ -83,6 +83,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private let routeMotion = RouteMotionOverlay()
         private var directionLines: [MAPolyline] = []
         let userDirection = UserDirectionIndicator()
+        private let navigationGestures = MapNavigationGestures()
+        private var locationAnimationUntil = Date.distantPast
         private var pendingRouteTap: DispatchWorkItem?
         private var mapTapAnnotation: MAAnnotation?
         private var mapTapPoint: CGPoint?
@@ -91,12 +93,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var renderedCoordinates: [String: [Coordinate]] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
+            navigationGestures.observe(map) { [weak self] in self?.store.noteMapInteraction() }
             userDirection.attach(to: map, project: { [weak map] in
                 guard let map, map.userLocation.location != nil else { return nil }
                 return map.convert(map.userLocation.coordinate, toPointTo: map)
             }, bearing: { [weak map] in Double(map?.rotationDegree ?? 0) })
             userDirection.onHeading = { [weak self, weak map] _ in
-                guard let self, let map, self.store.locationMode == .heading, let location = map.userLocation.location else { return }
+                guard let self, let map, self.store.locationMode == .heading, !self.navigationGestures.isInteracting, Date() >= self.locationAnimationUntil, let location = map.userLocation.location else { return }
                 self.pendingLocate = true; self.focusUserLocation(map, location: location, followsHeading: true)
             }
             updateRouteSelection(map)
@@ -209,7 +212,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             map.setUserTrackingMode(.none, animated: false)
             let insets = padding(map)
             status.centerCoordinate = location.coordinate
-            status.zoomLevel = 15
+            if !followsHeading { status.zoomLevel = 15 }
             status.rotationDegree = store.locationMode == .heading ? CGFloat(userDirection.heading ?? 0) : 0
             status.screenAnchor = CGPoint(
                 x: (map.bounds.width + insets.left - insets.right) / (2 * max(1, map.bounds.width)),
@@ -217,8 +220,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let duration = CameraMotion.duration(
                 from: Coordinates.wgs(Coordinate(latitude: map.centerCoordinate.latitude, longitude: map.centerCoordinate.longitude)),
                 to: Coordinates.wgs(Coordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)),
-                currentZoom: Double(map.zoomLevel), targetZoom: 15,
+                currentZoom: Double(map.zoomLevel), targetZoom: Double(status.zoomLevel),
                 reduceMotion: UIAccessibility.isReduceMotionEnabled || followsHeading)
+            if !followsHeading { locationAnimationUntil = Date().addingTimeInterval(duration) }
             withCameraAnimation(duration: duration) {
                 map.setMapStatus(status, animated: duration > 0, duration: duration)
             }
@@ -510,9 +514,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             } else { map.removeOverlays(overlays) }
         }
         func mapView(_ mapView: MAMapView!, regionWillChangeAnimated animated: Bool) {
-            if mapView.gestureRecognizers?.contains(where: { $0.state == .began || $0.state == .changed }) == true {
-                store.noteMapInteraction()
-            }
+            navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
             mapIsMoving = true; cancelPOIRefresh()
             routeMotion.refresh()
         }
@@ -737,12 +739,12 @@ struct PreviewMap: View {
                             for arrow in path.arrows(timestamp: timeline.date.timeIntervalSinceReferenceDate,
                                                      reducedMotion: reduceMotion, bounds: CGRect(origin: .zero, size: size)) {
                                 var glyph = Path()
-                                for x: CGFloat in [0] {
-                                    glyph.move(to: CGPoint(x: x - 2, y: -2.2)); glyph.addLine(to: CGPoint(x: x + 1, y: 0)); glyph.addLine(to: CGPoint(x: x - 2, y: 2.2))
+                                for (index, point) in RouteMotionOverlay.glyphPoints.enumerated() {
+                                    if index == 0 { glyph.move(to: point) } else { glyph.addLine(to: point) }
                                 }
                                 var drawing = context; drawing.opacity = Double(arrow.opacity)
                                 drawing.translateBy(x: arrow.position.x, y: arrow.position.y); drawing.rotate(by: .radians(Double(arrow.angle)))
-                                drawing.stroke(glyph, with: .color(.white), style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                                drawing.stroke(glyph, with: .color(.white), style: StrokeStyle(lineWidth: RouteMotionOverlay.strokeWidth, lineCap: .round, lineJoin: .round))
                             }
                         }
                     }
