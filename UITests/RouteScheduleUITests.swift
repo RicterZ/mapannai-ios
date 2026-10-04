@@ -27,7 +27,7 @@ final class RouteScheduleUITests: XCTestCase {
     }
     @MainActor func testDirectedTransportDisconnectsAndRestoresImmediatelyAfterDrop() {
         let app = XCUIApplication()
-        app.launchArguments = ["--demo", "--trip-places-preview", "--transport-schedule-preview", "--delayed-route-build-preview"]
+        app.launchArguments = ["--demo", "--trip-places-preview", "--transport-schedule-preview", "--delayed-route-build-preview", "--route-drag-diagnostics"]
         app.launch()
         let day = app.buttons["journey-day-day-1"]
         XCTAssertTrue(day.waitForExistence(timeout: 10)); day.tap()
@@ -41,6 +41,7 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertEqual(b.value as? String, "3")
         XCTAssertEqual(c.value as? String, "2")
         XCTAssertFalse(app.staticTexts["10号线"].exists)
+        XCTAssertEqual(app.staticTexts["route-drag-diagnostics"].value as? String, "0", "Geometry changes must not update the List during native insertion animation")
         XCTAssertTrue((app.buttons["route-0-schedule-demo-1"].value as? String)?.contains("10:45") == true)
         let disconnected = XCTAttachment(screenshot: app.screenshot())
         disconnected.name = "松手立即断开有向边，游览时间保留"; disconnected.lifetime = .keepAlways; add(disconnected)
@@ -51,6 +52,7 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["10号线"].exists)
         XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-demo-1").count, 1)
         XCTAssertEqual(a.value as? String, "1")
+        XCTAssertEqual(app.staticTexts["route-drag-diagnostics"].value as? String, "0")
         let restored = XCTAttachment(screenshot: app.screenshot())
         restored.name = "拖回原有方向立即恢复交通"; restored.lifetime = .keepAlways; add(restored)
     }

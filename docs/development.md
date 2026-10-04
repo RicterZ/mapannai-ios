@@ -212,4 +212,4 @@ Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一�
 
 每日路线拖动的让位动画由 UICollectionView 原生插入处理，松手提交直接转换 UIKit 最终 destinationIndexPath；不再用移动中的行几何覆盖原生插入位置，也不使用上一次 hover 索引覆盖最终落点。同路线移动仅在模型边界转换时补偿一次源元素移除。原生位置缺失时才使用几何兜底。
 
-动画可接受状态按本地拖动 payload 和列表视口判定，不跟随正在让位的行矩形切换 move/cancel。离开视口采用 12pt 空间滞回，避免边缘抖动反复启动/撤销让位；不为松手增加定时等待。未收入路线和路线内部排序共用同一 UICollectionView drop delegate。
+动画可接受状态按本地拖动 payload 和列表视口判定，不跟随正在让位的行矩形切换 move/cancel。离开视口采用 12pt 空间滞回，避免边缘抖动反复启动/撤销让位；不为松手增加定时等待。未收入路线和路线内部排序共用同一 UICollectionView drop delegate。 路线行几何保存在非观察型引用缓存中；GeometryReader preference 更新只改变命中数据，不发布 SwiftUI 状态、不重建 List。drop adapter 每次读取最新缓存，仍能处理滚动与宽度变化。`--route-drag-diagnostics` 仅供 UI 回归测试统计拖动开始到提交前的 representable 更新次数，测试要求为 0；正常启动不显示诊断内容。

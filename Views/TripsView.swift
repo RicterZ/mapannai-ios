@@ -80,8 +80,10 @@ struct DayContentsView: View {
     @State private var title = ""
     @State private var deletingDay = false
     @State private var deletingChain: Int?
-    @State private var nativeRouteFrames: [String: CGRect] = [:]
+    @State private var nativeRouteGeometry = NativeRouteGeometryStorage()
+    private var nativeRouteFrames: [String: CGRect] { nativeRouteGeometry.frames }
     @State private var collapsedRoutes: Set<Int> = []
+    @State private var dragDiagnosticUpdates = 0
     var body: some View {
         List {
             Group {
@@ -127,6 +129,12 @@ struct DayContentsView: View {
                         .accessibilityLabel("\(collapsedRoutes.contains(index) ? "展开" : "收起")路线 \(index + 1)")
                         .accessibilityValue(collapsedRoutes.contains(index) ? "已收起" : "已展开")
                         .accessibilityIdentifier("route-toggle-\(index)")
+                        if ProcessInfo.processInfo.arguments.contains("--route-drag-diagnostics"), index == 0 {
+                            Text(String(dragDiagnosticUpdates)).font(.caption)
+                                .accessibilityLabel("Route drag diagnostics")
+                                .accessibilityIdentifier("route-drag-diagnostics")
+                                .accessibilityValue(String(dragDiagnosticUpdates))
+                        }
                     }
                     .background(GeometryReader { geometry in
                         Color.clear.preference(key: NativeRouteFrames.self, value: ["\(index)/header": geometry.frame(in: .global)])
@@ -261,8 +269,8 @@ struct DayContentsView: View {
             }.listRowBackground(Color(uiColor: .systemBackground))
                 .listRowSeparator(.hidden)
         }
-        .onPreferenceChange(NativeRouteFrames.self) { nativeRouteFrames = $0 }
-        .background(NativePlaceListDrop(frames: nativeRouteFrames, prefix: "day-place/" + day.id + "/", onDrop: { store.finishRouteDrop() }, sourceTargets: Dictionary(uniqueKeysWithValues: day.chains.enumerated().flatMap { route, ids in
+        .onPreferenceChange(NativeRouteFrames.self) { nativeRouteGeometry.frames = $0 }
+        .background(NativePlaceListDrop(frames: nativeRouteFrames, frameSource: { nativeRouteGeometry.frames }, prefix: "day-place/" + day.id + "/", onDiagnostics: { dragDiagnosticUpdates = $0 }, onDrop: { store.finishRouteDrop() }, sourceTargets: Dictionary(uniqueKeysWithValues: day.chains.enumerated().flatMap { route, ids in
             ids.enumerated().map { position, id in (id + "/" + String(route), "\(route)/\(position)") }
         })) { id, route in
             let payload = id.split(separator: "/")
@@ -708,7 +716,10 @@ final class NativePlaceItemProvider: NSItemProvider {
 /// Attach UIKit drop handling to the native list, whose SwiftUI rows are reused.
 struct NativePlaceListDrop: UIViewRepresentable {
     let frames: [String: CGRect]
+    var frameSource: (() -> [String: CGRect])? = nil
+    var currentFrames: [String: CGRect] { frameSource?() ?? frames }
     let prefix: String
+    var onDiagnostics: (Int) -> Void = { _ in }
     var onDrop: () -> Void = {}
     var sourceTargets: [String: String] = [:]
     var onTarget: (String?) -> Void = { _ in }
@@ -716,6 +727,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> UIView { UIView() }
     func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.recordViewUpdate()
         context.coordinator.parent = self
         DispatchQueue.main.async {
             var ancestor: UIView? = view
@@ -735,6 +747,20 @@ struct NativePlaceListDrop: UIViewRepresentable {
         var nativeRowTargets: [IndexPath: String] = [:]
         private var publishedTarget: String?
         private var animationGate = NativeDropAnimationGate()
+        let recordsDragUpdates = ProcessInfo.processInfo.arguments.contains("--route-drag-diagnostics")
+        private var diagnosticDragActive = false
+        private var diagnosticUpdates = 0
+        func recordViewUpdate() {
+            guard recordsDragUpdates, diagnosticDragActive else { return }
+            diagnosticUpdates += 1
+            NSLog("ROUTEDRAG view-update-during-drag")
+        }
+        private func finishDiagnostics() {
+            guard recordsDragUpdates else { return }
+            diagnosticDragActive = false
+            parent.onDiagnostics(diagnosticUpdates)
+            NSLog("ROUTEDRAG finished updates=%d", diagnosticUpdates)
+        }
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
@@ -762,7 +788,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
         func target(_ session: UIDropSession) -> String? {
             guard let host, let window = host.window else { return nil }
             let point = session.location(in: window)
-            let frames = parent.prefix.hasPrefix("trip-place/") ? parent.frames : (dragFrames ?? parent.frames)
+            let frames = parent.prefix.hasPrefix("trip-place/") ? parent.currentFrames : (dragFrames ?? parent.currentFrames)
             guard let match = frames.sorted(by: { $0.key.split(separator: "/").count > $1.key.split(separator: "/").count }).first(where: { $0.value.contains(point) }) else { return nil }
             let parts = match.key.split(separator: "/")
             if parts.count == 2, Int(parts[1]) != nil {
@@ -772,10 +798,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool {
             if dragFrames == nil {
-                dragFrames = parent.frames
+                diagnosticDragActive = true; diagnosticUpdates = 0
+                dragFrames = parent.currentFrames
                 nativeRowTargets = [:]
                 if let window = collectionView.window {
-                    if let pool = parent.frames["unplanned"] {
+                    if let pool = parent.currentFrames["unplanned"] {
                         for path in collectionView.indexPathsForVisibleItems {
                             if let cell = collectionView.cellForItem(at: path) {
                                 let point = cell.convert(CGPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: window)
@@ -783,7 +810,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
                             }
                         }
                     }
-                    for (key, frame) in parent.frames where key != "unplanned" {
+                    for (key, frame) in parent.currentFrames where key != "unplanned" {
                         let point = collectionView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
                         if let path = collectionView.indexPathForItem(at: point) { nativeRowTargets[path] = key }
                     }
@@ -805,7 +832,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             // make-space animation. Never replace it with moving row geometry.
             if let destination { return insertionTarget(at: destination, session: session) }
             if let pool = livePoolTarget(session) { return pool }
-            return NativeRouteDropGeometry.target(at: point, frames: parent.frames)
+            return NativeRouteDropGeometry.target(at: point, frames: parent.currentFrames)
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
@@ -828,7 +855,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
             let point = session.location(in: window)
             // Only the currently visible pool can receive a drop. Frozen source
             // frames overlap route rows after UIKit makes space for insertion.
-            if parent.frames["unplanned"]?.contains(point) == true { return "unplanned" }
+            if parent.currentFrames["unplanned"]?.contains(point) == true { return "unplanned" }
             return nil
         }
         private func insertionTarget(at destination: IndexPath, session: UIDropSession) -> String? {
@@ -862,10 +889,12 @@ struct NativePlaceListDrop: UIViewRepresentable {
             return nil
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
+            finishDiagnostics()
             originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
             publishTarget(nil); animationGate = NativeDropAnimationGate(); dragFrames = nil; nativeRowTargets = [:]
         }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
+            finishDiagnostics()
             guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
             publishTarget(nil)
             acceptDrop(coordinator.session, target: target)
@@ -933,6 +962,13 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
     }
 }
+/// Layout measurements feed drop hit-testing, not SwiftUI rendering. Native
+/// reordering changes these every animation frame; publishing them as @State
+/// invalidates the List while UIKit is in the middle of moving its own cells.
+private final class NativeRouteGeometryStorage {
+    var frames: [String: CGRect] = [:]
+}
+
 private struct NativeRouteFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
