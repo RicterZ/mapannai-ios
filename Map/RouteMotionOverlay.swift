@@ -11,8 +11,6 @@ import UIKit
     private var enabled: (() -> Bool)?
     private var cameraKey: (() -> Double)?
     private var renderedKey: Double?
-    private var coverage = CGRect.zero
-    private var anchor: (Coordinate, CGPoint)?
     private var visible = false
     private(set) var isRunning = false
     static let strokeWidth: CGFloat = 1.82
@@ -31,23 +29,26 @@ import UIKit
         refresh()
     }
     @objc func refresh() {
-        guard let host, let project, let unproject, let cameraKey, let publish else { return }
+        guard host != nil, let project, let unproject, let cameraKey, let publish else { return }
         guard enabled?() == true, !geometry.isEmpty else {
             if visible { publish([]) }
             visible = false; renderedKey = nil; return
         }
         let key = cameraKey()
-        if visible, let renderedKey, abs(renderedKey - key) <= max(abs(key), 1) * 0.000001, let anchor {
-            let current = project(anchor.0)
-            let viewport = host.bounds.offsetBy(dx: anchor.1.x - current.x, dy: anchor.1.y - current.y)
-            // Pan leaves native geographic overlays untouched; the SDK moves them with the route.
-            if coverage.contains(viewport) { return }
-        }
-        coverage = host.bounds.insetBy(dx: -host.bounds.width, dy: -host.bounds.height)
-        if let first = geometry.first?.points.first { anchor = (first, project(first)) }
+        if visible, let renderedKey, abs(renderedKey - key) <= max(abs(key), 1) * 0.000001 { return }
+        // Generate the complete route, not a viewport-dependent selection. The SDK clips
+        // native geometry; camera translation and rotation never resubmit arrow vertices.
         let paths = geometry.flatMap { route -> [[Coordinate]] in
-            let path = RouteDirectionPath(points: route.points.map(project), bounds: coverage)
-            return path.arrows(timestamp: 0, reducedMotion: true, bounds: coverage).map { arrow in
+            let projected = route.points.map(project)
+            let finite = projected.filter { $0.x.isFinite && $0.y.isFinite }
+            guard let first = finite.first else { return [] }
+            let extent = finite.dropFirst().reduce(CGRect(origin: first, size: .zero)) { rect, point in
+                CGRect(x: min(rect.minX, point.x), y: min(rect.minY, point.y),
+                       width: max(rect.maxX, point.x) - min(rect.minX, point.x),
+                       height: max(rect.maxY, point.y) - min(rect.minY, point.y))
+            }.insetBy(dx: -12, dy: -12)
+            let path = RouteDirectionPath(points: finite, bounds: extent)
+            return path.arrows(timestamp: 0, reducedMotion: true, bounds: extent).map { arrow in
                 // Fits within the 6pt selected route, including the 1.82pt stroke.
                 let cosine = cos(arrow.angle), sine = sin(arrow.angle)
                 return Self.glyphPoints.map { point in
@@ -60,6 +61,6 @@ import UIKit
     }
     func stop() {
         if visible { publish?([]) }
-        visible = false; renderedKey = nil; geometry = []; anchor = nil
+        visible = false; renderedKey = nil; geometry = []
     }
 }

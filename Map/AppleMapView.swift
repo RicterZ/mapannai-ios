@@ -128,7 +128,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                     guard let map else { return Coordinate(latitude: 0, longitude: 0) }
                     let coordinate = map.convert(point, toCoordinateFrom: map)
                     return Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                }, cameraKey: { [weak map] in map?.visibleMapRect.size.width ?? 0 }, publish: { [weak self, weak map] paths in
+                }, cameraKey: { [weak map] in map?.camera.centerCoordinateDistance ?? 0 }, publish: { [weak self, weak map] paths in
                     guard let self, let map else { return }
                     map.removeOverlays(self.directionLines)
                     self.directionLines = paths.map { points in
