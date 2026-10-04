@@ -119,11 +119,16 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func style(_ view: MKAnnotationView, pin: Pin) {
             view.image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { context in
-                let color = pin.marker.map { UIColor(red: CGFloat((($0.content.iconType ?? .landmark).colorRGB >> 16) & 255) / 255, green: CGFloat((($0.content.iconType ?? .landmark).colorRGB >> 8) & 255) / 255, blue: CGFloat(($0.content.iconType ?? .landmark).colorRGB & 255) / 255, alpha: 1) } ?? .systemBlue
+                let color = pin.marker.map { UIColor(red: CGFloat(($0.icon.colorRGB >> 16) & 255) / 255, green: CGFloat(($0.icon.colorRGB >> 8) & 255) / 255, blue: CGFloat($0.icon.colorRGB & 255) / 255, alpha: 1) } ?? .systemBlue
                 color.setFill(); context.cgContext.fillEllipse(in: CGRect(x: 2, y: 2, width: 28, height: 28))
                 UIColor.white.setStroke(); context.cgContext.setLineWidth(2); context.cgContext.strokeEllipse(in: CGRect(x: 2, y: 2, width: 28, height: 28))
-                let symbol = pin.marker?.content.iconType?.emoji ?? (pin.key == "draft" ? "○" : "●")
-                (symbol as NSString).draw(at: CGPoint(x: 7, y: 5), withAttributes: [.font: UIFont.systemFont(ofSize: 18), .foregroundColor: UIColor.white])
+                let symbol = (pin.marker?.icon.emoji ?? (pin.key == "draft" ? "○" : "●")) as NSString
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 12), .foregroundColor: UIColor.white
+                ]
+                let size = symbol.size(withAttributes: attributes)
+                symbol.draw(at: CGPoint(x: (32 - size.width) / 2, y: (32 - size.height) / 2),
+                            withAttributes: attributes)
             }
             view.transform = CGAffineTransform(scaleX: store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? 1.15 : 1, y: store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? 1.15 : 1)
             view.displayPriority = .required
