@@ -102,12 +102,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 if let view = map.view(for: pin) { styleDraftPin(view) }
             } else if let pin = draftPin {
                 draftPin = nil
-                if let view = map.view(for: pin), !UIAccessibility.isReduceMotionEnabled {
-                    UIView.animate(withDuration: 0.22, animations: {
-                        view.alpha = 0
-                        view.imageView.transform = CGAffineTransform(scaleX: 0.75, y: 0.75)
-                    }, completion: { [weak map] _ in map?.removeAnnotation(pin) })
-                } else { map.removeAnnotation(pin) }
+                MapInteractionFeedback.disappear(map.view(for: pin)) { [weak map] in map?.removeAnnotation(pin) }
             }
             let wanted = Set(store.mapMarkers.map(\.id))
             for id in Array(pins.keys) where !wanted.contains(id) { if let pin = pins.removeValue(forKey: id) { map.removeAnnotation(pin) } }
@@ -147,11 +142,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     status.centerCoordinate = coords[0]
                     status.zoomLevel = command.revealDraft ? map.zoomLevel : CGFloat(command.zoomLevel ?? 15)
                     if command.revealDraft {
-                        let visible = map.bounds.inset(by: insets).insetBy(dx: 22, dy: 44)
                         let position = map.convert(coords[0], toPointTo: map)
-                        // Shift only enough to reveal the point, retaining its screen position otherwise.
-                        let target = CGPoint(x: min(max(position.x, visible.minX), visible.maxX),
-                                             y: min(max(position.y, visible.minY), visible.maxY))
+                        let target = MapInteractionFeedback.revealTarget(position, bounds: map.bounds, insets: insets)
                         status.screenAnchor = CGPoint(x: target.x / max(1, map.bounds.width),
                                                       y: target.y / max(1, map.bounds.height))
                     }
@@ -479,18 +471,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let image = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location)
             let firstAppearance = view.image == nil
             view.image = image
-            if firstAppearance && !UIAccessibility.isReduceMotionEnabled {
-                let scale = CABasicAnimation(keyPath: "transform.scale")
-                scale.fromValue = 0.75; scale.toValue = 1
-                scale.duration = 0.22
-                scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                view.layer.add(scale, forKey: "draft-appear-scale")
-                let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = 0; fade.toValue = 1
-                fade.duration = 0.22
-                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                view.layer.add(fade, forKey: "draft-appear-fade")
-            }
+            if firstAppearance { MapInteractionFeedback.appear(view) }
             // The tip (22, 42) is the selected geographic point.
             view.centerOffset = CGPoint(x: 0, y: -18)
             view.zIndex = 1000

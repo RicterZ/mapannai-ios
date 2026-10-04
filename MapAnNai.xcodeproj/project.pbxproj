@@ -18,6 +18,7 @@
 		0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */; };
 		0F68D718306898A0D1AAD16E /* CameraMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C4BE74CB2536D59C80E35C9 /* CameraMotionTests.swift */; };
 		1090057AE077861B9DFB1180 /* MarkerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 425DF5BCBE1273228F07E613 /* MarkerViews.swift */; };
+		151FFF5FCFC6E8A17EB4B5C3 /* MapInteractionFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0084520CC5A2A4CC036813D3 /* MapInteractionFeedbackTests.swift */; };
 		1813F5E4A7C7AA606B7E96E7 /* DirectedRouteMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */; };
 		18DC608C17CAC7B4854B1504 /* MapLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */; };
 		22412999EF9F454257D4C2AA /* MapServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE1B1BE0D10CFCEBB91BDC15 /* MapServices.swift */; };
@@ -67,6 +68,7 @@
 		987DA7E82DF827A042CB40CE /* RouteSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9EAD315E471CD5B0A43F17 /* RouteSchedule.swift */; };
 		9AA3D451340B9A78DBD31C91 /* RouteDayPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */; };
 		9B10601417C914FADA9A378B /* IPadBackButtonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */; };
+		9B4190E0D353DF896837E949 /* MapInteractionFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43D84FB53440A194C9A163D /* MapInteractionFeedback.swift */; };
 		A0E3970C784A4F568574A973 /* GoogleMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4140415A9DAD22E98BB13192 /* GoogleMapView.swift */; };
 		A292D855F2E570ABB25B79F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1C4EE1D4A3CFED767F0CC73D /* Assets.xcassets */; };
 		A46DB7C6125137C883E819A0 /* MapMarkerAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B450235965289010509590A /* MapMarkerAppearance.swift */; };
@@ -123,6 +125,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0084520CC5A2A4CC036813D3 /* MapInteractionFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapInteractionFeedbackTests.swift; sourceTree = "<group>"; };
 		038EF71F79FF50630DC220E9 /* LongPressPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongPressPresentationTests.swift; sourceTree = "<group>"; };
 		09050C66B29D08E3DD685E7E /* LocationFollowModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationFollowModeTests.swift; sourceTree = "<group>"; };
 		09E543F803BEDC2629C60388 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -197,6 +200,7 @@
 		9ED06A8F371A68F48D1B4F53 /* ChatMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdown.swift; sourceTree = "<group>"; };
 		A262662E6BA41D29BEFD1710 /* AIMessageMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMessageMarkdown.swift; sourceTree = "<group>"; };
 		A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneySwitchingTests.swift; sourceTree = "<group>"; };
+		A43D84FB53440A194C9A163D /* MapInteractionFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapInteractionFeedback.swift; sourceTree = "<group>"; };
 		A4A1CC01C5D4464F321F4AD2 /* MapLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayout.swift; sourceTree = "<group>"; };
 		AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerEditorTests.swift; sourceTree = "<group>"; };
 		B6BCC61DF450ED6A22EB583F /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -319,6 +323,7 @@
 				BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */,
 				DE9141FA533CC90A4942D040 /* GoogleMapIntegrationTests.swift */,
 				09050C66B29D08E3DD685E7E /* LocationFollowModeTests.swift */,
+				0084520CC5A2A4CC036813D3 /* MapInteractionFeedbackTests.swift */,
 				629F47871089F11C2624A604 /* MarkerImageCompressionTests.swift */,
 				CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */,
 				CBC1E75B71BD3626B83A19E4 /* NativeRouteDropGeometryTests.swift */,
@@ -337,6 +342,7 @@
 				8D1D7BACAED41D3AB875D71B /* AMapView.swift */,
 				6871690DA4224A68B7D97B4F /* AppleMapView.swift */,
 				4140415A9DAD22E98BB13192 /* GoogleMapView.swift */,
+				A43D84FB53440A194C9A163D /* MapInteractionFeedback.swift */,
 				6B450235965289010509590A /* MapMarkerAppearance.swift */,
 				538108F21D71668426EA9A48 /* MapRenderer.swift */,
 				2DA31AC9C1D4779C84150D42 /* RouteDayPicker.swift */,
@@ -552,6 +558,7 @@
 				E5E82A9A2F2526B35B873E8B /* JourneyViews.swift in Sources */,
 				EFACC0B506FC801DFF2CFF75 /* LocationFollowMode.swift in Sources */,
 				B353F2DDCDACD295F7761889 /* MapAnNaiApp.swift in Sources */,
+				9B4190E0D353DF896837E949 /* MapInteractionFeedback.swift in Sources */,
 				18DC608C17CAC7B4854B1504 /* MapLayout.swift in Sources */,
 				A46DB7C6125137C883E819A0 /* MapMarkerAppearance.swift in Sources */,
 				713D1F220F533D20CBEF44F5 /* MapRenderer.swift in Sources */,
@@ -599,6 +606,7 @@
 				1813F5E4A7C7AA606B7E96E7 /* DirectedRouteMoveTests.swift in Sources */,
 				0D91BDAF33E1564B4AB87964 /* GoogleMapIntegrationTests.swift in Sources */,
 				9081281758535F7F520D412F /* LocationFollowModeTests.swift in Sources */,
+				151FFF5FCFC6E8A17EB4B5C3 /* MapInteractionFeedbackTests.swift in Sources */,
 				0EDCCB2CA07F97E8E8503BE8 /* MarkerImageCompressionTests.swift in Sources */,
 				77E5FBF26CBA7D5C9FA81B1C /* MarkerRepositoryTests.swift in Sources */,
 				EDACC92DB748C66C90FF7452 /* NativeRouteDropGeometryTests.swift in Sources */,

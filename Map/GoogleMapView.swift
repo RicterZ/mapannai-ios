@@ -31,10 +31,11 @@ struct GoogleMapRenderer: UIViewRepresentable {
     }
     func updateUIView(_ map: GMSMapView, context: Context) { context.coordinator.update(map) }
     static func dismantleUIView(_ map: GMSMapView, coordinator: Coordinator) {
-        coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
+        coordinator.tapArbiter.cancel(); coordinator.stopHeading(); coordinator.locationObservation = nil; map.delegate = nil; map.isMyLocationEnabled = false
     }
     @MainActor final class Coordinator: NSObject, GMSMapViewDelegate, CLLocationManagerDelegate {
         let store: AppStore
+        let tapArbiter = MapTapArbiter()
         private let headingManager = CLLocationManager()
         var markers: [String: GMSMarker] = [:]
         var lines: [String: GMSPolyline] = [:]
@@ -63,16 +64,31 @@ struct GoogleMapRenderer: UIViewRepresentable {
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker) }
             for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil) }
             if let draft = store.draft { desired["draft"] = (draft.coordinates, draft.title, nil) }
-            for key in Array(markers.keys) where desired[key] == nil { markers.removeValue(forKey: key)?.map = nil }
+            for key in Array(markers.keys) where desired[key] == nil {
+                guard let marker = markers.removeValue(forKey: key) else { continue }
+                if key == "draft" { MapInteractionFeedback.disappear(marker.iconView) { marker.map = nil } }
+                else { marker.map = nil }
+            }
             for (key, value) in desired {
                 let marker = markers[key] ?? GMSMarker()
                 marker.position = Self.coordinate(value.0); marker.title = value.1; marker.userData = key
                 marker.groundAnchor = CGPoint(x: 0.5, y: key == "draft" ? 42.0/48.0 : value.2 == nil ? 1 : 0.5)
-                marker.zIndex = value.2 != nil && store.selectedMarker?.id == value.2?.id ? 3 : key.hasPrefix("saved/") ? 2 : 1
+                marker.zIndex = key == "draft" ? 1000 : value.2 != nil && store.selectedMarker?.id == value.2?.id ? 3 : key.hasPrefix("saved/") ? 2 : 1
                 if let saved = value.2 {
                     marker.icon = MapMarkerAppearance.image(icon: saved.icon, compact: MapZoomPresentation.isCompact(Double(map.camera.zoom)), selected: store.selectedMarker?.id == saved.id)
                 } else if key == "draft" { marker.icon = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location) }
                 else { marker.icon = SearchPinAppearance.image(selected: store.editingSearchPlaceID == String(key.dropFirst(7))) }
+                if key == "draft" {
+                    let first = marker.iconView == nil
+                    let view = (marker.iconView as? UIImageView) ?? UIImageView()
+                    view.image = marker.icon; view.bounds.size = CGSize(width: 44, height: 48)
+                    marker.iconView = view
+                    marker.tracksViewChanges = first
+                    if first {
+                        MapInteractionFeedback.appear(view)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + MapInteractionFeedback.duration) { [weak marker] in marker?.tracksViewChanges = false }
+                    }
+                }
                 marker.map = map; markers[key] = marker
             }
             let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
@@ -107,6 +123,14 @@ struct GoogleMapRenderer: UIViewRepresentable {
             let insets = command.viewportInsets(base: store.mapViewportInsets, height: map.bounds.height,
                 bottomSafeArea: map.safeAreaInsets.bottom, bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
             map.padding = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
+            if command.revealDraft {
+                let screen = map.projection.point(for: Self.coordinate(first))
+                let padding = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
+                let target = MapInteractionFeedback.revealTarget(screen, bounds: map.bounds, insets: padding)
+                let update = GMSCameraUpdate.scrollBy(x: screen.x - target.x, y: screen.y - target.y)
+                if UIAccessibility.isReduceMotionEnabled { map.moveCamera(update) } else { map.animate(with: update) }
+                return
+            }
             if command.points.count == 1 {
                 let camera = GMSCameraPosition(target: Self.coordinate(first), zoom: command.revealDraft ? map.camera.zoom : Float(command.singlePointZoom))
                 if UIAccessibility.isReduceMotionEnabled { map.camera = camera } else { map.animate(to: camera) }
@@ -131,7 +155,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
         }
         func stopHeading() { headingManager.stopUpdatingHeading() }
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
-            store.noteMapInteraction()
+            store.noteMapInteraction(); tapArbiter.claim()
             guard let key = marker.userData as? String else { return true }
             if key.hasPrefix("saved/"), let value = store.mapMarkers.first(where: { "saved/" + $0.id == key }) { store.focus(value) }
             else if key.hasPrefix("search/"), let place = store.searchResults.first(where: { "search/" + $0.id == key }) { store.choose(place, fromMap: true) }
@@ -142,11 +166,20 @@ struct GoogleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: GMSMapView, didTapPOIWithPlaceID placeID: String, name: String, location: CLLocationCoordinate2D) {
             guard !store.placeSearchPresented else { return }
+            let point = mapView.projection.point(for: location)
+            if let saved = store.mapMarkers.first(where: { marker in
+                let screen = mapView.projection.point(for: Self.coordinate(marker.coordinates))
+                return abs(screen.x - point.x) <= 22 && abs(screen.y - point.y) <= 22
+            }) {
+                tapArbiter.claim(); store.focus(saved); return
+            }
+            tapArbiter.claim()
             store.noteMapInteraction(); store.create(at: Coordinate(latitude: location.latitude, longitude: location.longitude), poiName: name)
         }
         func mapView(_ mapView: GMSMapView, didTap overlay: GMSOverlay) {
             guard !store.placeSearchPresented, let id = overlay.userData as? String, let route = store.displayRoutes.first(where: { $0.id == id }) else { return }
-            store.noteMapInteraction(); store.selectRoute(route)
+            store.noteMapInteraction()
+            tapArbiter.scheduleRoute { [weak self] in self?.store.selectRoute(route) }
         }
         func mapView(_ mapView: GMSMapView, willMove gesture: Bool) { if gesture { store.noteMapInteraction() } }
         func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {

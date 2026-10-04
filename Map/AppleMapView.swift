@@ -24,7 +24,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         return map
     }
     func updateUIView(_ map: MKMapView, context: Context) { context.coordinator.update(map) }
-    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { map.delegate = nil; map.showsUserLocation = false }
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.tapArbiter.cancel(); map.delegate = nil; map.showsUserLocation = false }
 
     final class Pin: MKPointAnnotation {
         let key: String
@@ -41,6 +41,8 @@ struct AppleMapRenderer: UIViewRepresentable {
     final class Line: MKPolyline { var colorIndex = 0 }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
+        let tapArbiter = MapTapArbiter()
+        var lastTap: CGPoint?
         var pins: [String: Pin] = [:]
         var routes: [DisplayRoute] = []
         var lastCamera: UUID?
@@ -55,7 +57,11 @@ struct AppleMapRenderer: UIViewRepresentable {
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker, nil) }
             for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil, place) }
             if let draft = store.draft { desired["draft"] = (draft.coordinates, draft.title, nil, nil) }
-            for key in Array(pins.keys) where desired[key] == nil { map.removeAnnotation(pins.removeValue(forKey: key)!) }
+            for key in Array(pins.keys) where desired[key] == nil {
+                let pin = pins.removeValue(forKey: key)!
+                if key == "draft" { MapInteractionFeedback.disappear(map.view(for: pin)) { [weak map] in map?.removeAnnotation(pin) } }
+                else { map.removeAnnotation(pin) }
+            }
             for (key, value) in desired {
                 let pin = pins[key] ?? Pin(key: key, coordinate: value.0, title: value.1)
                 pin.marker = value.2; pin.place = value.3
@@ -94,6 +100,13 @@ struct AppleMapRenderer: UIViewRepresentable {
             let insets = command.viewportInsets(base: store.mapViewportInsets, height: map.bounds.height,
                 bottomSafeArea: map.safeAreaInsets.bottom, bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
             let padding = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
+            if command.revealDraft, let point = command.points.first {
+                let screen = map.convert(Pin.coordinate(point), toPointTo: map)
+                let target = MapInteractionFeedback.revealTarget(screen, bounds: map.bounds, insets: padding)
+                let center = CGPoint(x: map.bounds.midX + screen.x - target.x, y: map.bounds.midY + screen.y - target.y)
+                map.setCenter(map.convert(center, toCoordinateFrom: map), animated: !UIAccessibility.isReduceMotionEnabled)
+                return
+            }
             var rect = MKMapRect.null
             for point in command.points { let p = MKMapPoint(Pin.coordinate(point)); rect = rect.union(MKMapRect(x: p.x, y: p.y, width: 1, height: 1)) }
             if command.points.count == 1 {
@@ -147,16 +160,21 @@ struct AppleMapRenderer: UIViewRepresentable {
             view.annotation = pin; view.canShowCallout = false; style(view, pin: pin); return view
         }
         func style(_ view: MKAnnotationView, pin: Pin) {
+            let firstDraft = pin.key == "draft" && view.accessibilityIdentifier != "map-draft-pin"
+            view.alpha = 1
+            view.accessibilityIdentifier = pin.key == "draft" ? "map-draft-pin" : pin.key
             if let marker = pin.marker {
                 view.image = MapMarkerAppearance.image(icon: marker.icon, compact: compact, selected: store.selectedMarker?.id == marker.id)
             } else if pin.key == "draft" {
                 view.image = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location)
             } else {
-                view.image = SearchPinAppearance.image(selected: store.editingSearchPlaceID == pin.place?.id)
+                view.image = SearchPinAppearance.image(selected: store.selectedSearchPlaceID == pin.place?.id)
             }
             view.centerOffset = pin.key == "draft" ? CGPoint(x: 0, y: -18) : pin.marker == nil ? CGPoint(x: 0, y: -14) : .zero
             view.transform = .identity
             view.zPriority = store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? .max : pin.marker != nil ? .defaultSelected : .defaultUnselected
+            if pin.key == "draft" { view.zPriority = .max }
+            if firstDraft { MapInteractionFeedback.appear(view) }
             view.displayPriority = .required
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -166,10 +184,16 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let pin = annotation as? Pin {
+                tapArbiter.claim()
                 if let marker = pin.marker { store.focus(marker) }
                 else if let place = pin.place { store.choose(place, fromMap: true) }
             } else if let feature = annotation as? MKMapFeatureAnnotation, !store.placeSearchPresented {
-                store.create(at: Self.internalCoordinate(feature.coordinate), poiName: feature.title)
+                if let point = lastTap, let pin = hitPin(mapView, at: point), let marker = pin.marker {
+                    tapArbiter.claim(); store.focus(marker)
+                } else {
+                    tapArbiter.claim()
+                    store.create(at: Self.internalCoordinate(feature.coordinate), poiName: feature.title)
+                }
             }
             mapView.deselectAnnotation(annotation, animated: false)
         }
@@ -179,10 +203,24 @@ struct AppleMapRenderer: UIViewRepresentable {
             let coordinate = map.convert(gesture.location(in: map), toCoordinateFrom: map)
             store.noteMapInteraction(); store.create(at: Self.internalCoordinate(coordinate))
         }
+        func hitPin(_ map: MKMapView, at point: CGPoint) -> Pin? {
+            pins.values.sorted { ($0.marker != nil ? 1 : 0) > ($1.marker != nil ? 1 : 0) }.first { pin in
+                guard let view = map.view(for: pin) else { return false }
+                let local = view.convert(point, from: map)
+                return view.bounds.insetBy(dx: min(0, (view.bounds.width - 44)/2), dy: min(0, (view.bounds.height - 44)/2)).contains(local)
+            }
+        }
         @objc func tap(_ gesture: UITapGestureRecognizer) {
             guard gesture.state == .ended, let map = gesture.view as? MKMapView else { return }
             store.noteMapInteraction()
             let point = gesture.location(in: map)
+            lastTap = point
+            if let pin = hitPin(map, at: point) {
+                tapArbiter.claim()
+                if let marker = pin.marker { store.focus(marker) }
+                else if let place = pin.place { store.choose(place, fromMap: true) }
+                return
+            }
             for annotation in map.annotations {
                 if let view = map.view(for: annotation), view.frame.insetBy(dx: -6, dy: -6).contains(point) { return }
             }
@@ -190,8 +228,11 @@ struct AppleMapRenderer: UIViewRepresentable {
             let candidates = RouteSelection.candidates(at: (point.x, point.y), routes: routes) { coordinate in
                 let projected = map.convert(Pin.coordinate(coordinate), toPointTo: map); return (projected.x, projected.y)
             }
-            if candidates.count == 1, let route = candidates.first { store.selectRoute(route) }
-            else if !candidates.isEmpty { store.offerRoutes(candidates, at: point) }
+            tapArbiter.scheduleRoute { [weak self] in
+                guard let self else { return }
+                if candidates.count == 1, let route = candidates.first { self.store.selectRoute(route) }
+                else if !candidates.isEmpty { self.store.offerRoutes(candidates, at: point) }
+            }
         }
     }
 }

@@ -197,3 +197,5 @@ AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执
 定位交互共用 LocationFollowMode：idle→centered→heading→centered；第二次实心location.fill，第三次空心location并恢复北朝上，手动地图操作退回idle。MapKit/高德原生followWithHeading，Google使用CoreLocation heading驱动镜头bearing；退出Google销毁时停止方向监听。方向跟随需真机传感器验证。
 
 本机地图凭据统一管理于被忽略的 Config/Local.xcconfig（建议权限0600），不另建含Key的env。AMAP_IOS_KEY与GOOGLE_MAPS_IOS_KEY是唯一嵌入App的字段；GOOGLE_API_KEY、AMAP_API_KEY、AMAP_JS_KEY、AMAP_JS_SECURITY_CODE可作为本地管理记录，代码不读取、不嵌入。服务器现有Key若用于iOS，须确认允许Maps SDK for iOS及实际Bundle ID；不能把服务端IP限制的Key视为已验证可用。Local.xcconfig不提交，example只保留空字段。
+
+POI反馈共用MapInteractionFeedback（0.22秒出现/消失，尊重减少动态效果）与revealTarget视口边缘避让；临时选点置顶。MapKit/Google的路线点击经MapTapArbiter短暂等待SDK POI回调，标点/POI优先取消路线提交；已保存标点优先44pt命中。各SDK底图POI命中范围由SDK提供，真实重叠点击仍需分别真机验证。
