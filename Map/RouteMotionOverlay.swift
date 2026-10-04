@@ -78,7 +78,9 @@ import UIKit
         guard let host, let project else { return }
         if projectionDirty {
             screenPaths = tracks.map { (RouteDirectionPath(points: $0.0.points.map(project), bounds: host.bounds), $0.1) }
+            CATransaction.begin(); CATransaction.setDisableActions(true)
             arrowContainer.frame = host.bounds
+            CATransaction.commit()
             let mask = UIBezierPath()
             for (path, _) in screenPaths {
                 for (index, point) in path.points.enumerated() {
@@ -95,7 +97,12 @@ import UIKit
         CATransaction.begin(); CATransaction.setDisableActions(true)
         while self.arrows.count < arrows.count {
             let arrow = CAShapeLayer()
-            let shape = UIBezierPath(); shape.move(to: CGPoint(x: -2.5, y: -2.3)); shape.addLine(to: CGPoint(x: 1.5, y: 0)); shape.addLine(to: CGPoint(x: -2.5, y: 2.3))
+            let shape = UIBezierPath()
+            for x: CGFloat in [-3, 1] {
+                shape.move(to: CGPoint(x: x - 2, y: -2.2))
+                shape.addLine(to: CGPoint(x: x + 1, y: 0))
+                shape.addLine(to: CGPoint(x: x - 2, y: 2.2))
+            }
             arrow.path = shape.cgPath; arrow.fillColor = nil
             arrow.strokeColor = UIColor.white.cgColor; arrow.lineWidth = 1.4
             arrow.lineCap = .round; arrow.lineJoin = .round; arrow.zPosition = 1000

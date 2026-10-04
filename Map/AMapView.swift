@@ -717,7 +717,10 @@ struct PreviewMap: View {
                             let path = RouteDirectionPath(points: route.points.map { point($0, size: size) }, bounds: CGRect(origin: .zero, size: size))
                             for arrow in path.arrows(timestamp: timeline.date.timeIntervalSinceReferenceDate,
                                                      reducedMotion: reduceMotion, bounds: CGRect(origin: .zero, size: size)) {
-                                var glyph = Path(); glyph.move(to: CGPoint(x: -2.5, y: -2.3)); glyph.addLine(to: CGPoint(x: 1.5, y: 0)); glyph.addLine(to: CGPoint(x: -2.5, y: 2.3))
+                                var glyph = Path()
+                                for x: CGFloat in [-3, 1] {
+                                    glyph.move(to: CGPoint(x: x - 2, y: -2.2)); glyph.addLine(to: CGPoint(x: x + 1, y: 0)); glyph.addLine(to: CGPoint(x: x - 2, y: 2.2))
+                                }
                                 var drawing = context; drawing.opacity = Double(arrow.opacity)
                                 drawing.translateBy(x: arrow.position.x, y: arrow.position.y); drawing.rotate(by: .radians(Double(arrow.angle)))
                                 drawing.stroke(glyph, with: .color(.white), style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))

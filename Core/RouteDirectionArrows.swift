@@ -4,7 +4,7 @@ import CoreGraphics
 /// Screen-space geometry makes direction cues independent of geographic distance.
 struct RouteDirectionPath {
     struct Arrow { let position: CGPoint; let angle: CGFloat; let opacity: Float }
-    static let spacing = 100.0
+    static let spacing = 90.0
     let points: [CGPoint]
     private let cumulative: [Double]
     let length: Double
@@ -20,7 +20,7 @@ struct RouteDirectionPath {
             kept.append(point); distances.append(total)
         }
         self.points = kept; cumulative = distances; length = total
-        let count = max(0, Int(min(ceil((total - 50) / Self.spacing), Double(Int.max / 2))))
+        let count = max(0, Int(min(ceil((total - Self.spacing / 2) / Self.spacing), Double(Int.max / 2))))
         let step = Self.spacing
         var visible = Set<Int>()
         if step > 0 {
@@ -51,7 +51,7 @@ struct RouteDirectionPath {
         guard points.count > 1, length >= 28 else { return [] }
         var result: [Arrow] = []
         for index in indices {
-            let distance = 50 + Double(index) * Self.spacing
+            let distance = Self.spacing / 2 + Double(index) * Self.spacing
             guard distance >= 12, distance <= length - 12 else { continue }
             var low = 1, high = points.count - 1
             while low < high {

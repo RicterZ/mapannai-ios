@@ -11,7 +11,7 @@ final class RouteDirectionArrowTests: XCTestCase {
             XCTAssertEqual(end.position.x - start.position.x, 0, accuracy: 0.001)
             XCTAssertEqual(start.angle, 0)
             let arrows = path.arrows(timestamp: 1, reducedMotion: false, bounds: bounds)
-            for pair in zip(arrows, arrows.dropFirst()) { XCTAssertEqual(pair.1.position.x - pair.0.position.x, 100, accuracy: 0.001) }
+            for pair in zip(arrows, arrows.dropFirst()) { XCTAssertEqual(pair.1.position.x - pair.0.position.x, 90, accuracy: 0.001) }
         }
     }
     func testBendUsesLocalDirectionAndReducedMotionIsStatic() throws {
