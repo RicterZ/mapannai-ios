@@ -5,18 +5,33 @@ import CoreLocation
 @MainActor final class UserDirectionIndicator: NSObject, @preconcurrency CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private weak var host: UIView?
-    private let fan = CAShapeLayer()
+    private let fan = CALayer()
     private var project: (() -> CGPoint?)?
     private var bearing: (() -> Double)?
     var onHeading: ((Double) -> Void)?
     private(set) var heading: Double?
     override init() {
         super.init(); manager.delegate = self
-        let path = UIBezierPath(); path.move(to: .zero)
-        path.addArc(withCenter: .zero, radius: 30, startAngle: -.pi / 2 - .pi / 7, endAngle: -.pi / 2 + .pi / 7, clockwise: true)
-        path.close(); fan.path = path.cgPath
-        fan.fillColor = UIColor.systemBlue.withAlphaComponent(0.22).cgColor
-        fan.strokeColor = UIColor.systemBlue.withAlphaComponent(0.45).cgColor; fan.lineWidth = 0.7
+        // Radial fade matches a soft heading beam, without a hard arc or outline.
+        let radius: CGFloat = 52
+        let size = CGSize(width: radius * 2, height: radius * 2)
+        let image = UIGraphicsImageRenderer(size: size).image { renderer in
+            let context = renderer.cgContext
+            let origin = CGPoint(x: radius, y: radius)
+            let wedge = UIBezierPath(); wedge.move(to: origin)
+            wedge.addArc(withCenter: origin, radius: radius, startAngle: -.pi / 2 - .pi / 7,
+                         endAngle: -.pi / 2 + .pi / 7, clockwise: true)
+            wedge.close(); context.addPath(wedge.cgPath); context.clip()
+            let colors = [UIColor.systemBlue.withAlphaComponent(0.52).cgColor,
+                          UIColor.systemBlue.withAlphaComponent(0.27).cgColor,
+                          UIColor.systemBlue.withAlphaComponent(0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.45, 1]) {
+                context.drawRadialGradient(gradient, startCenter: origin, startRadius: 5,
+                                           endCenter: origin, endRadius: radius, options: [])
+            }
+        }
+        fan.bounds = CGRect(origin: .zero, size: size)
+        fan.contents = image.cgImage; fan.contentsScale = image.scale
         fan.zPosition = 900; fan.isHidden = true
     }
     func attach(to view: UIView, project: @escaping () -> CGPoint?, bearing: @escaping () -> Double) {
