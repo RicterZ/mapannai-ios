@@ -68,7 +68,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
         var lastCamera: UUID?
         var lastLocate: UUID?
         private var pendingLocate = false
-        private var rebasingGestureAnchor = false
         private var lastFollowMode: LocationFollowMode = .idle
         var overviewLines: [MAPolyline] = []
         var overviewSnapshot: [RouteOverlayGeometry] = []
@@ -102,7 +101,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 return map.convert(map.userLocation.coordinate, toPointTo: map)
             }, bearing: { [weak map] in Double(map?.rotationDegree ?? 0) })
             userDirection.onHeading = { [weak self, weak map] _ in
-                guard let self, let map, self.store.locationMode == .heading, !self.navigationGestures.isInteracting, Date() >= self.locationAnimationUntil, let location = map.userLocation.location else { return }
+                guard let self, let map, self.store.locationMode == .heading, !self.navigationGestures.isInteracting, !self.mapIsMoving, Date() >= self.locationAnimationUntil, let location = map.userLocation.location else { return }
                 self.pendingLocate = true; self.focusUserLocation(map, location: location, followsHeading: true)
             }
             updateRouteSelection(map)
@@ -189,8 +188,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
             updatePinStyles(map)
             updateSearchBounds(map)
-            map.zoomingInPivotsAroundAnchorPoint = store.locationMode != .idle
-            if !mapIsMoving { rebaseGestureAnchor(map) }
+            if !mapIsMoving && !navigationGestures.isInteracting {
+                map.zoomingInPivotsAroundAnchorPoint = store.locationMode != .idle
+            }
             if lastFollowMode != store.locationMode {
                 lastFollowMode = store.locationMode
                 if store.locationMode == .idle { map.setUserTrackingMode(.none, animated: false) }
@@ -233,25 +233,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 map.setMapStatus(status, animated: duration > 0, duration: duration)
             }
             userDirection.refresh()
-        }
-        /// Change the pivot without moving the map: the coordinate currently under
-        /// the new pivot becomes its center in the same SDK status transaction.
-        private func rebaseGestureAnchor(_ map: MAMapView) {
-            guard !rebasingGestureAnchor, !navigationGestures.isInteracting,
-                  store.locationMode == .idle, map.bounds.width > 0, map.bounds.height > 0,
-                  let status = map.getMapStatus() else { return }
-            let viewport = map.bounds.inset(by: padding(map))
-            guard viewport.width > 0, viewport.height > 0 else { return }
-            let pivot = CGPoint(x: viewport.midX, y: viewport.midY)
-            let anchor = CGPoint(x: pivot.x / map.bounds.width, y: pivot.y / map.bounds.height)
-            guard abs(status.screenAnchor.x-anchor.x) > 0.0001 || abs(status.screenAnchor.y-anchor.y) > 0.0001 else { return }
-            let coordinate = map.convert(pivot, toCoordinateFrom: map)
-            guard CLLocationCoordinate2DIsValid(coordinate) else { return }
-            rebasingGestureAnchor = true
-            defer { rebasingGestureAnchor = false }
-            status.centerCoordinate = coordinate
-            status.screenAnchor = anchor
-            map.setMapStatus(status, animated: false, duration: 0)
         }
         private func padding(_ map: MAMapView, command: CameraCommand? = nil) -> UIEdgeInsets {
             let insets = (command ?? CameraCommand(points: [])).viewportInsets(base: store.mapViewportInsets,
@@ -702,8 +683,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
             updateZoomPresentation(mapView)
             updateSearchBounds(mapView)
             mapIsMoving = false
-            mapView.zoomingInPivotsAroundAnchorPoint = store.locationMode != .idle
-            rebaseGestureAnchor(mapView)
             schedulePOIRefresh()
         }
         private func updateSearchBounds(_ mapView: MAMapView) {
