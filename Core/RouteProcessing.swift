@@ -52,7 +52,7 @@ actor RouteProcessing {
             restored[index].display.points = try displayPoints(cached, origin: segment.origin, destination: segment.destination)
             restored[index].display.isPlanned = !cached.isFallback
             restored[index].display.isDashed = cached.isFallback
-            restored[index].display.distance = cached.isFallback ? nil : cached.distance
+            restored[index].display.distance = cached.distance
         }
         try Task.checkCancellation()
         return restored

@@ -1080,7 +1080,7 @@ struct TripSaveDraft: Identifiable {
                     guard !Task.isCancelled, self.routeGeneration == generation else { return }
                     if let index = displays.firstIndex(where: { $0.id == display.id }) {
                         var updated = displays[index]
-                        let distance = route.isFallback ? nil : route.distance
+                        let distance = route.distance
                         if updated.points != points || updated.isPlanned != !route.isFallback || updated.distance != distance || updated.isDashed != route.isFallback {
                             updated.points = points; updated.isPlanned = !route.isFallback
                             updated.distance = distance

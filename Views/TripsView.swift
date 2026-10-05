@@ -352,7 +352,7 @@ struct DayContentsView: View {
         #endif
         guard position > 0, position < chain.count,
               let route = store.displayRoutes.first(where: { $0.id == "\(day.id)|\(index)|\(position)|\(chain[position - 1])|\(chain[position])" }),
-              route.isPlanned, let distance = route.distance, distance.isFinite, distance >= 0 else { return nil }
+              let distance = route.distance, distance.isFinite, distance >= 0 else { return nil }
         return distance < 1000 ? "\(Int(distance.rounded())) m" : String(format: "%.1f km", distance / 1000)
     }
 

@@ -625,7 +625,7 @@ final class RoutePolicyTests: XCTestCase {
         for fallback in [nil, "UNSUPPORTED_REGION"] as [String?] {
             await cache.put(PlannedRoute(path: [RoutePoint(lat: a.latitude, lng: a.longitude), RoutePoint(lat: b.latitude, lng: b.longitude)], distance: 1234, duration: 900, fallback: fallback), key: key)
             let result = try await processing.restoringCachedGeometry([segment], cache: cache, provider: .amap, server: "test")
-            XCTAssertEqual(result[0].display.distance, fallback == nil ? 1234 : nil)
+            XCTAssertEqual(result[0].display.distance, 1234)
             XCTAssertEqual(result[0].display.isPlanned, fallback == nil)
         }
     }

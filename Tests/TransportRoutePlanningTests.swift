@@ -179,6 +179,44 @@ final class TransportRoutePlanningTests: XCTestCase {
         let attachment = XCTAttachment(image:image); attachment.name = "Compact 1pt curves"; attachment.lifetime = .keepAlways; add(attachment)
         window.isHidden = true
     }
+    @MainActor func testFallbackWithDistanceReplacesSolidAppleOverlay() async throws {
+        let store = AppStore(settings:Settings(),demo:true)
+        await store.awaitRouteUpdates()
+        let coordinator = AppleMapRenderer.Coordinator(store)
+        let map = MKMapView(frame:CGRect(x:0,y:0,width:390,height:700))
+        let a = Coordinate(latitude:31.23,longitude:121.47), b = Coordinate(latitude:31.235,longitude:121.475)
+        map.setRegion(MKCoordinateRegion(center:AppleMapRenderer.Pin.coordinate(a),latitudinalMeters:3000,longitudinalMeters:2000),animated:false)
+        coordinator.lastCamera = store.camera?.id
+        var display = DisplayRoute(id:"same-leg",dayID:"day",tripID:"trip",colorIndex:0,points:[a,b],isPlanned:true,distance:850)
+        store.displayRoutes = [display]
+        coordinator.update(map)
+        XCTAssertTrue(map.overlays.compactMap { $0 as? AppleMapRenderer.Line }.contains { !$0.overview && !$0.isDashed })
+        let response = try JSONDecoder().decode(PlannedRoute.self,from:Data(#"{"path":[{"lat":31.23,"lng":121.47},{"lat":31.235,"lng":121.475}],"distance":732,"duration":null,"fallback":"NO_ROUTE"}"#.utf8))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let cache = RouteCache(directory:directory)
+        await cache.put(response,key:RouteCache.key(a,b,mode:nil))
+        display.isPlanned = false
+        let restored = try await RouteProcessing().restoringCachedGeometry([RouteSegment(display:display,origin:a,destination:b)],cache:cache,provider:.amap,server:"")
+        store.displayRoutes = restored.map(\.display)
+        coordinator.update(map)
+        XCTAssertEqual(store.displayRoutes[0].distance,732)
+        let lines = map.overlays.compactMap { $0 as? AppleMapRenderer.Line }.filter { !$0.overview }
+        XCTAssertGreaterThan(lines.count,2)
+        XCTAssertTrue(lines.allSatisfy(\.isDashed))
+        for overlay in map.overlays {
+            let renderer = try XCTUnwrap(coordinator.mapView(map,rendererFor:overlay) as? MKPolylineRenderer)
+            let line = try XCTUnwrap(overlay as? AppleMapRenderer.Line)
+            XCTAssertEqual(renderer.alpha,line.overview ? 0 : 1)
+        }
+    }
+    func testLiveDatongTaiyuanResponseHasNoFallbackDespiteStationOnlyGeometry() throws {
+        // Sanitized production response, 2026-10-05, transportMode=train.
+        let response = try JSONDecoder().decode(PlannedRoute.self,from:Data(#"{"path":[{"lat":40.04484859193348,"lng":113.35792643827772},{"lat":37.791143065736144,"lng":112.60459350115455}],"distance":276317,"duration":7740}"#.utf8))
+        XCTAssertFalse(response.isFallback)
+        XCTAssertEqual(response.path.count,2)
+        XCTAssertEqual(response.distance,276317)
+    }
     func testFallbackIsDashedAndTransitExpirySurvivesDiskReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:directory) }
@@ -193,7 +231,7 @@ final class TransportRoutePlanningTests: XCTestCase {
             let restored = try await processing.restoringCachedGeometry([RouteSegment(display:display,origin:a,destination:b)],cache:cache,provider:.amap,server:"")
             XCTAssertTrue(restored[0].display.isDashed)
             XCTAssertFalse(restored[0].display.isPlanned)
-            XCTAssertNil(restored[0].display.distance)
+            XCTAssertEqual(restored[0].display.distance,100)
             XCTAssertEqual(restored[0].display.points,RouteGeometry.curve(a,b))
             let future = Date().addingTimeInterval(3601)
             let memory = await cache.get(key,now:future)
