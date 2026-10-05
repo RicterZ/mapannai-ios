@@ -70,6 +70,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var pendingLocate = false
         private var rebasingGestureAnchor = false
         private var lastFollowMode: LocationFollowMode = .idle
+        var overviewLines: [MAPolyline] = []
+        var overviewSnapshot: [RouteOverlayGeometry] = []
         var routesVisible = true
         var lastStyledCompact: Bool?
         var lastStyledSelection: String?
@@ -514,15 +516,31 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.accessibilityIdentifier = "map-marker-\(pin.markerID)"
         }
         private func updateZoomPresentation(_ map: MAMapView) {
+            let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
+            if snapshot != overviewSnapshot {
+                map.removeOverlays(overviewLines)
+                overviewSnapshot = snapshot
+                overviewLines = store.displayRoutes.compactMap { route in
+                    var coordinates = MapZoomPresentation.endpoints(route).map { point -> CLLocationCoordinate2D in
+                        let p = Coordinates.gcj(point); return CLLocationCoordinate2D(latitude:p.latitude,longitude:p.longitude)
+                    }
+                    guard coordinates.count == 2 else { return nil }
+                    let line = MAPolyline(coordinates:&coordinates,count:UInt(coordinates.count))!
+                    line.title = String(route.colorIndex)
+                    return line
+                }
+                if !routesVisible { map.addOverlays(overviewLines) }
+            }
             updatePinStyles(map)
             let visible = !MapZoomPresentation.isCompact(Double(map.zoomLevel))
             guard visible != routesVisible else { return }
             routesVisible = visible
             let overlays = lines.values.flatMap { [$0.0, $0.1] }
             if visible {
+                map.removeOverlays(overviewLines)
                 map.addOverlays(overlays)
                 selectionRequest = nil; updateRouteSelection(map)
-            } else { map.removeOverlays(overlays) }
+            } else { map.removeOverlays(overlays); map.addOverlays(overviewLines) }
         }
         func mapView(_ mapView: MAMapView!, regionWillChangeAnimated animated: Bool) {
             navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
@@ -544,6 +562,12 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
         }
         func mapView(_ mapView: MAMapView!, rendererFor overlay: MAOverlay!) -> MAOverlayRenderer! {
+            if let line = overlay as? MAPolyline, overviewLines.contains(where: { $0 === line }) {
+                let renderer = MAPolylineRenderer(polyline:line)!
+                renderer.lineWidth = 1
+                renderer.strokeColor = RouteLineAppearance.color(Int(line.title ?? "") ?? 0)
+                return renderer
+            }
             guard let line = overlay as? MAPolyline, let style = overlayStyle[ObjectIdentifier(line)] else { return nil }
             let renderer = MAPolylineRenderer(polyline: line)!
             renderer.strokeColor = style.0
@@ -731,9 +755,14 @@ struct PreviewMap: View {
                         path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y-80))
                         context.stroke(path, with: .color(.white.opacity(0.7)), lineWidth: 10)
                     }
-                    for route in MapZoomPresentation.isCompact(zoom) ? [] : store.displayRoutes {
-                        var path = Path(); for (index, p) in route.points.enumerated() {
+                    for route in store.displayRoutes {
+                        let overview = MapZoomPresentation.isCompact(zoom)
+                        var path = Path(); for (index, p) in (overview ? MapZoomPresentation.endpoints(route) : route.points).enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
+                        }
+                        if overview {
+                            context.stroke(path, with: .color(Theme.color(route.colorIndex)), lineWidth: 1)
+                            continue
                         }
                         context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID, dashed: route.isDashed), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))
                         context.stroke(path, with: .color(Theme.color(route.colorIndex)), style: StrokeStyle(lineWidth: RouteLineAppearance.width(selected: store.dayID == route.dayID, dashed: route.isDashed), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))

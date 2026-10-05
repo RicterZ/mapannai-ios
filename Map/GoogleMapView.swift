@@ -46,6 +46,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
         var markers: [String: GMSMarker] = [:]
         var lines: [String: GMSPolyline] = [:]
         var casings: [String: GMSPolyline] = [:]
+        var overviewLines: [GMSPolyline] = []
         var geometries: [RouteOverlayGeometry] = []
         var lastCamera: UUID?
         var lastLocate: UUID?
@@ -112,6 +113,15 @@ struct GoogleMapRenderer: UIViewRepresentable {
             }
             let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
             if snapshot != geometries {
+                overviewLines.forEach { $0.map = nil }
+                overviewLines = store.displayRoutes.map { route in
+                    let path = GMSMutablePath()
+                    MapZoomPresentation.endpoints(route).forEach { path.add(Self.coordinate($0)) }
+                    let line = GMSPolyline(path:path)
+                    line.strokeWidth = 1; line.strokeColor = RouteLineAppearance.color(route.colorIndex)
+                    line.isTappable = false; line.zIndex = 0
+                    return line
+                }
                 geometries = snapshot
                 for line in Array(lines.values) + Array(casings.values) { line.map = nil }; lines = [:]; casings = [:]
                 for geometry in snapshot {
@@ -128,6 +138,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
                     line.map = map; lines[geometry.id] = line
                 }
             }
+            for line in overviewLines { line.map = MapZoomPresentation.isCompact(Double(map.camera.zoom)) ? map : nil }
             for line in lines.values { line.isTappable = !store.placeSearchPresented; line.map = MapZoomPresentation.isCompact(Double(map.camera.zoom)) ? nil : map }
             let selected = store.displayRoutes.filter { $0.dayID == store.dayID }
             let selectedIDs = Set(selected.map(\.id))

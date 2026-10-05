@@ -38,7 +38,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             return CLLocationCoordinate2D(latitude: displayed.latitude, longitude: displayed.longitude)
         }
     }
-    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var casing = false; var isDashed = false }
+    final class Line: MKPolyline { var colorIndex = 0; var dayID = ""; var overview = false; var casing = false; var isDashed = false }
     @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let store: AppStore
         let tapArbiter = MapTapArbiter()
@@ -102,6 +102,12 @@ struct AppleMapRenderer: UIViewRepresentable {
                 routes = store.displayRoutes
                 map.removeOverlays(map.overlays.filter { $0 is Line })
                 dashScale = 0
+                for route in routes {
+                    var coordinates = MapZoomPresentation.endpoints(route).map(Pin.coordinate)
+                    let line = Line(coordinates: &coordinates, count: coordinates.count)
+                    line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.overview = true
+                    map.addOverlay(line, level: .aboveRoads)
+                }
                 for route in routes where !route.isDashed {
                     var coordinates = route.points.map(Pin.coordinate)
                     for casing in [true, false] {
@@ -255,9 +261,9 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         private func styleRoute(_ renderer: MKPolylineRenderer, line: Line) {
             let selected = line.dayID == store.dayID
-            renderer.alpha = compact ? 0 : 1
+            renderer.alpha = line.overview == compact ? 1 : 0
             renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
-            renderer.lineWidth = line.casing ? RouteLineAppearance.outlineWidth(selected: selected, dashed: line.isDashed) : RouteLineAppearance.width(selected: selected, dashed: line.isDashed)
+            renderer.lineWidth = line.overview ? 1 : line.casing ? RouteLineAppearance.outlineWidth(selected: selected, dashed: line.isDashed) : RouteLineAppearance.width(selected: selected, dashed: line.isDashed)
             renderer.lineCap = line.isDashed ? .butt : .round; renderer.lineJoin = .round
             // Dashed routes are native solid polylines; never use rasterized dash styling.
             renderer.lineDashPattern = nil

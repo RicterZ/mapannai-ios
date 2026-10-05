@@ -142,6 +142,41 @@ final class TransportRoutePlanningTests: XCTestCase {
         let corner = RouteDashGeometry.segments([.zero,CGPoint(x:4,y:0),CGPoint(x:4,y:20)],unitsPerPoint:1,clip:CGRect(x:-10,y:-10,width:50,height:50))
         XCTAssertEqual(corner[0],[.zero,CGPoint(x:4,y:0),CGPoint(x:4,y:4)])
     }
+    @MainActor func testCompactConnectionsScreenshot() async throws {
+        let store = AppStore(settings:Settings(),demo:true)
+        await store.awaitRouteUpdates()
+        let window = UIWindow(frame:CGRect(x:0,y:0,width:390,height:700))
+        let map = MKMapView(frame:window.bounds)
+        let controller = UIViewController(); controller.view = map
+        window.rootViewController = controller; window.makeKeyAndVisible()
+        let coordinator = AppleMapRenderer.Coordinator(store); map.delegate = coordinator
+        coordinator.compact = true
+        let points = [Coordinate(latitude:31.1,longitude:121.2),Coordinate(latitude:31.4,longitude:121.5),Coordinate(latitude:31.15,longitude:121.75)]
+        map.setRegion(MKCoordinateRegion(center:CLLocationCoordinate2D(latitude:31.25,longitude:121.45),latitudinalMeters:90000,longitudinalMeters:65000),animated:false)
+        for i in 1..<points.count {
+            let route = DisplayRoute(id:"test",dayID:"",tripID:"",colorIndex:0,points:RouteGeometry.curve(points[i-1],points[i]),isPlanned:false)
+            let endpoints = MapZoomPresentation.endpoints(route)
+            XCTAssertEqual(endpoints,[points[i-1],points[i]])
+            var coordinates = endpoints.map(AppleMapRenderer.Pin.coordinate)
+            let line = AppleMapRenderer.Line(coordinates:&coordinates,count:2); line.overview = true
+            map.addOverlay(line,level:.aboveRoads)
+        }
+        for (i,point) in points.enumerated() {
+            let pin = AppleMapRenderer.Pin(key:"test-\(i)",coordinate:point,title:"地点")
+            pin.marker = Marker(id:"test-\(i)",coordinates:point,content:MarkerContent(id:"test-\(i)",markdownContent:""))
+            map.addAnnotation(pin)
+        }
+        try await Task.sleep(for:.seconds(3))
+        coordinator.compact = true
+        for overlay in map.overlays {
+            if let renderer = map.renderer(for:overlay) as? MKPolylineRenderer {
+                renderer.alpha = 1; XCTAssertEqual(renderer.lineWidth,1)
+            }
+        }
+        let image = UIGraphicsImageRenderer(bounds:map.bounds).image { _ in map.drawHierarchy(in:map.bounds,afterScreenUpdates:true) }
+        let attachment = XCTAttachment(image:image); attachment.name = "Compact 1pt connections"; attachment.lifetime = .keepAlways; add(attachment)
+        window.isHidden = true
+    }
     func testFallbackIsDashedAndTransitExpirySurvivesDiskReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:directory) }
