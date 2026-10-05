@@ -192,9 +192,12 @@ struct AppleMapRenderer: UIViewRepresentable {
                 }
                 for segment in RouteDashGeometry.segments(points,unitsPerPoint:scale,clip:clip) {
                     var coordinates = segment.map { MKMapPoint(x:$0.x,y:$0.y).coordinate }
-                    let line = Line(coordinates:&coordinates,count:coordinates.count)
-                    line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.isDashed = true
-                    added.append(line)
+                    for casing in [true, false] {
+                        let line = Line(coordinates:&coordinates,count:coordinates.count)
+                        line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.isDashed = true
+                        line.casing = casing
+                        added.append(line)
+                    }
                 }
             }
             let old = map.overlays.compactMap { $0 as? Line }.filter(\.isDashed)

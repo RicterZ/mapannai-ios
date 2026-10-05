@@ -62,7 +62,7 @@ final class TransportRoutePlanningTests: XCTestCase {
                 line.dayID = selected ? (store.dayID ?? "") : "unselected"
                 line.casing = casing; line.isDashed = true
                 let renderer = try XCTUnwrap(coordinator.mapView(map,rendererFor:line) as? MKPolylineRenderer)
-                XCTAssertEqual(renderer.lineWidth, selected ? 3 : 2.5)
+                XCTAssertEqual(renderer.lineWidth, (selected ? 6 : 3.5) + (casing ? 2 : 0))
                 XCTAssertNil(renderer.lineDashPattern)
                 XCTAssertEqual(renderer.lineCap,.butt, "Round caps consume the 6pt gap when selected")
             }
@@ -115,7 +115,7 @@ final class TransportRoutePlanningTests: XCTestCase {
                         for overlay in map.overlays {
                             if let line = overlay as? AppleMapRenderer.Line, let renderer = map.renderer(for:line) as? MKPolylineRenderer {
                                 XCTAssertNil(renderer.lineDashPattern)
-                                XCTAssertEqual(renderer.lineWidth,3)
+                                XCTAssertEqual(renderer.lineWidth,line.casing ? 8 : 6)
                             }
                         }
                         if frame == 3 || frame == 9 {
