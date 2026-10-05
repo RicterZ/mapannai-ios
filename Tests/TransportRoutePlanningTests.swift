@@ -155,10 +155,12 @@ final class TransportRoutePlanningTests: XCTestCase {
         map.setRegion(MKCoordinateRegion(center:CLLocationCoordinate2D(latitude:31.25,longitude:121.45),latitudinalMeters:90000,longitudinalMeters:65000),animated:false)
         for i in 1..<points.count {
             let route = DisplayRoute(id:"test",dayID:"",tripID:"",colorIndex:0,points:RouteGeometry.curve(points[i-1],points[i]),isPlanned:false)
-            let endpoints = MapZoomPresentation.endpoints(route)
-            XCTAssertEqual(endpoints,[points[i-1],points[i]])
+            let endpoints = MapZoomPresentation.overviewCurve(route)
+            XCTAssertEqual(endpoints.first,points[i-1])
+            XCTAssertEqual(endpoints.last,points[i])
+            XCTAssertGreaterThan(endpoints.count,2)
             var coordinates = endpoints.map(AppleMapRenderer.Pin.coordinate)
-            let line = AppleMapRenderer.Line(coordinates:&coordinates,count:2); line.overview = true
+            let line = AppleMapRenderer.Line(coordinates:&coordinates,count:coordinates.count); line.overview = true
             map.addOverlay(line,level:.aboveRoads)
         }
         for (i,point) in points.enumerated() {
@@ -174,7 +176,7 @@ final class TransportRoutePlanningTests: XCTestCase {
             }
         }
         let image = UIGraphicsImageRenderer(bounds:map.bounds).image { _ in map.drawHierarchy(in:map.bounds,afterScreenUpdates:true) }
-        let attachment = XCTAttachment(image:image); attachment.name = "Compact 1pt connections"; attachment.lifetime = .keepAlways; add(attachment)
+        let attachment = XCTAttachment(image:image); attachment.name = "Compact 1pt curves"; attachment.lifetime = .keepAlways; add(attachment)
         window.isHidden = true
     }
     func testFallbackIsDashedAndTransitExpirySurvivesDiskReload() async throws {

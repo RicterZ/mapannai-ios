@@ -521,10 +521,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 map.removeOverlays(overviewLines)
                 overviewSnapshot = snapshot
                 overviewLines = store.displayRoutes.compactMap { route in
-                    var coordinates = MapZoomPresentation.endpoints(route).map { point -> CLLocationCoordinate2D in
+                    var coordinates = MapZoomPresentation.overviewCurve(route).map { point -> CLLocationCoordinate2D in
                         let p = Coordinates.gcj(point); return CLLocationCoordinate2D(latitude:p.latitude,longitude:p.longitude)
                     }
-                    guard coordinates.count == 2 else { return nil }
+                    guard coordinates.count >= 2 else { return nil }
                     let line = MAPolyline(coordinates:&coordinates,count:UInt(coordinates.count))!
                     line.title = String(route.colorIndex)
                     return line
@@ -565,7 +565,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             if let line = overlay as? MAPolyline, overviewLines.contains(where: { $0 === line }) {
                 let renderer = MAPolylineRenderer(polyline:line)!
                 renderer.lineWidth = 1
-                renderer.strokeColor = RouteLineAppearance.color(Int(line.title ?? "") ?? 0)
+                renderer.strokeColor = RouteLineAppearance.overviewColor
                 return renderer
             }
             guard let line = overlay as? MAPolyline, let style = overlayStyle[ObjectIdentifier(line)] else { return nil }
@@ -757,11 +757,11 @@ struct PreviewMap: View {
                     }
                     for route in store.displayRoutes {
                         let overview = MapZoomPresentation.isCompact(zoom)
-                        var path = Path(); for (index, p) in (overview ? MapZoomPresentation.endpoints(route) : route.points).enumerated() {
+                        var path = Path(); for (index, p) in (overview ? MapZoomPresentation.overviewCurve(route) : route.points).enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                         }
                         if overview {
-                            context.stroke(path, with: .color(Theme.color(route.colorIndex)), lineWidth: 1)
+                            context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.overviewColor)), lineWidth: 1)
                             continue
                         }
                         context.stroke(path, with: .color(Color(uiColor: RouteLineAppearance.outline(route.colorIndex))), style: StrokeStyle(lineWidth: RouteLineAppearance.outlineWidth(selected: store.dayID == route.dayID, dashed: route.isDashed), lineCap: route.isDashed ? .butt : .round, dash: route.isDashed ? [8, 6] : []))

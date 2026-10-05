@@ -103,7 +103,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                 map.removeOverlays(map.overlays.filter { $0 is Line })
                 dashScale = 0
                 for route in routes {
-                    var coordinates = MapZoomPresentation.endpoints(route).map(Pin.coordinate)
+                    var coordinates = MapZoomPresentation.overviewCurve(route).map(Pin.coordinate)
                     let line = Line(coordinates: &coordinates, count: coordinates.count)
                     line.colorIndex = route.colorIndex; line.dayID = route.dayID; line.overview = true
                     map.addOverlay(line, level: .aboveRoads)
@@ -262,7 +262,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         private func styleRoute(_ renderer: MKPolylineRenderer, line: Line) {
             let selected = line.dayID == store.dayID
             renderer.alpha = line.overview == compact ? 1 : 0
-            renderer.strokeColor = line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
+            renderer.strokeColor = line.overview ? RouteLineAppearance.overviewColor : line.casing ? RouteLineAppearance.outline(line.colorIndex) : RouteLineAppearance.color(line.colorIndex)
             renderer.lineWidth = line.overview ? 1 : line.casing ? RouteLineAppearance.outlineWidth(selected: selected, dashed: line.isDashed) : RouteLineAppearance.width(selected: selected, dashed: line.isDashed)
             renderer.lineCap = line.isDashed ? .butt : .round; renderer.lineJoin = .round
             // Dashed routes are native solid polylines; never use rasterized dash styling.

@@ -116,9 +116,9 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 overviewLines.forEach { $0.map = nil }
                 overviewLines = store.displayRoutes.map { route in
                     let path = GMSMutablePath()
-                    MapZoomPresentation.endpoints(route).forEach { path.add(Self.coordinate($0)) }
+                    MapZoomPresentation.overviewCurve(route).forEach { path.add(Self.coordinate($0)) }
                     let line = GMSPolyline(path:path)
-                    line.strokeWidth = 1; line.strokeColor = RouteLineAppearance.color(route.colorIndex)
+                    line.strokeWidth = 1; line.strokeColor = RouteLineAppearance.overviewColor
                     line.isTappable = false; line.zIndex = 0
                     return line
                 }

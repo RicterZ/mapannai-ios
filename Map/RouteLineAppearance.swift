@@ -2,6 +2,7 @@ import UIKit
 
 /// SDK adapters draw the same two strokes using these shared values.
 enum RouteLineAppearance {
+    static let overviewColor = UIColor(red: 0.62, green: 0.12, blue: 0.32, alpha: 1)
     static func width(selected: Bool, dashed: Bool = false) -> CGFloat { selected ? 6 : 3.5 }
     static func outlineWidth(selected: Bool, dashed: Bool = false) -> CGFloat { width(selected: selected, dashed: dashed) + 2 }
     static func color(_ index: Int) -> UIColor { UIColor(Theme.color(index)) }
