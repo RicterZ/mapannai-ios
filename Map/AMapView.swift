@@ -13,6 +13,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
         map.delegate = context.coordinator; map.zoomLevel = 13; map.isShowsIndoorMap = false
         map.showsCompass = false; map.showsScale = true
         map.zoomingInPivotsAroundAnchorPoint = false
+        map.isRotateCameraEnabled = false
+        map.cameraDegree = 0
         map.centerCoordinate = CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737)
         let routeTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.routeTapped(_:)))
         routeTap.cancelsTouchesInView = false
