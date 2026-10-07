@@ -46,15 +46,26 @@ final class SearchSelectionTests: XCTestCase {
         let camera = store.camera?.id
         store.choose(result, fromMap: true)
         XCTAssertEqual(store.camera?.id, camera)
-        XCTAssertEqual(store.draft?.title, "静安寺")
-        let draftID = store.draft?.id
+        XCTAssertNil(store.draft)
         store.choose(result, fromMap: true)
-        XCTAssertEqual(store.draft?.id, draftID)
+        XCTAssertNil(store.draft)
         XCTAssertEqual(store.addPlaceDay?.id, day.id)
         XCTAssertEqual(store.searchText, "静安")
         store.endAddingPlace()
         XCTAssertNil(store.addPlaceDay); XCTAssertNil(store.draft)
         XCTAssertTrue(store.searchResults.isEmpty)
+    }
+
+    @MainActor func testSavedResultFromOverviewShowsDetailsWithoutDraft() async throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let marker = try XCTUnwrap(store.markers.first)
+        store.beginAddingPlace()
+        let place = Place(id: "marker:\(marker.id)", name: marker.title, address: "",
+                          coordinates: marker.coordinates, markerId: marker.id)
+        await store.activateSavedSearchPlace(place)
+        XCTAssertFalse(store.placeSearchPresented)
+        XCTAssertNil(store.draft)
+        XCTAssertEqual(store.selectedMarker?.id, marker.id)
     }
 
     @MainActor func testPartialSaveRetriesMembershipWithoutCreatingAgainAndKeepsTarget() async throws {

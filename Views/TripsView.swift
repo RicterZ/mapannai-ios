@@ -572,8 +572,21 @@ struct DayMarkerPicker: View {
                         HStack(spacing: 12) {
                             Button { store.choose(place); onSearch() } label: {
                                 HStack(spacing: 12) {
+                                    if let marker = store.savedMarker(for: place) {
+                                        MapMarkerCircle(icon: marker.icon)
+                                            .frame(width: 32, height: 32)
+                                            .accessibilityHidden(true)
+                                    }
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(place.name).foregroundStyle(.primary)
+                                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                            Text(place.name).foregroundStyle(.primary)
+                                            if store.savedMarker(for: place) != nil {
+                                                Text("已收藏")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .fixedSize()
+                                            }
+                                        }
                                         if !place.address.isEmpty { Text(place.address).font(.footnote).foregroundStyle(.secondary) }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 }.contentShape(Rectangle())
@@ -672,7 +685,14 @@ struct DayMarkerPicker: View {
         .accessibilityIdentifier("add-place-search-panel")
     }
     @ViewBuilder private func addButton(_ place: Place) -> some View {
-        if store.isPlaceAdded(place) {
+        if store.savedMarker(for: place) != nil && store.addPlaceDay == nil && store.addPlaceTripID == nil {
+            Button {
+                Task { await store.activateSavedSearchPlace(place) }
+            } label: {
+                Image(systemName: "arrow.up.right.circle").font(.title2).frame(width: 44, height: 44)
+            }.buttonStyle(.borderless)
+                .accessibilityLabel("查看地点：\(place.name)")
+        } else if store.isPlaceAdded(place) {
             Label(day == nil ? "已保存" : "已加入", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
                 .accessibilityIdentifier("place-added-\(place.id)")
         } else {
@@ -682,7 +702,7 @@ struct DayMarkerPicker: View {
                 if store.addingPlaceID == place.id { ProgressView().frame(width: 44, height: 44) }
                 else { Image(systemName: "plus.circle.fill").font(.title2).frame(width: 44, height: 44) }
             }.buttonStyle(.borderless).disabled(store.saving)
-                .accessibilityLabel(day == nil ? "保存地点：\(place.name)" : "加入当天：\(place.name)")
+                .accessibilityLabel(store.addPlaceDay != nil ? "加入今日行程：\(place.name)" : store.addPlaceTripID != nil ? "加入当前旅行：\(place.name)" : "保存地点：\(place.name)")
                 .accessibilityIdentifier("add-search-place-\(place.id)")
         }
     }

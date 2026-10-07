@@ -32,9 +32,9 @@ struct JourneySheetBackground: View {
         if #available(iOS 26.0, *) {
             Color.clear
                 .ignoresSafeArea()
-                .glassEffect(.regular, in: CompactCapsuleShape())
+                .glassEffect(.regular, in: Capsule())
         } else {
-            CompactCapsuleShape().fill(.regularMaterial).ignoresSafeArea()
+            Capsule().fill(.regularMaterial).ignoresSafeArea()
         }
     }
 }

@@ -21,6 +21,22 @@ private actor PagedServicesMock: MapServices {
     }
 }
 final class SearchPaginationTests: XCTestCase {
+    func testSavedTitlesMergeGloballyAndCoordinateMatchesReuseMarker() {
+        let coordinate = Coordinate(latitude: 40.1234561, longitude: 116.1234561)
+        let marker = Marker(id: "saved", coordinates: coordinate,
+                            content: MarkerContent(id: "saved", title: "My Coffee", address: "Saved address", markdownContent: ""))
+        let poi = Place(id: "provider", name: "Provider name", address: "Other address",
+                        coordinates: Coordinate(latitude: 40.1234562, longitude: 116.1234562))
+        let other = Place(id: "saved", name: "Another Coffee", address: "",
+                          coordinates: Coordinate(latitude: 31, longitude: 121))
+        let results = PlaceSearchMerger.merge(query: "coffee", markers: [marker], places: [poi, other, other])
+        XCTAssertEqual(results.count, 2)
+        XCTAssertEqual(results.first?.markerId, marker.id)
+        XCTAssertEqual(results.first?.name, marker.title)
+        XCTAssertEqual(results.first?.address, "Saved address")
+        XCTAssertNil(results.last?.markerId)
+        XCTAssertEqual(PlaceSearchMerger.merge(query: "provider", markers: [marker], places: [poi]).first?.markerId, marker.id)
+    }
     @MainActor func testPagesAppendDeduplicateFreezeBoundsAndDoNotMoveCamera() async {
         let services = PagedServicesMock()
         let actual = AppStore(settings: Settings(), demo: true, services: services)

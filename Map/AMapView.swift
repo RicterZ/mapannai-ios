@@ -98,9 +98,9 @@ struct AMapNativeRenderer: UIViewRepresentable {
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
             navigationGestures.observe(map) { [weak self] in self?.store.noteMapInteraction() }
-            userDirection.attach(to: map, project: { [weak map] in
+            userDirection.attach(toAnnotation: { [weak map] in
                 guard let map, map.userLocation.location != nil else { return nil }
-                return map.convert(map.userLocation.coordinate, toPointTo: map)
+                return map.view(for: map.userLocation)
             }, bearing: { [weak map] in Double(map?.rotationDegree ?? 0) })
             userDirection.onHeading = { [weak self, weak map] _ in
                 guard let self, let map, self.store.locationMode == .heading, !self.navigationGestures.isInteracting, !self.mapIsMoving, Date() >= self.locationAnimationUntil, let location = map.userLocation.location else { return }
@@ -141,6 +141,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 if let pin = searchPins[place.id], let view = map.view(for: pin) { styleSearch(view, pin: pin) }
             }
+            updateOverviewGeometry(map)
             updateZoomPresentation(map)
             updateSearchPOIFilter(map)
             updateRoutes(map)
@@ -498,7 +499,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.isAccessibilityElement = true; view.accessibilityLabel = pin.marker.title
             view.accessibilityIdentifier = "map-marker-\(pin.markerID)"
         }
-        private func updateZoomPresentation(_ map: MAMapView) {
+        private func updateOverviewGeometry(_ map: MAMapView) {
             let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
             if snapshot != overviewSnapshot {
                 map.removeOverlays(overviewLines)
@@ -514,6 +515,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 if !routesVisible { map.addOverlays(overviewLines) }
             }
+        }
+        private func updateZoomPresentation(_ map: MAMapView) {
             updatePinStyles(map)
             let visible = !MapZoomPresentation.isCompact(Double(map.zoomLevel))
             guard visible != routesVisible else { return }

@@ -70,9 +70,9 @@ struct AppleMapRenderer: UIViewRepresentable {
             map.insetsLayoutMarginsFromSafeArea = false
             map.layoutMargins = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
             compact = isCompact(map)
-            userDirection.attach(to: map, project: { [weak map] in
+            userDirection.attach(toAnnotation: { [weak map] in
                 guard let map, map.userLocation.location != nil else { return nil }
-                return map.convert(map.userLocation.coordinate, toPointTo: map)
+                return map.view(for: map.userLocation)
             }, bearing: { [weak map] in map?.camera.heading ?? 0 })
             // MapKit owns heading tracking, camera animation and pinch interaction.
             userDirection.onHeading = nil

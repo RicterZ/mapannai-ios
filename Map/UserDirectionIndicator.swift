@@ -8,6 +8,7 @@ import CoreLocation
     private let fan = CALayer()
     private var project: (() -> CGPoint?)?
     private var bearing: (() -> Double)?
+    private var annotationView: (() -> UIView?)?
     var onHeading: ((Double) -> Void)?
     private(set) var heading: Double?
     override init() {
@@ -40,8 +41,20 @@ import CoreLocation
         if CLLocationManager.headingAvailable() { manager.startUpdatingHeading() }
         refresh()
     }
+    func attach(toAnnotation view: @escaping () -> UIView?, bearing: @escaping () -> Double) {
+        annotationView = view
+        self.bearing = bearing
+        if CLLocationManager.headingAvailable() { manager.startUpdatingHeading() }
+        refresh()
+    }
     func refresh() {
-        guard let heading, let point = project?(), point.x.isFinite, point.y.isFinite else { fan.isHidden = true; return }
+        let point: CGPoint?
+        if let annotationView {
+            guard let view = annotationView() else { fan.isHidden = true; return }
+            if host !== view { fan.removeFromSuperlayer(); host = view; view.layer.insertSublayer(fan, at: 0) }
+            point = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        } else { point = project?() }
+        guard let heading, let point, point.x.isFinite, point.y.isFinite else { fan.isHidden = true; return }
         if let scene = host?.window?.windowScene {
             switch scene.interfaceOrientation {
             case .landscapeLeft: manager.headingOrientation = .landscapeLeft

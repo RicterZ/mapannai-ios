@@ -836,6 +836,7 @@ struct TripSaveDraft: Identifiable {
         // Freeze the bounds for this search. Camera focus or selection must not
         // change page two's search area, nor reset already loaded results.
         activeSearch = (query, bounds?.expanded(factor: 2), mapServices, connectionRevision)
+        searchResults = PlaceSearchMerger.merge(query: query, markers: markers, places: [])
         await fetchSearchPage(PlaceSearchRequest(), first: true)
     }
     func loadMoreSearch() async {
@@ -878,9 +879,7 @@ struct TripSaveDraft: Identifiable {
             guard !Task.isCancelled, !task.isCancelled, searchGeneration == generation,
                   connectionRevision == context.revision else { return }
             // Across-page duplicates don't create repeated list/map identities.
-            var ids = Set(searchResults.map(\.id))
-            let additions = page.places.filter { ids.insert($0.id).inserted }
-            searchResults.append(contentsOf: additions)
+            searchResults = PlaceSearchMerger.merge(query: context.query, markers: markers, places: searchResults + page.places)
             if let next = page.nextPage, next > request.page {
                 nextSearchRequest = PlaceSearchRequest(page: next, pageSize: page.pageSize, pageToken: page.nextPageToken)
             } else { nextSearchRequest = nil }
@@ -907,6 +906,10 @@ struct TripSaveDraft: Identifiable {
         guard place.coordinates.isValid else { return }
         if placeSearchPresented {
             guard draft == nil else { return }
+            if fromMap, savedMarker(for: place) != nil, addPlaceDay == nil, addPlaceTripID == nil {
+                Task { await activateSavedSearchPlace(place) }
+                return
+            }
             if selectedSearchPlaceID != place.id {
                 selectedSearchPlaceID = place.id; addPlaceError = nil
                 fly([place.coordinates])
@@ -925,7 +928,10 @@ struct TripSaveDraft: Identifiable {
     var selectedSearchPlace: Place? { searchResults.first { $0.id == selectedSearchPlaceID } }
     func savedMarker(for place: Place) -> Marker? {
         // Provider POI IDs and our marker IDs are different namespaces.
-        createdSearchMarkers[place.id] ?? markers.first { $0.coordinates == place.coordinates }
+        createdSearchMarkers[place.id] ?? markers.first {
+            if let markerID = place.markerId { return $0.id == markerID }
+            return $0.coordinates == place.coordinates
+        }
     }
     func isPlaceAdded(_ place: Place) -> Bool {
         if addedPlaceIDs.contains(place.id) { return true }
@@ -939,9 +945,23 @@ struct TripSaveDraft: Identifiable {
     }
     func prepareSearchPlaceAddition(_ place: Place) {
         guard draft == nil else { return }
+        if savedMarker(for: place) != nil {
+            Task { await activateSavedSearchPlace(place) }
+            return
+        }
         editingSearchPlaceID = place.id
         draft = savedMarker(for: place).map(MarkerDraft.init(marker:))
             ?? MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address, placeReferences: place.placeReferences)
+    }
+    func activateSavedSearchPlace(_ place: Place) async {
+        guard placeSearchPresented, draft == nil, let marker = savedMarker(for: place) else { return }
+        if addPlaceDay != nil || addPlaceTripID != nil {
+            choose(place)
+            if !isPlaceAdded(place) { _ = await addSearchPlace(place) }
+        } else {
+            endAddingPlace()
+            focus(marker)
+        }
     }
     /// Keep the created ID after a partial failure so retry only completes membership.
     @discardableResult func addSearchPlace(_ place: Place, edited: MarkerDraft? = nil, using suppliedClient: APIClient? = nil, reserved: Bool = false) async -> Bool {

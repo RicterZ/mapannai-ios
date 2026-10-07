@@ -162,6 +162,32 @@ struct Place: Identifiable, Hashable {
     var coordinates: Coordinate
     var phone: String?
     var placeReferences: PlaceReferences? = nil
+    var markerId: String? = nil
+}
+
+enum PlaceSearchMerger {
+    static func merge(query: String, markers: [Marker], places: [Place]) -> [Place] {
+        func key(_ coordinate: Coordinate) -> String {
+            "\((coordinate.longitude * 1_000_000).rounded())|\((coordinate.latitude * 1_000_000).rounded())"
+        }
+        func place(_ marker: Marker) -> Place {
+            Place(id: "marker:\(marker.id)", name: marker.title, address: marker.content.address ?? "",
+                  coordinates: marker.coordinates, markerId: marker.id)
+        }
+        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !keyword.isEmpty else { return [] }
+        var coordinates: [String: Marker] = [:]
+        for marker in markers where marker.coordinates.isValid {
+            if coordinates[key(marker.coordinates)] == nil { coordinates[key(marker.coordinates)] = marker }
+        }
+        var results = markers.filter { $0.coordinates.isValid && $0.title.lowercased().contains(keyword) }.map(place)
+        var ids = Set(results.map(\.id))
+        for result in places where result.coordinates.isValid {
+            let item = coordinates[key(result.coordinates)].map(place) ?? result
+            if ids.insert(item.id).inserted { results.append(item) }
+        }
+        return results
+    }
 }
 struct DisplayRoute: Identifiable {
     var id: String
