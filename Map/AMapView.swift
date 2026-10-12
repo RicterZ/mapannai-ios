@@ -129,11 +129,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 }
                 else { let pin = Pin(marker); pins[marker.id] = pin; map.addAnnotation(pin) }
             }
-            let wantedSearch = Set(store.searchResults.map(\.id))
+            let wantedSearch = Set(store.visibleSearchPlaces.map(\.id))
             for id in Array(searchPins.keys) where !wantedSearch.contains(id) {
                 if let pin = searchPins.removeValue(forKey: id) { map.removeAnnotation(pin) }
             }
-            for (index, place) in store.searchResults.enumerated() {
+            for (index, place) in store.visibleSearchPlaces.enumerated() {
                 if let pin = searchPins[place.id] { pin.update(place: place, number: index + 1) }
                 else {
                     let pin = SearchPin(place: place, number: index + 1)
@@ -445,12 +445,14 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         private func styleSearch(_ view: MAAnnotationView, pin: SearchPin) {
             let selected = store.selectedSearchPlaceID == pin.place.id
-            let key = "search-\(selected)"
-            if pinImages[key] == nil { pinImages[key] = SearchPinAppearance.image(selected: selected) }
-            view.image = pinImages[key]; view.centerOffset = CGPoint(x: 0, y: -14)
+            let firstAppearance = view.accessibilityIdentifier != "map-search-result-\(pin.place.id)"
+            let key = "search-\(pin.place.name)"
+            if pinImages[key] == nil { pinImages[key] = SearchPinAppearance.image(name: pin.place.name) }
+            view.image = pinImages[key]; view.centerOffset = CGPoint(x: 0, y: -22)
             applyAnnotationOrder(view, selected: selected, search: true)
-            view.isAccessibilityElement = true; view.accessibilityLabel = "搜索结果\(pin.number)：\(pin.place.name)"
+            view.isAccessibilityElement = true; view.accessibilityLabel = "搜索地点：\(pin.place.name)"
             view.accessibilityIdentifier = "map-search-result-\(pin.place.id)"
+            if firstAppearance { MapInteractionFeedback.appear(view) }
         }
         private func styleDraftPin(_ view: MAAnnotationView) {
             let image = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location)
@@ -782,14 +784,14 @@ struct PreviewMap: View {
                         .position(point(marker.coordinates, size: proxy.size))
                         .zIndex(store.selectedMarker?.id == marker.id ? 100_000 : 100)
                 }
-                ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { index, place in
+                ForEach(Array(store.visibleSearchPlaces.enumerated()), id: \.element.id) { index, place in
                     Button { store.choose(place, fromMap: true) } label: {
-                        Image(uiImage: SearchPinAppearance.image(selected: store.selectedSearchPlaceID == place.id))
-                            .frame(width: 44, height: 44)
+                        Image(uiImage: SearchPinAppearance.image(name: place.name))
+                            .frame(minWidth: 44, minHeight: 64)
                     }.buttonStyle(.plain)
-                        .accessibilityLabel("搜索结果\(index + 1)：\(place.name)")
+                        .accessibilityLabel("搜索地点：\(place.name)")
                         .accessibilityIdentifier("map-search-result-\(place.id)")
-                        .offset(y: -14)
+                        .offset(y: -22)
                         .position(point(place.coordinates, size: proxy.size))
                         .zIndex(store.selectedSearchPlaceID == place.id ? 200_000 : 1_000)
                 }

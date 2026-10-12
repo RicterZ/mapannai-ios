@@ -307,7 +307,7 @@ final class CoreTests: XCTestCase {
         let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-01T12:00:00Z"))
         store.applyStartupCamera(now: now, calendar: calendar)
         XCTAssertEqual(store.tripID, trip.id); XCTAssertEqual(store.dayID, trip.days[0].id)
-        XCTAssertEqual(store.camera?.zoomLevel, 15)
+        XCTAssertEqual(Set(store.camera?.points ?? []), Set(store.markers.filter { trip.days[0].markerIds.contains($0.id) }.map(\.coordinates)))
         store.select(trip: nil, focus: false)
         store.applyStartupCamera(now: now, calendar: calendar)
         XCTAssertNil(store.tripID); XCTAssertNil(store.dayID)
@@ -748,19 +748,39 @@ final class RouteEditingTests: XCTestCase {
 
 
 final class StartupLocationTests: XCTestCase {
-    @MainActor func testNearestMarkerFocusesOnceWithoutOpeningDetails() {
+    @MainActor func testGPSFallbackUsesActualLocationOnceWithoutOpeningDetails() {
         let sample = AppStore(settings: Settings(), demo: true)
         let store = AppStore(settings: Settings(), demo: false)
         store.markers = sample.markers
-        let marker = store.markers[1]
-        store.receiveStartupLocation(marker.coordinates)
-        XCTAssertEqual(store.camera?.points.first, marker.coordinates)
-        XCTAssertEqual(store.camera?.singlePointZoom, 15)
+        let location = Coordinate(latitude: 35.68, longitude: 139.76)
+        store.receiveStartupLocation(location)
+        store.applyStartupCamera()
+        XCTAssertEqual(store.camera?.points.first, location)
+        XCTAssertEqual(store.camera?.singlePointZoom, 12)
         XCTAssertNil(store.selectedMarker)
         let id = store.camera?.id
         store.receiveStartupLocation(store.markers[2].coordinates)
         XCTAssertEqual(store.camera?.id, id)
     }
+    @MainActor func testRepeatedDaySelectionFitsAllPlacesAndRejectsLateGPS() throws {
+        let sample = AppStore(settings: Settings(), demo: true)
+        let store = AppStore(settings: Settings(), demo: false)
+        store.markers = sample.markers; store.trips = sample.trips
+        let trip = try XCTUnwrap(store.trips.first)
+        let day = try XCTUnwrap(trip.days.first)
+        store.select(trip: trip, day: day, focus: false)
+        store.select(trip: trip, day: day)
+        let expected = store.markers.filter { day.markerIds.contains($0.id) }.map(\.coordinates)
+        XCTAssertEqual(Set(store.camera?.points ?? []), Set(expected))
+        let cameraID = store.camera?.id
+        store.applyStartupCamera()
+        store.receiveStartupLocation(Coordinate(latitude: 24.3, longitude: 109.4))
+        XCTAssertEqual(store.camera?.id, cameraID)
+        store.select(trip: trip)
+        let ids = Set((trip.markerIds ?? []) + trip.days.flatMap(\.markerIds))
+        XCTAssertEqual(Set(store.camera?.points ?? []), Set(store.markers.filter { ids.contains($0.id) }.map(\.coordinates)))
+    }
+
     @MainActor func testLateLocationDoesNotOverrideUserInteraction() {
         let sample = AppStore(settings: Settings(), demo: true)
         let store = AppStore(settings: Settings(), demo: false)
@@ -769,7 +789,7 @@ final class StartupLocationTests: XCTestCase {
         store.receiveStartupLocation(store.markers[0].coordinates)
         XCTAssertNil(store.camera)
     }
-    @MainActor func testLocationWaitsForMarkers() {
+    @MainActor func testLocationWaitsForStartupSelection() {
         let sample = AppStore(settings: Settings(), demo: true)
         let store = AppStore(settings: Settings(), demo: false)
         store.markers = sample.markers

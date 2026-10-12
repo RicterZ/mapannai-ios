@@ -30,7 +30,14 @@ struct NativePlaceSearchBar: UIViewRepresentable {
     func makeUIView(context: Context) -> UISearchBar {
         let bar = UISearchBar()
         bar.searchBarStyle = .minimal
-        bar.placeholder = "搜索地点"
+        bar.placeholder = "搜索地点、地址"
+        bar.setSearchFieldBackgroundImage(UIImage(), for: .normal)
+        bar.searchTextField.backgroundColor = .clear
+        bar.searchTextField.leftView = nil
+        bar.searchTextField.font = .preferredFont(forTextStyle: .body)
+        bar.searchTextField.layer.cornerRadius = 22
+        bar.searchTextField.clipsToBounds = true
+        bar.tintColor = .label
         bar.returnKeyType = .search
         bar.autocorrectionType = .no
         bar.delegate = context.coordinator

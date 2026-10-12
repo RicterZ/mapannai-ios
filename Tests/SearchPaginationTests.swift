@@ -21,12 +21,24 @@ private actor PagedServicesMock: MapServices {
     }
 }
 final class SearchPaginationTests: XCTestCase {
+    @MainActor func testOnlySelectedSearchResultAppearsOnMap() {
+        let store = AppStore(settings: Settings(), demo: true)
+        let first = Place(id: "one", name: "One", address: "", coordinates: Coordinate(latitude: 31, longitude: 121))
+        let second = Place(id: "two", name: "Two", address: "", coordinates: Coordinate(latitude: 32, longitude: 122))
+        store.searchResults = [first, second]
+        XCTAssertTrue(store.visibleSearchPlaces.isEmpty)
+        store.selectedSearchPlaceID = second.id
+        XCTAssertEqual(store.visibleSearchPlaces, [second])
+        store.clearSearch()
+        XCTAssertTrue(store.visibleSearchPlaces.isEmpty)
+    }
+
     func testSavedTitlesMergeGloballyAndCoordinateMatchesReuseMarker() {
         let coordinate = Coordinate(latitude: 40.1234561, longitude: 116.1234561)
         let marker = Marker(id: "saved", coordinates: coordinate,
                             content: MarkerContent(id: "saved", title: "My Coffee", address: "Saved address", markdownContent: ""))
         let poi = Place(id: "provider", name: "Provider name", address: "Other address",
-                        coordinates: Coordinate(latitude: 40.1234562, longitude: 116.1234562))
+                        coordinates: Coordinate(latitude: 40.1234562, longitude: 116.1234562), phone: "12345", types: ["咖啡厅"], rating: 4.5)
         let other = Place(id: "saved", name: "Another Coffee", address: "",
                           coordinates: Coordinate(latitude: 31, longitude: 121))
         let results = PlaceSearchMerger.merge(query: "coffee", markers: [marker], places: [poi, other, other])
@@ -34,6 +46,9 @@ final class SearchPaginationTests: XCTestCase {
         XCTAssertEqual(results.first?.markerId, marker.id)
         XCTAssertEqual(results.first?.name, marker.title)
         XCTAssertEqual(results.first?.address, "Saved address")
+        XCTAssertEqual(results.first?.types, ["咖啡厅"])
+        XCTAssertEqual(results.first?.rating, 4.5)
+        XCTAssertEqual(results.first?.phone, "12345")
         XCTAssertNil(results.last?.markerId)
         XCTAssertEqual(PlaceSearchMerger.merge(query: "provider", markers: [marker], places: [poi]).first?.markerId, marker.id)
     }

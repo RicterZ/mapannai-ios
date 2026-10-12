@@ -31,7 +31,7 @@ With route planning enabled, each planned segment's distance appears between its
 
 Need a server? Follow the [MapAnNai Plus deployment guide](https://github.com/RicterZ/mapannai-plus#deploy-your-own-server), then enter its address and API token, if required, in the client. Searching, saving changes, and route planning require a network connection.
 
-On launch, allow location access to center the map on your nearest saved place. If location is unavailable, the app keeps its date-based starting view.
+On launch, the map prioritizes your date-based itinerary. When no itinerary provides a location, allowing location access centers the map on your current position. Search opens a full-page list; tap a result to see its name label on the map and a half-screen place detail panel.
 
 ## Install on iPhone or iPad
 

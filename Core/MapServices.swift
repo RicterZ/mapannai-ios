@@ -68,10 +68,12 @@ struct ServerMapServices: MapServices {
         var coordinates: Coordinate
         var placeId: String?
         var phone: String?
+        var types: [String]?
+        var rating: Double?
         var placeReferences: PlaceReferences?
         var place: Place {
             let stableID = placeId?.isEmpty == false ? placeId! : "\(name)|\(coordinates.latitude),\(coordinates.longitude)"
-            return Place(id: stableID, name: name, address: address ?? "", coordinates: coordinates, phone: phone, placeReferences: placeReferences)
+            return Place(id: stableID, name: name, address: address ?? "", coordinates: coordinates, phone: phone, placeReferences: placeReferences, types: types ?? [], rating: rating.flatMap { $0 > 0 ? $0 : nil })
         }
     }
     private struct DetailsResponse: Decodable { var success: Bool; var data: SearchResult }

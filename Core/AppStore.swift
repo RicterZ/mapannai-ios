@@ -68,6 +68,7 @@ struct TripSaveDraft: Identifiable {
     @Published private(set) var searchError: String?
     private var addSession = UUID()
     private var createdSearchMarkers: [String: Marker] = [:]
+    @Published var searchDetailPlace: Place?
     @Published var searchResults: [Place] = []
     @Published var searchText = "" {
         didSet { if oldValue != searchText { resetSearchSession() } }
@@ -105,7 +106,6 @@ struct TripSaveDraft: Identifiable {
     private var dataRevision = UUID()
     private var refreshing = false
     private var startupLocation: Coordinate?
-    private var startupLocationCameraID: UUID?
     private var startupLocationFinished = false
     private var startupMapInteracted = false
     private var startupCameraPending = true
@@ -177,7 +177,7 @@ struct TripSaveDraft: Identifiable {
         } else if selectedMarker != nil { selectedMarker = nil }
         if geometry != nextGeometry || changedTrips { rebuildRoutes() }
         applyStartupCamera()
-        applyNearestStartupMarker()
+        applyStartupLocationFallback()
     }
     func refreshSelectedMarker(_ id: String) async {
         guard !demo, settings.configured, !saving else { return }
@@ -210,19 +210,13 @@ struct TripSaveDraft: Identifiable {
     func receiveStartupLocation(_ coordinate: Coordinate) {
         guard coordinate.isValid, !startupLocationFinished else { return }
         startupLocation = coordinate
-        applyNearestStartupMarker()
+        applyStartupLocationFallback()
     }
     func noteMapInteraction() { startupMapInteracted = true; stopLocationFollowing() }
-    private func applyNearestStartupMarker() {
+    private func applyStartupLocationFallback() {
         guard let location = startupLocation, !startupLocationFinished, !startupMapInteracted else { return }
-        guard camera == nil || camera?.id == startupLocationCameraID else { return }
-        guard draft == nil, selectedMarker == nil else { return }
-        guard let marker = markers.filter({ $0.coordinates.isValid }).min(by: {
-            let a = Coordinates.distance(location, $0.coordinates)
-            let b = Coordinates.distance(location, $1.coordinates)
-            return a == b ? $0.id < $1.id : a < b
-        }) else { return }
-        camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 15)
+        guard !startupCameraPending, camera == nil, draft == nil, selectedMarker == nil else { return }
+        camera = CameraCommand(points: [location], singlePointZoom: 12)
         startupLocationFinished = true
     }
     func applyStartupCamera(now: Date = Date(), calendar: Calendar = Calendar(identifier: .gregorian)) {
@@ -231,8 +225,7 @@ struct TripSaveDraft: Identifiable {
         // Do not interrupt a selection or camera action made while data was loading.
         guard tripID == nil, dayID == nil, selectedMarker == nil, draft == nil, camera == nil else { return }
         defer {
-            startupLocationCameraID = camera?.id
-            applyNearestStartupMarker()
+            applyStartupLocationFallback()
         }
         let today = StartupCamera.localDate(now: now, calendar: calendar)
         let orderedTrips = trips.sorted { $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate < $1.startDate }
@@ -723,22 +716,17 @@ struct TripSaveDraft: Identifiable {
         }) { try await $0.deleteDay(tripID: day.tripId, dayID: day.id, deleteExclusiveMarkers: deleteExclusiveMarkers) }
     }
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
-        let changedDay = tripID != trip?.id || dayID != day?.id
         tripID = trip?.id; dayID = day?.id; selectedMarker = nil
         rebuildRoutes(preservingPlannedGeometry: true)
         guard focus else { return }
         if let day {
-            guard changedDay,
-                  let firstID = day.chains.first(where: { !$0.isEmpty })?.first,
-                  let marker = markers.first(where: { $0.id == firstID && $0.coordinates.isValid }) else { return }
-            camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 15)
+            let ids = Set(day.markerIds + day.chains.flatMap { $0 })
+            let points = markers.filter { ids.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
+            if !points.isEmpty { camera = CameraCommand(points: points, singlePointZoom: 15) }
         } else if let trip {
-            guard let firstDay = trip.days.sorted(by: { $0.date < $1.date }).first else { return }
-            let orderedIDs = firstDay.chains.flatMap { $0 } + firstDay.markerIds
-            guard let marker = orderedIDs.lazy.compactMap({ id in
-                self.markers.first { $0.id == id && $0.coordinates.isValid }
-            }).first else { return }
-            camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 12)
+            let ids = Set((trip.markerIds ?? []) + trip.days.flatMap { $0.markerIds + $0.chains.flatMap { $0 } })
+            let points = markers.filter { ids.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
+            if !points.isEmpty { camera = CameraCommand(points: points, singlePointZoom: 12) }
         } else {
             fly(visibleMarkers.filter { $0.coordinates.isValid }.map(\.coordinates))
         }
@@ -823,6 +811,7 @@ struct TripSaveDraft: Identifiable {
         placeSearchPresented = true
     }
     func endAddingPlace() {
+        searchDetailPlace = nil
         addSession = UUID(); addedPlaceIDs = []; createdSearchMarkers = [:]
         addPlaceError = nil; editingSearchPlaceID = nil
         draft = nil
@@ -850,7 +839,15 @@ struct TripSaveDraft: Identifiable {
         searchPageError = nil
         let mockPlaces: [Place]?
         if demo && servicesOverride == nil {
-            if ProcessInfo.processInfo.arguments.contains("--paged-search-demo") {
+            if ProcessInfo.processInfo.arguments.contains("--search-visual-demo") {
+                let names = ["梧桐咖啡 · 街角店", "沿街咖啡", "白昼咖啡与面包", "巷里咖啡工作室", "慢行咖啡 · 花园店", "木窗咖啡", "河岸咖啡", "晴日咖啡馆", "转角咖啡与书", "午后咖啡", "小庭院咖啡", "街区咖啡"]
+                let streets = ["武康路", "安福路", "乌鲁木齐中路", "愚园路"]
+                mockPlaces = names.enumerated().map { i, name in
+                    Place(id: "visual-\(i)", name: name, address: "上海市 · \(streets[i % streets.count]) \(20 + i * 13)号（示例）",
+                        coordinates: Coordinate(latitude: 31.215 + Double(i) * 0.001, longitude: 121.44 + Double(i) * 0.0004),
+                        types: ["餐饮服务", "咖啡厅"])
+                }
+            } else if ProcessInfo.processInfo.arguments.contains("--paged-search-demo") {
                 mockPlaces = (0..<45).map { i in
                     Place(id: "paged-\(i)", name: "\(context.query) \(i + 1)", address: "上海市",
                           coordinates: Coordinate(latitude: 31.2 + Double(i) * 0.0001, longitude: 121.4))
@@ -885,10 +882,7 @@ struct TripSaveDraft: Identifiable {
             } else { nextSearchRequest = nil }
             searchHasMore = nextSearchRequest != nil
             searchPageRevision = UUID()
-            if first {
-                fly(searchResults.map(\.coordinates))
 
-            }
         } catch {
             guard searchGeneration == generation, !task.isCancelled, !(error is CancellationError) else { return }
             if first { searchError = error.localizedDescription }
@@ -925,6 +919,7 @@ struct TripSaveDraft: Identifiable {
         fly([place.coordinates])
         draft = MarkerDraft(coordinates: place.coordinates, title: place.name, address: place.address, placeReferences: place.placeReferences)
     }
+    var visibleSearchPlaces: [Place] { selectedSearchPlace.map { [$0] } ?? [] }
     var selectedSearchPlace: Place? { searchResults.first { $0.id == selectedSearchPlaceID } }
     func savedMarker(for place: Place) -> Marker? {
         // Provider POI IDs and our marker IDs are different namespaces.
@@ -1197,9 +1192,13 @@ struct CameraCommand: Identifiable {
     var singlePointZoom: Double = 15
     var detailLayout: MarkerDetailLayout? = nil
     var revealDraft = false
+    var bottomSheetFraction: Double? = nil
     func viewportInsets(base: MapViewportInsets, height: Double, bottomSafeArea: Double,
                         bottomSheet: Bool) -> MapViewportInsets {
         var insets = base
+        if let bottomSheetFraction {
+            insets = MapViewportInsets(top: 80, left: 25, bottom: height * bottomSheetFraction + bottomSafeArea + 25, right: 25)
+        }
         if bottomSheet, revealDraft { insets.bottom = height * 0.5 + bottomSafeArea + 25 }
         if bottomSheet, let detailLayout {
             // The journey panel collapses when details open; its previous full height must not shift the camera.

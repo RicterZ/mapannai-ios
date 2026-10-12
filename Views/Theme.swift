@@ -136,28 +136,29 @@ struct PanelChevron: Shape {
 
 // Short-tip map balloons share an exact anchor and a transparent 44pt hit target.
 enum SearchPinAppearance {
-    static func image(selected: Bool) -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 44, height: 44)).image { context in
-            let radius: CGFloat = selected ? 13 : 10
-            let tip = CGPoint(x: 22, y: 36)
-            let center = CGPoint(x: 22, y: tip.y - radius - 4)
-            let path = UIBezierPath()
-            path.move(to: tip)
-            path.addLine(to: CGPoint(x: center.x - radius * 0.65, y: center.y + radius * 0.76))
-            path.addArc(withCenter: center, radius: radius, startAngle: .pi * 0.725,
-                        endAngle: .pi * 2.275, clockwise: true)
-            path.close()
-            context.cgContext.saveGState()
-            context.cgContext.setShadow(offset: CGSize(width: 0, height: 1), blur: 2,
-                                        color: UIColor.black.withAlphaComponent(0.18).cgColor)
-            (selected ? UIColor.systemBlue : UIColor.systemBlue.withAlphaComponent(0.82)).setFill()
-            path.fill()
-            UIColor.white.setStroke(); path.lineWidth = 1.5; path.stroke()
-            context.cgContext.restoreGState()
-            let dotRadius: CGFloat = selected ? 4 : 3
+    // The dot at y=54 is the geographic anchor; the label floats above it.
+    static func image(name: String) -> UIImage {
+        let font = UIFont.systemFont(ofSize: 13, weight: .semibold)
+        let width = min(220, max(72, (name as NSString).size(withAttributes: [.font: font]).width + 36))
+        return UIGraphicsImageRenderer(size: CGSize(width: width, height: 64)).image { context in
+            let cg = context.cgContext
+            let ink = UIColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 1)
+            cg.setStrokeColor(ink.withAlphaComponent(0.65).cgColor)
+            cg.setLineWidth(1.5)
+            cg.move(to: CGPoint(x: width/2, y: 36)); cg.addLine(to: CGPoint(x: width/2, y: 54)); cg.strokePath()
+            cg.saveGState()
+            cg.setShadow(offset: CGSize(width: 0, height: 2), blur: 5, color: UIColor.black.withAlphaComponent(0.2).cgColor)
+            ink.setFill()
+            UIBezierPath(roundedRect: CGRect(x: 6, y: 5, width: width-12, height: 32), cornerRadius: 11).fill()
+            cg.restoreGState()
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center; paragraph.lineBreakMode = .byTruncatingTail
+            (name as NSString).draw(in: CGRect(x: 18, y: 13, width: width-36, height: 18),
+                                   withAttributes: [.font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph])
             UIColor.white.setFill()
-            UIBezierPath(ovalIn: CGRect(x: center.x - dotRadius, y: center.y - dotRadius,
-                                       width: dotRadius * 2, height: dotRadius * 2)).fill()
+            UIBezierPath(ovalIn: CGRect(x: width/2-6, y: 48, width: 12, height: 12)).fill()
+            ink.setFill()
+            UIBezierPath(ovalIn: CGRect(x: width/2-4, y: 50, width: 8, height: 8)).fill()
         }
     }
 }

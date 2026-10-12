@@ -2,6 +2,87 @@ import XCTest
 import UIKit
 
 final class SearchMapTests: XCTestCase {
+    @MainActor func testSearchVisualReviewWithManyResults() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--search-visual-demo"]; app.launch()
+        openSearch(app)
+        let search = app.searchFields["map-place-search"]
+        search.tap(); search.typeText("咖啡\n")
+        let first = app.buttons["add-place-result-visual-0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["add-place-result-visual-5"].exists)
+        screenshot("Search list with twelve fictional results")
+        first.tap()
+        XCTAssertTrue(app.buttons["search-detail-back"].waitForExistence(timeout: 5))
+        sleep(2)
+        XCTAssertFalse(app.staticTexts["地点笔记"].exists)
+        XCTAssertFalse(app.staticTexts["已收藏"].exists)
+        XCTAssertTrue(app.staticTexts["咖啡厅"].exists)
+        screenshot("POI detail with supported fields only")
+    }
+    @MainActor func testSearchStyleAndSavedPlaceDraft() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        openSearch(app)
+        let search = app.searchFields["map-place-search"]
+        search.tap(); search.typeText("静安\n")
+        let result = app.buttons["add-place-result-marker:demo-3"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        XCTAssertLessThan(search.frame.minY, 160)
+        XCTAssertFalse(app.buttons["compact-search-controls"].exists)
+        screenshot("Full-page search without map background")
+        result.tap()
+        XCTAssertTrue(app.buttons["search-detail-back"].waitForExistence(timeout: 5))
+        XCTAssertLessThan(app.buttons["search-detail-back"].frame.minY, 160)
+        sleep(2)
+        let panel = app.otherElements["edge-search-detail"]
+        XCTAssertEqual(panel.frame.minX, app.windows.firstMatch.frame.minX, accuracy: 1)
+        XCTAssertEqual(panel.frame.maxX, app.windows.firstMatch.frame.maxX, accuracy: 1)
+        XCTAssertEqual(panel.frame.maxY, app.windows.firstMatch.frame.maxY, accuracy: 2)
+        screenshot("Search result on map with half-height detail")
+        app.buttons["search-detail-back"].tap()
+        XCTAssertTrue(app.buttons["add-search-place-marker:demo-3"].exists)
+        XCTAssertEqual(search.value as? String, "静安")
+        app.buttons["close-place-picker"].tap()
+        XCTAssertFalse(search.exists)
+    }
+    @MainActor func testFullPageUnsavedDetailAndDraftReturn() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--paged-search-demo"]; app.launch()
+        openSearch(app)
+        let search = app.searchFields["map-place-search"]
+        search.tap(); search.typeText("咖啡\n")
+        let result = app.buttons["add-place-result-paged-0"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
+        let add = app.buttons["search-detail-add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()
+        XCTAssertTrue(app.textFields["地点名称"].waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["search-detail-back"].waitForExistence(timeout: 5))
+        app.buttons["search-detail-back"].tap()
+        XCTAssertEqual(search.value as? String, "咖啡")
+    }
+    @MainActor func testArchiveSearchIsFullPageAndReturnsToTrip() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview", "--trip-places-preview"]; app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
+        let add = app.buttons["trip-add-place"]
+        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
+        XCTAssertTrue(add.isHittable); add.tap()
+        let search = app.searchFields["map-place-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertLessThan(search.frame.minY, 160)
+        search.tap(); search.typeText("静安\n")
+        let result = app.buttons["add-place-result-marker:demo-3"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        screenshot("Full-page search from trip")
+        result.tap()
+        let back = app.buttons["search-detail-back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertLessThan(back.frame.minY, 160)
+        back.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "静安")
+        app.buttons["close-place-picker"].tap()
+        XCTAssertTrue(app.buttons["journey-edit-trip"].waitForExistence(timeout: 5))
+    }
     @MainActor func testSelectionAndEditingStayInOneWorkspace() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         openSearch(app)

@@ -536,25 +536,34 @@ struct PlaceSelectionRow: View {
 struct DayMarkerPicker: View {
     @ObservedObject var store: AppStore
     let day: TripDay?
-    var compact = false
-    var onInput: () -> Void = {}
-    var onSearch: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searched = false
-    private var targetTitle: String { day == nil ? "搜索地点" : "搜索图标" }
     private var targetSubtitle: String? {
-        if day != nil { return "同时添加到今日行程" }
-        return store.addPlaceTripID != nil ? "同时添加到当前旅行" : nil
+        if day != nil { return "添加到今日行程" }
+        return store.addPlaceTripID != nil ? "添加到当前旅行" : nil
     }
     var body: some View {
-        ZStack(alignment: .top) {
-        NavigationStack {
             VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Button { store.endAddingPlace() } label: {
+                        Image(systemName: "arrow.left").font(.system(size: 21, weight: .medium))
+                            .frame(width: 48, height: 52).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel("返回旅途")
+                        .accessibilityIdentifier("close-place-picker")
                 NativePlaceSearchBar(text: $store.searchText, searching: store.searching, onSearch: {
-                    searched = true; onSearch()
+                    searched = true
                     Task { await store.search() }
-                }, onClear: { store.clearSearch(); searched = false }, onBeginEditing: onInput)
-                .frame(height: 56).padding(.horizontal, 8)
+                }, onClear: { store.clearSearch(); searched = false })
+                .frame(height: 56)
+                }
+                .padding(.leading, 6).padding(.trailing, 8)
+                .background(Color(uiColor: .systemBackground), in: Capsule())
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
+                HStack {
+                    Text("地点").font(.headline)
+                    Spacer()
+                    if let targetSubtitle { Text(targetSubtitle).font(.footnote).foregroundStyle(.secondary) }
+                }.padding(.horizontal, 24).padding(.bottom, 8)
                 ScrollViewReader { reader in
                 List {
                     if store.searching { ProgressView("搜索中…") }
@@ -570,31 +579,32 @@ struct DayMarkerPicker: View {
                     ForEach(store.searchResults) { place in
                         VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 12) {
-                            Button { store.choose(place); onSearch() } label: {
+                            Button { store.choose(place); store.searchDetailPlace = place } label: {
                                 HStack(spacing: 12) {
                                     if let marker = store.savedMarker(for: place) {
-                                        MapMarkerCircle(icon: marker.icon)
+                                        Text(marker.icon.emoji).font(.title2)
                                             .frame(width: 32, height: 32)
                                             .accessibilityHidden(true)
                                     }
                                     VStack(alignment: .leading, spacing: 4) {
                                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                            Text(place.name).foregroundStyle(.primary)
+                                            Text(place.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
                                             if store.savedMarker(for: place) != nil {
-                                                Text("已收藏")
+                                                Text("已保存")
                                                     .font(.caption)
                                                     .foregroundStyle(.secondary)
                                                     .fixedSize()
                                             }
                                         }
-                                        if !place.address.isEmpty { Text(place.address).font(.footnote).foregroundStyle(.secondary) }
+                                        if !place.address.isEmpty { Text(place.address).font(.footnote).foregroundStyle(.secondary).lineLimit(2) }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 }.contentShape(Rectangle())
                             }.buttonStyle(.plain).accessibilityIdentifier("add-place-result-\(place.id)")
                             addButton(place)
                         }
-                        }.id(place.id)
-                        .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+                        }.padding(.vertical, 8).id(place.id)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color(uiColor: .systemBackground))
                     }
                     SearchPaginationFooter(store: store)
                     }
@@ -606,82 +616,24 @@ struct DayMarkerPicker: View {
                     }
                 }
             }
-            .opacity(compact ? 0 : 1)
-            .allowsHitTesting(!compact)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let error = store.addPlaceError {
                     Text(error).font(.footnote).foregroundStyle(.red).padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
                 }
             }
-            .modifier(JourneyNavigationBackground())
-            .background(JourneyToolbarContainerOffset())
-            .navigationTitle(targetTitle).navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    VStack(spacing: 2) {
-                        Text(targetTitle).font(.headline)
-                        if let targetSubtitle { Text(targetSubtitle).font(.caption).foregroundStyle(.secondary) }
-                    }.accessibilityElement(children: .combine)
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { store.endAddingPlace() } label: {
-                        Image(systemName: "chevron.left")
-                    }.disabled(store.saving)
-                        .accessibilityLabel("返回旅途")
-                        .accessibilityIdentifier("close-place-picker")
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("搜索此区域", systemImage: "magnifyingglass") {
-                        searched = true; onSearch(); Task { await store.search() }
-                    }.disabled(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.searching)
-                }
-            }
-            .navigationDestination(isPresented: Binding(get: { store.draft != nil }, set: {
-                if !$0 { store.draft = nil; store.editingSearchPlaceID = nil }
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: Binding(get: { store.searchDetailPlace == nil && store.draft != nil }, set: {
+                if !$0 && store.searchDetailPlace == nil { store.draft = nil; store.editingSearchPlaceID = nil }
             })) {
                 if let draft = store.draft {
-                    MarkerEditorView(store: store, initial: draft, embedded: true, onSaved: onSearch)
+                    MarkerEditorView(store: store, initial: draft, embedded: true)
+                        .toolbar(.visible, for: .navigationBar)
                         .id(draft.id)
                 }
             }
-        }
-        .opacity(compact ? 0 : 1)
-        .allowsHitTesting(!compact)
-        .accessibilityHidden(compact)
-            if compact {
-                HStack(spacing: 4) {
-                    Button { store.endAddingPlace() } label: {
-                        Image(systemName: "chevron.left").font(.system(size: 20))
-                            .frame(width: 30, height: 30)
-                    }.modifier(JourneyCircleButtonStyle())
-                        .frame(width: 44, height: 44)
-                        .accessibilityLabel("返回旅途").accessibilityIdentifier("close-place-picker")
-                        .frame(width: 88, alignment: .leading)
-                    VStack(spacing: 3) {
-                        Text(targetTitle).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: .label)).lineLimit(1)
-                        if let targetSubtitle { Text(targetSubtitle).font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel)) }
-                    }.frame(maxWidth: .infinity)
-                    Button {
-                        searched = true; onSearch(); Task { await store.search() }
-                    } label: {
-                        Image(systemName: "magnifyingglass").font(.system(size: 20))
-                            .frame(width: 44, height: 44)
-                    }.accessibilityLabel("搜索此区域")
-                        .disabled(store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.searching)
-                        .frame(width: 88, alignment: .trailing)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .frame(height: JourneyPresentation.compactHeight)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("compact-search-controls")
-            }
-        }
-        .onChange(of: store.draft?.id) { old, new in
-            if old == nil && new != nil { onSearch() }
-            else if old != nil && new == nil { onSearch() }
-        }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("add-place-search-panel")
     }
     @ViewBuilder private func addButton(_ place: Place) -> some View {
@@ -697,10 +649,10 @@ struct DayMarkerPicker: View {
                 .accessibilityIdentifier("place-added-\(place.id)")
         } else {
             Button {
-                store.choose(place); store.prepareSearchPlaceAddition(place); onSearch()
+                store.choose(place); store.prepareSearchPlaceAddition(place)
             } label: {
                 if store.addingPlaceID == place.id { ProgressView().frame(width: 44, height: 44) }
-                else { Image(systemName: "plus.circle.fill").font(.title2).frame(width: 44, height: 44) }
+                else { Image(systemName: "plus").font(.system(size: 18, weight: .medium)).foregroundStyle(.primary).frame(width: 36, height: 36).background(Color(uiColor: .tertiarySystemFill), in: Circle()).frame(width: 44, height: 44) }
             }.buttonStyle(.borderless).disabled(store.saving)
                 .accessibilityLabel(store.addPlaceDay != nil ? "加入今日行程：\(place.name)" : store.addPlaceTripID != nil ? "加入当前旅行：\(place.name)" : "保存地点：\(place.name)")
                 .accessibilityIdentifier("add-search-place-\(place.id)")
@@ -1050,5 +1002,76 @@ enum NativeRouteDropGeometry {
             return prefix + "header"
         }
         return nil
+    }
+}
+
+
+struct SearchPlaceDetail: View {
+    @ObservedObject var store: AppStore
+    let place: Place
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    private var marker: Marker? { store.savedMarker(for: place) }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(marker?.title ?? place.name).font(.title.bold())
+                    HStack(spacing: 10) {
+                        if let category = place.types.last, !category.isEmpty {
+                            Text(category).font(.subheadline)
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                        }
+                        if let rating = place.rating, rating > 0 {
+                            Label(rating.formatted(.number.precision(.fractionLength(1))), systemImage: "star")
+                                .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+                        }
+                    }
+                    if !place.address.isEmpty {
+                        Label(place.address, systemImage: "mappin.and.ellipse")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if let phone = place.phone, !phone.isEmpty {
+                        Label(phone, systemImage: "phone").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if marker != nil {
+                        Text("已保存").font(.caption.weight(.medium))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+                    }
+                }
+            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 12) {
+                if store.isPlaceAdded(place) {
+                    Label(store.addPlaceDay != nil || store.addPlaceTripID != nil ? "已加入" : "已保存", systemImage: "checkmark").font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        store.prepareSearchPlaceAddition(place)
+                    } label: {
+                        Label(store.addPlaceDay != nil ? "加入当天" : store.addPlaceTripID != nil ? "加入旅行" : "保存地点", systemImage: "plus")
+                    }.disabled(store.saving).accessibilityIdentifier("search-detail-add")
+                }
+                Button {
+                    var url = URLComponents(string: "https://maps.apple.com/")!
+                    url.queryItems = [URLQueryItem(name: "daddr", value: "\(place.coordinates.latitude),\(place.coordinates.longitude)"), URLQueryItem(name: "q", value: place.name)]
+                    if let url = url.url { openURL(url) }
+                } label: { Label("导航", systemImage: "location") }
+                Spacer(minLength: 0)
+            }.buttonStyle(JourneyActionStyle(compact: true))
+                .padding(16).background(Color(uiColor: .systemBackground))
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationDestination(isPresented: Binding(get: { store.draft != nil }, set: { if !$0 { store.draft = nil; store.editingSearchPlaceID = nil } })) {
+            if let draft = store.draft {
+                MarkerEditorView(store: store, initial: draft, embedded: true)
+                    .toolbar(.visible, for: .navigationBar)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("search-place-detail")
     }
 }

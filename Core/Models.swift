@@ -163,6 +163,8 @@ struct Place: Identifiable, Hashable {
     var phone: String?
     var placeReferences: PlaceReferences? = nil
     var markerId: String? = nil
+    var types: [String] = []
+    var rating: Double? = nil
 }
 
 enum PlaceSearchMerger {
@@ -183,8 +185,15 @@ enum PlaceSearchMerger {
         var results = markers.filter { $0.coordinates.isValid && $0.title.lowercased().contains(keyword) }.map(place)
         var ids = Set(results.map(\.id))
         for result in places where result.coordinates.isValid {
-            let item = coordinates[key(result.coordinates)].map(place) ?? result
+            var item = coordinates[key(result.coordinates)].map(place) ?? result
+            if item.markerId != nil {
+                item.types = result.types; item.rating = result.rating; item.phone = result.phone
+                item.placeReferences = result.placeReferences
+            }
             if ids.insert(item.id).inserted { results.append(item) }
+            else if let index = results.firstIndex(where: { $0.id == item.id }) {
+                results[index] = item
+            }
         }
         return results
     }

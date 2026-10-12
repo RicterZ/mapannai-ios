@@ -68,7 +68,8 @@ struct AppleMapRenderer: UIViewRepresentable {
             navigationGestures.observe(map) { [weak self] in self?.store.noteMapInteraction() }
             let insets = store.mapViewportInsets
             map.insetsLayoutMarginsFromSafeArea = false
-            map.layoutMargins = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
+            // Search focus supplies the complete panel padding in its camera command.
+            map.layoutMargins = store.searchDetailPlace != nil ? .zero : UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
             compact = isCompact(map)
             userDirection.attach(toAnnotation: { [weak map] in
                 guard let map, map.userLocation.location != nil else { return nil }
@@ -78,7 +79,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             userDirection.onHeading = nil
             var desired: [String: (Coordinate, String, Marker?, Place?)] = [:]
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker, nil) }
-            for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil, place) }
+            for place in store.visibleSearchPlaces { desired["search/" + place.id] = (place.coordinates, place.name, nil, place) }
             if let feature = selectedPOI, store.draft?.id != selectedPOIDraftID {
                 selectedPOI = nil; selectedPOIDraftID = nil
                 map.deselectAnnotation(feature, animated: true)
@@ -236,6 +237,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         }
         func style(_ view: MKAnnotationView, pin: Pin) {
             let firstDraft = pin.key == "draft" && view.accessibilityIdentifier != "map-draft-pin"
+            let firstSearch = pin.place != nil && view.accessibilityIdentifier != pin.key
             view.alpha = 1
             view.accessibilityIdentifier = pin.key == "draft" ? "map-draft-pin" : pin.key
             if let marker = pin.marker {
@@ -243,13 +245,13 @@ struct AppleMapRenderer: UIViewRepresentable {
             } else if pin.key == "draft" {
                 view.image = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location)
             } else {
-                view.image = SearchPinAppearance.image(selected: store.selectedSearchPlaceID == pin.place?.id)
+                view.image = SearchPinAppearance.image(name: pin.place?.name ?? "地点")
             }
-            view.centerOffset = pin.key == "draft" ? CGPoint(x: 0, y: -18) : pin.marker == nil ? CGPoint(x: 0, y: -14) : .zero
+            view.centerOffset = pin.key == "draft" ? CGPoint(x: 0, y: -18) : pin.marker == nil ? CGPoint(x: 0, y: -22) : .zero
             view.transform = .identity
             view.zPriority = store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? .max : pin.marker != nil ? .defaultSelected : .defaultUnselected
-            if pin.key == "draft" { view.zPriority = .max }
-            if firstDraft { MapInteractionFeedback.appear(view) }
+            if pin.key == "draft" || pin.place != nil { view.zPriority = .max }
+            if firstDraft || firstSearch { MapInteractionFeedback.appear(view) }
             view.displayPriority = .required
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {

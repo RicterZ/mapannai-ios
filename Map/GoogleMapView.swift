@@ -79,7 +79,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
             }
             var desired: [String: (Coordinate, String, Marker?)] = [:]
             for marker in store.mapMarkers { desired["saved/" + marker.id] = (marker.coordinates, marker.title, marker) }
-            for place in store.searchResults { desired["search/" + place.id] = (place.coordinates, place.name, nil) }
+            for place in store.visibleSearchPlaces { desired["search/" + place.id] = (place.coordinates, place.name, nil) }
             if poiInfoMarker != nil, store.draft?.id != poiDraftID {
                 poiInfoMarker?.map = nil; poiInfoMarker = nil; poiDraftID = nil
             }
@@ -92,12 +92,12 @@ struct GoogleMapRenderer: UIViewRepresentable {
             for (key, value) in desired {
                 let marker = markers[key] ?? GMSMarker()
                 marker.position = Self.coordinate(value.0); marker.title = value.1; marker.userData = key
-                marker.groundAnchor = CGPoint(x: 0.5, y: key == "draft" ? 42.0/48.0 : value.2 == nil ? 1 : 0.5)
-                marker.zIndex = key == "draft" ? 1000 : value.2 != nil && store.selectedMarker?.id == value.2?.id ? 3 : key.hasPrefix("saved/") ? 2 : 1
+                marker.groundAnchor = CGPoint(x: 0.5, y: key == "draft" ? 42.0/48.0 : value.2 == nil ? 54.0/64.0 : 0.5)
+                marker.zIndex = key == "draft" ? 1000 : value.2 != nil && store.selectedMarker?.id == value.2?.id ? 3 : key.hasPrefix("saved/") ? 2 : 999
                 if let saved = value.2 {
                     marker.icon = MapMarkerAppearance.image(icon: saved.icon, compact: MapZoomPresentation.isCompact(Double(map.camera.zoom)), selected: store.selectedMarker?.id == saved.id)
                 } else if key == "draft" { marker.icon = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location) }
-                else { marker.icon = SearchPinAppearance.image(selected: store.editingSearchPlaceID == String(key.dropFirst(7))) }
+                else { marker.icon = SearchPinAppearance.image(name: value.1) }
                 if key == "draft" {
                     let first = marker.iconView == nil
                     let view = (marker.iconView as? UIImageView) ?? UIImageView()

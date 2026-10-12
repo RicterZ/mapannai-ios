@@ -27,10 +27,9 @@ struct HomeView: View {
     @State private var routeReturnDetent: ItineraryDetent?
     @State private var markerReturnDetent: ItineraryDetent?
     @State private var mapDraftReady = true
+    @State private var searchOpenedMap = false
     @State private var mapEditorActive = false
     @State private var markerReturnExpanded = true
-    @State private var searchReturnDetent: ItineraryDetent?
-    @State private var searchReturnExpanded = true
     @StateObject private var location = LocationPermission()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -42,11 +41,23 @@ struct HomeView: View {
                 setJourneyDetent(.half)
                 mapEntered = true
             }
+            .navigationDestination(isPresented: Binding(get: { store.placeSearchPresented && !mapEntered }, set: {
+                if !$0 && !mapEntered { store.endAddingPlace() }
+            })) {
+                DayMarkerPicker(store: store, day: store.addPlaceDay)
+            }
             .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner) }
             .fullScreenCover(isPresented: $mapEntered) {
                 mapWorkspace.toolbar(.hidden, for: .navigationBar)
             }
         }.tint(Color(uiColor: .label))
+        .onChange(of: store.searchDetailPlace) { old, place in
+            if place != nil {
+                if !mapEntered { searchOpenedMap = true; mapEntered = true }
+            } else if old != nil, searchOpenedMap {
+                searchOpenedMap = false; mapEntered = false
+            }
+        }
     }
 
     private var mapWorkspace: some View {
@@ -56,7 +67,7 @@ struct HomeView: View {
                 if sidebar { modalContent(mapPage, sidebar: true) }
                 else { mapPage }
             }
-                .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented }, set: { nativeJourneyPresented = $0 }), onDismiss: { nativeJourneyPresented = true }) {
+                .sheet(isPresented: Binding(get: { !sidebar && nativeJourneyPresented && !store.placeSearchPresented }, set: { if !store.placeSearchPresented { nativeJourneyPresented = $0 } }), onDismiss: { if !store.placeSearchPresented { nativeJourneyPresented = true } }) {
                     modalContent(panelWorkspace(sidebar: false))
                         .presentationDetents([.height(compactJourneyHeight), .medium, .large], selection: nativeJourneyDetent)
                         .presentationDragIndicator(.visible)
@@ -65,6 +76,35 @@ struct HomeView: View {
                         .presentationBackgroundInteraction(.enabled)
                         .presentationContentInteraction(.resizes)
                         .interactiveDismissDisabled()
+                }
+                .overlay {
+                    if store.placeSearchPresented && store.searchDetailPlace == nil {
+                        NavigationStack {
+                            DayMarkerPicker(store: store, day: store.addPlaceDay)
+                        }
+                        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if store.searchDetailPlace != nil {
+                        Button { store.searchDetailPlace = nil } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 20))
+                                .frame(width: 44, height: 44)
+                                .background(Color(uiColor: .systemBackground), in: Circle())
+                        }.buttonStyle(.plain).padding(.leading, 20).padding(.top, 8)
+                            .accessibilityLabel("返回搜索").accessibilityIdentifier("search-detail-back")
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if let place = store.searchDetailPlace {
+                        EdgeAttachedSearchDetail(store: store, place: place,
+                            availableHeight: geometry.size.height, bottomInset: geometry.safeAreaInsets.bottom)
+                            .offset(y: geometry.safeAreaInsets.bottom)
+                            .ignoresSafeArea(.container, edges: .bottom)
+                    }
+                }
+                .onChange(of: store.placeSearchPresented) { _, open in
+                    if !open { nativeJourneyPresented = true }
                 }
                 .onAppear {
                     nativeJourneyPresented = true
@@ -150,13 +190,7 @@ struct HomeView: View {
                         .accessibilityHidden(!journeyVisible || !compactNavigationVisible)
                         .transition(.identity)
                 }
-                if store.placeSearchPresented && !aiPresented {
-                    DayMarkerPicker(store: store, day: store.addPlaceDay, compact: !sidebar && sheetDetent == .compact,
-                        onInput: { if !sidebar { setJourneyDetent(.full) } },
-                        onSearch: { if !sidebar { setJourneyDetent(.half) } })
-                        .transition(.opacity)
-                        .zIndex(1)
-                }
+
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.placeSearchPresented)
@@ -259,20 +293,6 @@ struct HomeView: View {
                         set: { store.draftExpanded = $0 == .large }))
                     .presentationBackgroundInteraction(.enabled)
                     .presentationDragIndicator(.visible)
-            }
-        }
-        .onChange(of: store.placeSearchPresented) { _, open in
-            withAnimation(AppMotion.presentation(reduceMotion: reduceMotion)) {
-                if open {
-                    searchReturnDetent = sheetDetent
-                    searchReturnExpanded = expanded
-                    if sheetDetent == .compact { sheetDetent = .half }
-                    expanded = true
-                } else {
-                    sheetDetent = searchReturnDetent ?? .half
-                    expanded = searchReturnExpanded
-                    searchReturnDetent = nil
-                }
             }
         }
         .onChange(of: store.draft?.id) { old, new in
@@ -799,5 +819,49 @@ private struct AIEntryPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1)
             .opacity(configuration.isPressed ? 0.75 : 1)
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: configuration.isPressed)
+    }
+}
+
+
+private struct EdgeAttachedSearchDetail: View {
+    @ObservedObject var store: AppStore
+    let place: Place
+    let availableHeight: CGFloat
+    let bottomInset: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var expanded = false
+    @GestureState private var translation: CGFloat = 0
+    var body: some View {
+        let half = availableHeight * 0.5 + bottomInset
+        let full = availableHeight - 64 + bottomInset
+        let height = min(full, max(half * 0.7, (expanded ? full : half) - translation))
+        VStack(spacing: 0) {
+            Capsule().fill(Color(uiColor: .tertiaryLabel)).frame(width: 36, height: 5)
+                .frame(maxWidth: .infinity).frame(height: 26).contentShape(Rectangle())
+                .gesture(DragGesture().updating($translation) { value, state, _ in state = value.translation.height }
+                    .onEnded { value in
+                        let movement = value.predictedEndTranslation.height
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.9)) {
+                            if !expanded && movement > 140 { store.searchDetailPlace = nil }
+                            else if movement < -40 { expanded = true }
+                            else if movement > 40 { expanded = false }
+                        }
+                    })
+                .accessibilityLabel(expanded ? "收起地点详情" : "展开地点详情")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { expanded.toggle() }
+            NavigationStack {
+                SearchPlaceDetail(store: store, place: place)
+            }
+            .padding(.bottom, bottomInset)
+        }
+        .frame(maxWidth: .infinity).frame(height: height)
+        .background(Color(uiColor: .systemBackground))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
+        .onAppear {
+            store.camera = CameraCommand(points: [place.coordinates], singlePointZoom: 15, bottomSheetFraction: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("edge-search-detail")
     }
 }
