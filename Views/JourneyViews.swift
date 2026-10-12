@@ -26,6 +26,11 @@ struct JourneyDaysContents: View {
                     JourneyArchiveCard(trip: trip, colorIndex: archiveColorIndex)
                         .frame(height: 204)
                         .opacity(archiveHeaderVisible ? 1 : 0)
+                        // The snapshot owns motion; the live header must hand off without a cross-fade.
+                        .transaction { transaction in
+                            transaction.animation = nil
+                            transaction.disablesAnimations = true
+                        }
                         .accessibilityIdentifier("archive-detail-card")
                         .id("archive-header")
                         .background(GeometryReader { proxy in
