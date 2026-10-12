@@ -1,6 +1,29 @@
 import XCTest
 
 final class TripEditorTests: XCTestCase {
+    @MainActor func testRollingSuggestionDoesNotFillOrMoveNameField() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
+        let create = app.buttons["archive-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10)); create.tap()
+        let name = app.textFields["trip-name-field"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        let frame = name.frame
+        for index in 0..<3 {
+            Thread.sleep(forTimeInterval: 3.5)
+            XCTAssertEqual(name.frame, frame)
+            XCTAssertEqual(name.value as? String, "")
+            XCTAssertFalse(app.buttons["trip-create-submit"].isEnabled)
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = "Random trip name reel \(index)"; shot.lifetime = .keepAlways; add(shot)
+        }
+        name.tap()
+        XCTAssertEqual(name.placeholderValue, "输入旅途名称")
+        name.typeText("我的旅途")
+        let typed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "我的旅途"), object: name)
+        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 3), .completed)
+        app.buttons["trip-create-cancel"].tap()
+    }
+
     @MainActor func testIconNameAndRangeWithoutDescription() {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
         let create = app.buttons["archive-create"]
@@ -29,7 +52,9 @@ final class TripEditorTests: XCTestCase {
         XCTAssertFalse(app.buttons["trip-create-submit"].isEnabled)
         icon.tap(); app.buttons["trip-icon-option-🏍️"].tap()
         XCTAssertTrue(icon.label.contains("🏍️"))
-        name.tap(); name.typeText("Weekend ride")
+        name.tap()
+        XCTAssertEqual(name.placeholderValue, "输入旅途名称")
+        name.typeText("Weekend ride")
         XCTAssertTrue(app.buttons["trip-create-submit"].isEnabled)
         XCTAssertTrue(app.buttons["trip-date-range"].exists)
         date.tap()

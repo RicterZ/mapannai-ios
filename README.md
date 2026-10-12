@@ -25,7 +25,7 @@ The default background is System Maps (Apple MapKit). Choose System Maps, AMap, 
 
 1. Connect to your MapAnNai Plus server in the app's settings.
 2. Search, tap a map POI, or long-press the map to save places, with notes and photos.
-3. Tap the ＋ in My Trips or on the collapsed panel. Search for and select destination cities or provinces first. Give your trip a name, choose an icon from the grid, and select its departure and return dates together on the calendar, then tap Create Trip. Add places to each day and arrange their visit order within routes.
+3. Tap the ＋ in My Trips or on the collapsed panel. Search for and select destination cities or provinces first. The empty name field cycles through playful destination-and-theme suggestions; these are hints, not a saved name. Give your trip a name, choose an icon from the grid, and select its departure and return dates together on the calendar, then tap Create Trip. Add places to each day and arrange their visit order within routes.
 4. Open the day's itinerary while traveling to check places, read your notes, or start navigation. Tap a route title to view it on the map; use its right-hand arrow to show or hide its places.
 
 With route planning enabled, each planned segment's distance appears between its places. Map lines simplify small loops and short backtracks to emphasize visit order; distances retain the original planned values. Opposite-direction overlapping legs are slightly separated near street-level zoom.

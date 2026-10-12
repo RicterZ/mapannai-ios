@@ -48,7 +48,7 @@ struct TripDestinationPicker: View {
                             .frame(width: TripEditorLayout.iconWidth)
                             .frame(width: TripEditorLayout.leadingWidth, alignment: .leading)
                         TextField(selection.isEmpty ? "搜索城市或省份" : "添加另一处目的地", text: $query)
-                            .font(.system(size: 19, weight: .medium))
+                            .font(.system(size: TripEditorLayout.placeholderSize, weight: .medium))
                             .focused($focused).submitLabel(.search)
                             .onSubmit { retry += 1 }
                             .accessibilityIdentifier("trip-destination-search")

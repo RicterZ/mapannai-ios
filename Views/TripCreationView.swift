@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum TripEditorLayout {
+    static let placeholderSize: CGFloat = 19
     static let leadingWidth: CGFloat = 60
     static let iconWidth: CGFloat = 32
     static let fieldSpacing: CGFloat = 12
@@ -167,9 +168,27 @@ struct TripCreationView: View {
                             .presentationBackground(Color(uiColor: .systemBackground))
                             .presentationCompactAdaptation(.popover)
                     }
-                TextField("输入旅途名称", text: $name)
+                TextField("旅途名称", text: $name, prompt: Text(nameFocused ? "输入旅途名称" : "")
+                    .font(.system(size: TripEditorLayout.placeholderSize, weight: .medium)))
                     .font(.system(size: calendarVisible ? compactInputSize : inputSize, weight: .medium))
                     .focused($nameFocused).submitLabel(.done).onSubmit { nameFocused = false }
+                    .overlay(alignment: .leading) {
+                        if name.isEmpty && !nameFocused {
+                            GeometryReader { geometry in
+                                let size = TripEditorLayout.placeholderSize
+                                if geometry.size.width >= size * 6 {
+                                    TripNamePlaceholder(fontSize: size)
+                                        .frame(height: geometry.size.height)
+                                } else {
+                                    Text("输入旅途名称").foregroundStyle(Color(uiColor: .placeholderText))
+                                        .font(.system(size: size, weight: .medium))
+                                        .lineLimit(1).minimumScaleFactor(0.75)
+                                        .frame(height: geometry.size.height)
+                                }
+                            }.allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityLabel("旅途名称")
                     .accessibilityIdentifier("trip-name-field")
             }
             .padding(.vertical, 8)
