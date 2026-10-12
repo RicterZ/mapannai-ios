@@ -29,7 +29,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
         coordinator.userDirection.stop()
         coordinator.cancelRouteUpdates()
         coordinator.cancelPendingMapTap()
-        coordinator.cancelPOIRefresh()
         map.delegate = nil; map.showsUserLocation = false
     }
     final class Pin: MAPointAnnotation {
@@ -78,8 +77,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
         var lastStyledSelection: String?
         var pinImages: [String: UIImage] = [:]
         private var routeHitIndexes: [String: RouteSpatialIndex] = [:]
-        private var poiRefreshTask: Task<Void, Never>?
-        private var poiCoverage: RouteGeoBounds?
         private var mapIsMoving = false
         private var highlightedRouteIDs: Set<String> = []
         private var selectionDay: String?
@@ -93,10 +90,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private var mapTapAnnotation: MAAnnotation?
         private var mapTapPoint: CGPoint?
         private var mapTapClaimed = false
-        private var filteringSearchPOIs = false
         private var renderedCoordinates: [String: [Coordinate]] = [:]
         init(_ store: AppStore) { self.store = store }
         func update(_ map: MAMapView) {
+            navigationGestures.onTransformInteraction = { [weak self] in self?.store.noteDayMapTransform() }
             navigationGestures.observe(map) { [weak self] in self?.store.noteMapInteraction() }
             userDirection.attach(toAnnotation: { [weak map] in
                 guard let map, map.userLocation.location != nil else { return nil }
@@ -143,7 +140,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
             }
             updateOverviewGeometry(map)
             updateZoomPresentation(map)
-            updateSearchPOIFilter(map)
             updateRoutes(map)
             updateRouteSelection(map)
             if let command = store.camera, lastCamera != command.id {
@@ -271,26 +267,26 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let changed = day != selectionDay
             guard changed || geometryChanged || texturedRouteIDs != (store.placeSearchPresented ? [] : highlightedRouteIDs) || selectionRequest != store.routeSelectionRequest else { return }
             selectionDay = day; selectionRequest = store.routeSelectionRequest
-            let selected = store.displayRoutes.filter { $0.dayID == day && lastRoutes[$0.id]?.points == $0.points }
+            let selected = store.mapDisplayRoutes.filter { $0.dayID == day && lastRoutes[$0.id]?.points == $0.points }
             highlightRoutes(Set(selected.map(\.id)), map: map)
             selectionRoutes = selected
         }
 
         private func highlightRoutes(_ selected: Set<String>, map: MAMapView) {
-            let textured = store.placeSearchPresented ? Set<String>() : selected.filter { id in store.displayRoutes.first(where: { $0.id == id })?.isDashed != true }
+            let textured = store.placeSearchPresented ? Set<String>() : selected.filter { id in store.mapDisplayRoutes.first(where: { $0.id == id })?.isDashed != true }
             let changed = highlightedRouteIDs.symmetricDifference(selected).union(texturedRouteIDs.symmetricDifference(textured))
             highlightedRouteIDs = selected; texturedRouteIDs = textured
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for id in changed {
                 guard let pair = lines[id] else { continue }
                 let active = selected.contains(id)
-                let dashed = store.displayRoutes.first(where: { $0.id == id })?.isDashed == true
+                let dashed = store.mapDisplayRoutes.first(where: { $0.id == id })?.isDashed == true
                 if let white = map.renderer(for: pair.0) as? MAPolylineRenderer {
                     white.lineWidth = RouteLineAppearance.outlineWidth(selected: active, dashed: dashed); white.setNeedsUpdate()
                 }
                 if let color = map.renderer(for: pair.1) as? MAPolylineRenderer {
                     color.lineWidth = RouteLineAppearance.width(selected: active, dashed: dashed)
-                    color.strokeImage = active && !store.placeSearchPresented && store.displayRoutes.first(where: { $0.id == id })?.isDashed != true ? RouteMotionOverlay.texture(color: color.strokeColor, google: false) : nil
+                    color.strokeImage = active && !store.placeSearchPresented && store.mapDisplayRoutes.first(where: { $0.id == id })?.isDashed != true ? RouteMotionOverlay.texture(color: color.strokeColor, google: false) : nil
                     color.setNeedsUpdate()
                 }
             }
@@ -308,12 +304,10 @@ struct AMapNativeRenderer: UIViewRepresentable {
         func cancelRouteUpdates() {
             routeRevision = UUID(); coordinateTask?.cancel(); coordinateTask = nil
         }
-        func cancelPOIRefresh() {
-            poiRefreshTask?.cancel(); poiRefreshTask = nil
-        }
+
 
         private func updateRoutes(_ map: MAMapView) {
-            let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
+            let snapshot = store.mapDisplayRoutes.map(RouteOverlayGeometry.init)
             guard snapshot != desiredRoutes else { return }
             desiredRoutes = snapshot
             cancelRouteUpdates()
@@ -323,7 +317,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             coordinateTask = Task { [weak self, weak map] in
                 guard let prepared = try? await processor.amapSnapshot(changed), !Task.isCancelled,
                       let self, let map, self.routeRevision == revision,
-                      self.store.displayRoutes.map(RouteOverlayGeometry.init) == snapshot else { return }
+                      self.store.mapDisplayRoutes.map(RouteOverlayGeometry.init) == snapshot else { return }
                 // Keep the old complete picture while converting. Commit removals, new
                 // geometry, both strokes and renderer invalidation in one UI turn.
                 CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -367,13 +361,13 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 overlayStyle[ObjectIdentifier(white)] = (RouteLineAppearance.outline(route.colorIndex), true)
                 if let renderer = map.renderer(for: white) as? MAPolylineRenderer {
                     renderer.strokeColor = RouteLineAppearance.outline(route.colorIndex)
-                    renderer.lineWidth = RouteLineAppearance.outlineWidth(selected: store.displayRoutes.first(where: { $0.id == route.id })?.dayID == store.dayID, dashed: route.isDashed)
+                    renderer.lineWidth = RouteLineAppearance.outlineWidth(selected: store.mapDisplayRoutes.first(where: { $0.id == route.id })?.dayID == store.dayID, dashed: route.isDashed)
                     renderer.lineDashType = route.isDashed ? kMALineDashTypeSquare : kMALineDashTypeNone
                     renderer.setNeedsUpdate()
                 }
                 if let renderer = map.renderer(for: colored) as? MAPolylineRenderer {
                     renderer.strokeColor = tint
-                    renderer.lineWidth = RouteLineAppearance.width(selected: store.displayRoutes.first(where: { $0.id == route.id })?.dayID == store.dayID, dashed: route.isDashed)
+                    renderer.lineWidth = RouteLineAppearance.width(selected: store.mapDisplayRoutes.first(where: { $0.id == route.id })?.dayID == store.dayID, dashed: route.isDashed)
                     renderer.lineDashType = route.isDashed ? kMALineDashTypeSquare : kMALineDashTypeNone
                     if route.isDashed { renderer.strokeImage = nil }
                     renderer.setNeedsUpdate()
@@ -398,51 +392,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.layer.zPosition = CGFloat(order)
             if selected { view.superview?.bringSubviewToFront(view) }
         }
-        private var searchPOIsActive: Bool {
-            store.placeSearchPresented || store.searching || !store.searchResults.isEmpty
-        }
-        private func updateSearchPOIFilter(_ map: MAMapView) {
-            guard searchPOIsActive else {
-                cancelPOIRefresh(); poiCoverage = nil
-                if filteringSearchPOIs { map.removePoiFilter("search-results"); filteringSearchPOIs = false }
-                return
-            }
-            // Normal SwiftUI updates don't mutate the SDK filter. Existing overscan
-            // covers local movement; refresh its geometry once the map has settled.
-            if !filteringSearchPOIs { refreshSearchPOIFilter(map) }
-        }
-        private func schedulePOIRefresh() {
-            cancelPOIRefresh()
-            guard searchPOIsActive else { return }
-            poiRefreshTask = Task { [weak self] in
-                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
-                guard let self, !Task.isCancelled, !self.mapIsMoving,
-                      self.searchPOIsActive, let map = self.map else { return }
-                self.refreshSearchPOIFilter(map)
-                self.poiRefreshTask = nil
-            }
-        }
-        private func refreshSearchPOIFilter(_ map: MAMapView) {
-            let rect = map.bounds
-            guard rect.width > 0, rect.height > 0 else { return }
-            let coordinates = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
-                               CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)].map {
-                let c = map.convert($0, toCoordinateFrom: map)
-                return Coordinate(latitude: c.latitude, longitude: c.longitude)
-            }
-            guard coordinates.allSatisfy(\.isValid) else { return }
-            let reference = poiCoverage.map { ($0.west + $0.east) / 2 } ?? coordinates[0].longitude
-            let viewport = RouteGeoBounds(points: coordinates, referenceLongitude: reference)
-            guard poiCoverage?.contains(viewport) != true else { return }
-            let coverage = viewport.expanded(factor: 1)
-            let filter = MAPoiFilter()
-            filter.filterType = .poi; filter.keyName = "search-results"
-            filter.position = coverage.corners.map {
-                NSValue(maCoordinate: CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude))
-            }
-            if filteringSearchPOIs { map.removePoiFilter("search-results") }
-            map.add(filter); filteringSearchPOIs = true; poiCoverage = coverage
-        }
         private func styleSearch(_ view: MAAnnotationView, pin: SearchPin) {
             let selected = store.selectedSearchPlaceID == pin.place.id
             let firstAppearance = view.accessibilityIdentifier != "map-search-result-\(pin.place.id)"
@@ -464,13 +413,20 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.zIndex = 1000
         }
         private func markerImage(_ pin: Pin, dot: Bool, selected: Bool) -> UIImage {
-            MapMarkerAppearance.image(icon: pin.marker.icon, compact: dot, selected: selected)
+            if !dot, let number = store.dayMapNumber(for: pin.markerID) {
+                return MapMarkerAppearance.dayImage(number: number, focused: selected)
+            }
+            return MapMarkerAppearance.image(icon: pin.marker.icon, compact: dot, selected: selected)
         }
         private func style(_ view: MAAnnotationView, pin: Pin, map: MAMapView) {
             let compact = MapZoomPresentation.isCompact(Double(map.zoomLevel))
-            let selected = store.selectedMarker?.id == pin.markerID
+            let selected = store.mapHighlightedMarkerID == pin.markerID
             let image = markerImage(pin, dot: false, selected: selected)
-            if view.image !== image { view.image = image }
+            if view.image !== image {
+                let animateFocus = view.image != nil && selected && store.dayMapBrowsing
+                view.image = image
+                if animateFocus { MapInteractionFeedback.appear(view) }
+            }
             view.centerOffset = .zero
             applyAnnotationOrder(view, selected: selected, search: false)
             let dotView: UIImageView
@@ -502,11 +458,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
             view.accessibilityIdentifier = "map-marker-\(pin.markerID)"
         }
         private func updateOverviewGeometry(_ map: MAMapView) {
-            let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
+            let snapshot = store.mapDisplayRoutes.map(RouteOverlayGeometry.init)
             if snapshot != overviewSnapshot {
                 map.removeOverlays(overviewLines)
                 overviewSnapshot = snapshot
-                overviewLines = store.displayRoutes.compactMap { route in
+                overviewLines = store.mapDisplayRoutes.compactMap { route in
                     var coordinates = MapZoomPresentation.overviewCurve(route).map { point -> CLLocationCoordinate2D in
                         let p = Coordinates.gcj(point); return CLLocationCoordinate2D(latitude:p.latitude,longitude:p.longitude)
                     }
@@ -532,7 +488,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MAMapView!, regionWillChangeAnimated animated: Bool) {
             navigationGestures.observe(mapView) { [weak self] in self?.store.noteMapInteraction() }
-            mapIsMoving = true; cancelPOIRefresh()
+            mapIsMoving = true
         }
         func mapViewRegionChanged(_ mapView: MAMapView!) {
             userDirection.refresh()
@@ -540,7 +496,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         private func updatePinStyles(_ map: MAMapView) {
             let compact = MapZoomPresentation.isCompact(Double(map.zoomLevel))
-            let selected = store.selectedMarker?.id
+            let selected = store.mapHighlightedMarkerID
             guard lastStyledCompact != compact || lastStyledSelection != selected else { return }
             let changedZoom = lastStyledCompact != compact
             let previous = lastStyledSelection
@@ -560,8 +516,8 @@ struct AMapNativeRenderer: UIViewRepresentable {
             let renderer = MAPolylineRenderer(polyline: line)!
             renderer.strokeColor = style.0
             let id = lines.first { $0.value.0 === line || $0.value.1 === line }?.key
-            let selected = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.dayID == store.dayID && store.dayID != nil
-            let dashed = id.flatMap { key in store.displayRoutes.first { $0.id == key } }?.isDashed == true
+            let selected = id.flatMap { key in store.mapDisplayRoutes.first { $0.id == key } }?.dayID == store.dayID && store.dayID != nil
+            let dashed = id.flatMap { key in store.mapDisplayRoutes.first { $0.id == key } }?.isDashed == true
             renderer.lineWidth = style.1 ? RouteLineAppearance.outlineWidth(selected: selected, dashed: dashed) : RouteLineAppearance.width(selected: selected, dashed: dashed)
             renderer.lineDashType = dashed ? kMALineDashTypeSquare : kMALineDashTypeNone
             if !style.1 && selected && !store.placeSearchPresented && !dashed {
@@ -575,7 +531,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                 store.choose(pin.place, fromMap: true); mapView.deselectAnnotation(pin, animated: false)
             } else if let pin = view.annotation as? Pin {
                 mapTapAnnotation = pin; mapTapClaimed = true; cancelPendingMapTap()
-                store.focus(pin.marker); mapView.deselectAnnotation(pin, animated: false)
+                store.selectMapMarker(pin.marker); mapView.deselectAnnotation(pin, animated: false)
             }
         }
         func cancelPendingMapTap() {
@@ -635,7 +591,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                     store.choose(pin.place, fromMap: true)
                     if let view = mapView.view(for: pin) { styleSearch(view, pin: pin) }
                 } else if let pin = annotation as? Pin {
-                    store.focus(pin.marker); updatePinStyles(mapView)
+                    store.selectMapMarker(pin.marker); updatePinStyles(mapView)
                 }
                 return
             }
@@ -664,7 +620,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             guard ground.allSatisfy(\.isValid) else { return }
             let bounds = RouteGeoBounds(points: ground, referenceLongitude: ground[0].longitude)
             var projected: [Coordinate: CGPoint] = [:]
-            let hits = store.displayRoutes.compactMap { route -> (DisplayRoute, Double)? in
+            let hits = store.mapDisplayRoutes.compactMap { route -> (DisplayRoute, Double)? in
                 guard let index = routeHitIndexes[route.id] else { return nil }
                 let distance = index.nearestDistance(at: tap, bounds: bounds) { coordinate in
                     if let cached = projected[coordinate] { return cached }
@@ -681,7 +637,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
             if unique.count > 1 { store.offerRoutes(unique, at: tap) }
             else if let first = unique.first {
                 // Feedback is committed in the gesture callback, before navigation publishes.
-                highlightRoutes(Set(store.displayRoutes.filter { $0.tripID == first.tripID && $0.dayID == first.dayID }.map(\.id)), map: mapView)
+                highlightRoutes(Set(store.mapDisplayRoutes.filter { $0.tripID == first.tripID && $0.dayID == first.dayID }.map(\.id)), map: mapView)
                 store.selectRoute(first)
             }
             else { store.routeCandidates = [] }
@@ -690,7 +646,6 @@ struct AMapNativeRenderer: UIViewRepresentable {
             updateZoomPresentation(mapView)
             updateSearchBounds(mapView)
             mapIsMoving = false
-            schedulePOIRefresh()
         }
         private func updateSearchBounds(_ mapView: MAMapView) {
             let insets = padding(mapView)
@@ -741,7 +696,7 @@ struct PreviewMap: View {
                         path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y-80))
                         context.stroke(path, with: .color(.white.opacity(0.7)), lineWidth: 10)
                     }
-                    for route in store.displayRoutes {
+                    for route in store.mapDisplayRoutes {
                         let overview = MapZoomPresentation.isCompact(zoom)
                         var path = Path(); for (index, p) in (overview ? MapZoomPresentation.overviewCurve(route) : route.points).enumerated() {
                             let pt = point(p, size: size); if index == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
@@ -757,7 +712,7 @@ struct PreviewMap: View {
                 TimelineView(.animation(paused: true)) { timeline in
                     Canvas { context, size in
                         guard motionActive, !MapZoomPresentation.isCompact(zoom) else { return }
-                        let routes = store.displayRoutes.filter { $0.dayID == store.dayID && !$0.isDashed }
+                        let routes = store.mapDisplayRoutes.filter { $0.dayID == store.dayID && !$0.isDashed }
                         for route in routes {
                             let path = RouteDirectionPath(points: route.points.map { point($0, size: size) }, bounds: CGRect(origin: .zero, size: size))
                             for arrow in path.arrows(timestamp: timeline.date.timeIntervalSinceReferenceDate,
@@ -774,15 +729,15 @@ struct PreviewMap: View {
                     }
                 }.allowsHitTesting(false)
                 ForEach(store.mapMarkers) { marker in
-                    Button { store.focus(marker) } label: {
-                        MapMarkerCircle(icon: marker.icon, selected: store.selectedMarker?.id == marker.id,
+                    Button { store.selectMapMarker(marker) } label: {
+                        MapMarkerCircle(icon: marker.icon, selected: store.mapHighlightedMarkerID == marker.id,
                                         compact: MapZoomPresentation.isCompact(zoom))
                             .animation(reduceMotion ? nil : .easeOut(duration: MapZoomPresentation.transitionDuration), value: MapZoomPresentation.isCompact(zoom))
                             .frame(width: 44, height: 44).contentShape(Circle())
                     }.buttonStyle(.plain).accessibilityLabel(marker.title).accessibilityIdentifier("map-marker-\(marker.id)")
                         .accessibilityValue(MapZoomPresentation.isCompact(zoom) ? "圆点" : "图标")
                         .position(point(marker.coordinates, size: proxy.size))
-                        .zIndex(store.selectedMarker?.id == marker.id ? 100_000 : 100)
+                        .zIndex(store.mapHighlightedMarkerID == marker.id ? 100_000 : 100)
                 }
                 ForEach(Array(store.visibleSearchPlaces.enumerated()), id: \.element.id) { index, place in
                     Button { store.choose(place, fromMap: true) } label: {
@@ -799,7 +754,7 @@ struct PreviewMap: View {
                     .padding(6).background(.regularMaterial, in: Capsule()).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.bottom, store.mapViewportInsets.bottom+12).padding(.leading, store.mapViewportInsets.left+8)
             }
             .accessibilityElement(children: .contain).accessibilityIdentifier("preview-map-surface")
-            .task(id: "\(store.dayID ?? "")|\(store.routeSelectionRequest)|\(store.displayRoutes.count)") {
+            .task(id: "\(store.dayID ?? "")|\(store.routeSelectionRequest)|\(store.mapDisplayRoutes.count)") {
                 guard store.dayID != nil else { motionActive = false; return }
                 motionActive = true
             }
@@ -809,7 +764,7 @@ struct PreviewMap: View {
                     let p = point(marker.coordinates, size: proxy.size)
                     return hypot(p.x - value.location.x, p.y - value.location.y) <= 22
                 }) { return }
-                let candidates = RouteSelection.candidates(at: (value.location.x, value.location.y), routes: store.displayRoutes) {
+                let candidates = RouteSelection.candidates(at: (value.location.x, value.location.y), routes: store.mapDisplayRoutes) {
                     let p = point($0, size: proxy.size); return (p.x, p.y)
                 }
                 if candidates.count > 1 { store.offerRoutes(candidates, at: value.location) }

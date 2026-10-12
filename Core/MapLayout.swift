@@ -20,7 +20,7 @@ struct MapLayout: Equatable {
         if usesSidebar {
             return MapViewportInsets(top: 50, left: expanded ? sidebarWidth + 56 : 80, bottom: 70, right: 55)
         }
-        return MapViewportInsets(top: 85, left: 35, bottom: sheetHeight.map { $0 + 25 } ?? (expanded ? min(390, height * 0.48) : 125), right: 35)
+        return MapViewportInsets(top: 85, left: 35, bottom: sheetHeight.map { min($0, height * 0.5) + 25 } ?? (expanded ? min(390, height * 0.48) : 125), right: 35)
     }
 }
 
@@ -28,3 +28,6 @@ struct MapLayout: Equatable {
 enum ItineraryDetent: Equatable {
     case compact, half, full
 }
+
+// Content height excludes the system bottom safe area.
+enum DayMapPresentation { static let contentHeight: Double = 160 }

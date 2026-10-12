@@ -126,7 +126,12 @@ final class BackgroundSaveTests: XCTestCase {
                 return (200, Data(#"{"id":"search-saved","coordinates":{"latitude":31.2,"longitude":121.4},"content":{"id":"search-saved","title":"搜索地点","markdownContent":""}}"#.utf8))
             }
             membershipPath = request.url?.path
-            return (200, Data("{}".utf8))
+            XCTAssertEqual(request.httpMethod, "PUT")
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            var confirmed = target
+            confirmed.markerIds = body["markerIds"] as! [String]
+            confirmed.chains = body["chains"] as! [[String]]
+            return (200, try JSONEncoder().encode(confirmed))
         }
         defer { DelayedSaveProtocol.handler = nil }
         XCTAssertTrue(store.addSearchPlaceInBackground(place, edited: value, using: client()))
@@ -134,7 +139,7 @@ final class BackgroundSaveTests: XCTestCase {
         store.select(trip: trip, day: trip.days[1], focus: false)
         XCTAssertTrue(store.saving)
         try await settle(store)
-        XCTAssertEqual(membershipPath, "/api/trips/\(trip.id)/days/\(target.id)/markers")
+        XCTAssertEqual(membershipPath, "/api/trips/\(trip.id)/days/\(target.id)")
         XCTAssertTrue(store.trips[0].days[0].markerIds.contains("search-saved"))
         XCTAssertFalse(store.trips[0].days[1].markerIds.contains("search-saved"))
     }
@@ -166,14 +171,19 @@ final class BackgroundSaveTests: XCTestCase {
                 return (200, Data(#"{"id":"saved-after-close","coordinates":{"latitude":31.2,"longitude":121.4},"content":{"id":"saved-after-close","title":"地点","markdownContent":""}}"#.utf8))
             }
             membershipPath = request.url?.path
-            return (200, Data("{}".utf8))
+            XCTAssertEqual(request.httpMethod, "PUT")
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            var confirmed = target
+            confirmed.markerIds = body["markerIds"] as! [String]
+            confirmed.chains = body["chains"] as! [[String]]
+            return (200, try JSONEncoder().encode(confirmed))
         }
         defer { DelayedSaveProtocol.handler = nil }
         XCTAssertTrue(store.addSearchPlaceInBackground(place, edited: value, using: client()))
         store.endAddingPlace()
         store.select(trip: trip, day: trip.days[1], focus: false)
         try await settle(store)
-        XCTAssertEqual(membershipPath, "/api/trips/\(trip.id)/days/\(target.id)/markers")
+        XCTAssertEqual(membershipPath, "/api/trips/\(trip.id)/days/\(target.id)")
         XCTAssertTrue(store.trips[0].days[0].markerIds.contains("saved-after-close"))
         XCTAssertFalse(store.trips[0].days[1].markerIds.contains("saved-after-close"))
         XCTAssertNil(store.selectedMarker)
@@ -200,12 +210,151 @@ final class BackgroundSaveTests: XCTestCase {
         XCTAssertFalse(store.canResumeFailedSave)
     }
 
+    @MainActor func testCreationFailureRetainsRangeAndIconForFullPageRecovery() async throws {
+        let store = store()
+        let value = TripSaveDraft(trip: nil, name: "京都秋日漫游", start: .fromDay("2026-10-23"),
+                                  end: .fromDay("2026-10-26"), emoji: "🚆", destinations: [TripDestination(name: "京都市", latitude: 35.0116, longitude: 135.7681), TripDestination(name: "东京都", latitude: 35.6762, longitude: 139.6503)])
+        DelayedSaveProtocol.handler = { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? request.httpBodyStream.map { stream in
+                stream.open(); defer { stream.close() }
+                var bytes = [UInt8](repeating: 0, count: 4096)
+                let count = stream.read(&bytes, maxLength: bytes.count)
+                return Data(bytes.prefix(max(0, count)))
+            } ?? Data()) as? [String: Any]
+            let destinations = body?["destinations"] as? [[String: Any]]
+            XCTAssertEqual(destinations?.count, 2)
+            let destination = destinations?.first
+            XCTAssertEqual(destination?["name"] as? String, "京都市")
+            XCTAssertEqual(destination?["latitude"] as? Double, 35.0116)
+            return (500, Data(#"{"error":"保存失败"}"#.utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.saveTripInBackground(value, using: client()))
+        XCTAssertTrue(store.saving)
+        XCTAssertFalse(store.saveTripInBackground(value, using: client()))
+        try await settle(store)
+        store.resumeFailedSave()
+        let restored = try XCTUnwrap(store.tripSaveRecovery)
+        XCTAssertNil(restored.trip)
+        XCTAssertEqual(restored.id, value.id); XCTAssertEqual(restored.name, value.name)
+        XCTAssertEqual(restored.emoji, value.emoji)
+        XCTAssertEqual(restored.destinations, value.destinations)
+        XCTAssertEqual(restored.start, value.start); XCTAssertEqual(restored.end, value.end)
+    }
+    @MainActor func testCreationRejectsMissingAndInvalidDestinationBeforeWrite() {
+        let store = store()
+        var draft = TripSaveDraft(trip: nil, name: "旅途", start: .fromDay("2026-10-23"), end: .fromDay("2026-10-26"), emoji: "✈️")
+        XCTAssertFalse(store.saveTripInBackground(draft, using: client())); XCTAssertFalse(store.saving)
+        draft.destinations = [TripDestination(name: "京都市", latitude: 91, longitude: 135)]
+        XCTAssertFalse(store.saveTripInBackground(draft, using: client())); XCTAssertFalse(store.saving)
+    }
+    @MainActor func testCreationRejectsDuplicateAndOverLimitDestinations() {
+        let store = store()
+        let city = TripDestination(name: "京都市", latitude: 35, longitude: 135)
+        var draft = TripSaveDraft(trip: nil, name: "旅途", start: .fromDay("2026-10-23"), end: .fromDay("2026-10-26"), emoji: "✈️", destinations: [city, city])
+        XCTAssertFalse(store.saveTripInBackground(draft, using: client())); XCTAssertFalse(store.saving)
+        draft.destinations = (0..<21).map { TripDestination(name: "城市\($0)", latitude: Double($0), longitude: 135) }
+        XCTAssertFalse(store.saveTripInBackground(draft, using: client())); XCTAssertFalse(store.saving)
+    }
+    func testTripReadsLegacyDestinationAndPrefersNewOrderedList() throws {
+        let legacy = Data(#"{"id":"trip","name":"旧旅行","startDate":"2026-10-01","endDate":"2026-10-02","days":[],"destination":{"name":"京都市","latitude":35,"longitude":135}}"#.utf8)
+        var trip = try JSONDecoder().decode(Trip.self, from: legacy)
+        XCTAssertEqual(trip.selectedDestinations.map(\.name), ["京都市"])
+        trip.destinations = [TripDestination(name: "东京都", latitude: 35.6, longitude: 139.6)]
+        XCTAssertEqual(trip.selectedDestinations.map(\.name), ["东京都"])
+        trip.destinations = []
+        XCTAssertTrue(trip.selectedDestinations.isEmpty)
+    }
+
+    func testDestinationSearchUsesExistingContractAndRejectsInvalidCoordinates() async throws {
+        DelayedSaveProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/api/destinations")
+            XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "东京 & 京都")
+            return (200, Data(#"{"data":[{"name":"京都市","latitude":35.0116,"longitude":135.7681}]}"#.utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        let results = try await client().searchDestinations("东京 & 京都")
+        XCTAssertEqual(results.first?.name, "京都市")
+        DelayedSaveProtocol.handler = { _ in (200, Data(#"{"data":[{"name":"无效","latitude":95,"longitude":135}]}"#.utf8)) }
+        do { _ = try await client().searchDestinations("东京"); XCTFail("Invalid coordinates must be rejected") } catch { }
+    }
+
+    @MainActor func testCreationRejectsInvalidRangeBeforeReservingAWrite() {
+        let store = store()
+        let reversed = TripSaveDraft(trip: nil, name: "旅途", start: .fromDay("2026-10-26"), end: .fromDay("2026-10-23"), emoji: "✈️", destinations: [TripDestination(name: "京都市", latitude: 35, longitude: 135)])
+        XCTAssertFalse(store.saveTripInBackground(reversed, using: client())); XCTAssertFalse(store.saving)
+        let tooLong = TripSaveDraft(trip: nil, name: "旅途", start: .fromDay("2026-01-01"), end: .fromDay("2027-01-03"), emoji: "✈️", destinations: [TripDestination(name: "京都市", latitude: 35, longitude: 135)])
+        XCTAssertFalse(store.saveTripInBackground(tooLong, using: client())); XCTAssertFalse(store.saving)
+    }
+    @MainActor func testTripEditRejectsShorteningBeforeMutation() {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        let trip = store.trips[0]
+        let draft = TripSaveDraft(trip: trip, name: trip.name, start: .fromDay("2026-11-01"), end: .fromDay("2026-11-01"), emoji: "✈️")
+        XCTAssertFalse(store.saveTripInBackground(draft, using: client()))
+        XCTAssertFalse(store.saving); XCTAssertEqual(store.trips[0], trip)
+    }
+    @MainActor func testTripExtensionRetainsOriginalIDsAndRetriesOnlyMissingDays() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        let trip = store.trips[0]
+        var server = trip, posts: [String] = []
+        var failFourth = true
+        DelayedSaveProtocol.handler = { request in
+            if request.httpMethod == "GET" { return (200, try JSONEncoder().encode(server)) }
+            var data = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                data = Data(buffer.prefix(max(0, count)))
+            }
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertNil(body["destinations"], "Editing must retain destination metadata")
+            if request.httpMethod == "POST" {
+                let date = try XCTUnwrap(body["date"] as? String)
+                if date == "2026-10-08", failFourth { return (500, Data(#"{"error":"添加失败"}"#.utf8)) }
+                XCTAssertFalse(server.days.contains { $0.date == date })
+                posts.append(date)
+                let day = TripDay(id: "created-" + date, tripId: server.id, date: date, markerIds: [], chains: [])
+                server.days.append(day)
+                return (200, try JSONEncoder().encode(day))
+            }
+            if let start = body["startDate"] as? String, start != server.startDate {
+                server.startDate = start
+                for index in server.days.indices {
+                    server.days[index].date = "2026-10-0\(5 + index)"
+                }
+                server.endDate = server.days.last!.date
+            }
+            if let end = body["endDate"] as? String { server.endDate = end }
+            return (200, Data("{}".utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        let draft = TripSaveDraft(trip: trip, name: "延长旅途", start: .fromDay("2026-10-05"), end: .fromDay("2026-10-08"), emoji: "🚆")
+        XCTAssertTrue(store.saveTripInBackground(draft, using: client()))
+        XCTAssertEqual(store.trips[0].days.count, 4)
+        XCTAssertEqual(Array(store.trips[0].days.prefix(2).map(\.id)), trip.days.map(\.id))
+        XCTAssertEqual(store.trips[0].days[0].chains, trip.days[0].chains)
+        try await settle(store)
+        XCTAssertEqual(store.trips[0], trip)
+        store.resumeFailedSave()
+        failFourth = false
+        XCTAssertTrue(store.saveTripInBackground(try XCTUnwrap(store.tripSaveRecovery), using: client()))
+        try await settle(store)
+        XCTAssertEqual(posts, ["2026-10-07", "2026-10-08"])
+        XCTAssertEqual(server.days.count, 4)
+        XCTAssertEqual(store.trips[0].days.map(\.id), server.days.map(\.id))
+        XCTAssertEqual(server.endDate, "2026-10-08")
+        XCTAssertEqual(server.days[0].chains, trip.days[0].chains)
+        XCTAssertEqual(Array(server.days.prefix(2).map(\.id)), trip.days.map(\.id))
+    }
     @MainActor func testTripFailureRollsBackDatesAndRetainsEditorValues() async throws {
         let store = store()
         let sample = AppStore(settings: store.settings, demo: true)
         let trip = try XCTUnwrap(sample.trips.first)
         store.trips = [trip]
-        let value = TripSaveDraft(trip: trip, name: "新旅行名", start: .fromDay("2026-10-05"), end: .fromDay(trip.endDate), emoji: "🚆")
+        let value = TripSaveDraft(trip: trip, name: "新旅行名", start: .fromDay("2026-10-05"), end: .fromDay("2026-10-06"), emoji: "🚆")
         DelayedSaveProtocol.handler = { _ in (500, Data(#"{"error":"保存失败"}"#.utf8)) }
         defer { DelayedSaveProtocol.handler = nil }
         XCTAssertTrue(store.saveTripInBackground(value, using: client()))
@@ -279,4 +428,82 @@ extension BackgroundSaveTests {
         XCTAssertEqual(store.trips[0].days[0].routeChains?[0].stops[1].id, "server-visit-c")
         XCTAssertEqual(store.trips[0].days[0].chains, changed.chains)
     }
+    func testDefaultRoutePlacementAndDuplicateMembership() {
+        let empty = TripDay(id: "day", tripId: "trip", date: "2026-10-12", markerIds: [], chains: [])
+        let first = empty.addingToDefaultRoute(["a", "a"])
+        XCTAssertEqual(first.markerIds, ["a"]); XCTAssertEqual(first.chains, [["a"]])
+        let second = first.addingToDefaultRoute(["a", "b"])
+        XCTAssertEqual(second.markerIds, ["a", "b"]); XCTAssertEqual(second.chains, [["a", "b"]])
+        var multiple = second; multiple.markerIds.append("c"); multiple.chains.append(["c"])
+        let isolated = multiple.addingToDefaultRoute(["d"])
+        XCTAssertEqual(isolated.chains, multiple.chains)
+        XCTAssertEqual(isolated.markerIds, ["a", "b", "c", "d"])
+        XCTAssertEqual(isolated.addingToDefaultRoute(["d"]), isolated)
+    }
+    @MainActor func testCopyPlacesReusesIDsAndOnlyWritesDestination() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips; store.markers = sample.markers
+        let source = store.trips[0].days[0], destination = store.trips[0].days[1]
+        let expected = destination.addingToDefaultRoute(["demo-0", "demo-1"])
+        var paths: [String] = []
+        DelayedSaveProtocol.handler = { request in
+            paths.append(request.url!.path)
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.url!.path, ("/api/" + AppStore.dayPath(destination)).removingPercentEncoding!)
+            return (200, try JSONEncoder().encode(expected))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.transferDayPlaces(["demo-0", "demo-1"], from: source, to: destination, copy: true, using: client()))
+        XCTAssertEqual(store.trips[0].days[0], source)
+        XCTAssertEqual(store.trips[0].days[1].chains, expected.chains)
+        XCTAssertFalse(store.transferDayPlaces(["demo-0"], from: source, to: destination, copy: true, using: client()))
+        try await settle(store)
+        XCTAssertEqual(paths.count, 1)
+        XCTAssertEqual(store.trips[0].days[0], source)
+        XCTAssertEqual(store.markers, sample.markers, "Copying membership never creates a place")
+    }
+    @MainActor func testFailedMoveRestoresBothDaysAndCompensatesDestination() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        let original = store.trips[0].days
+        let source = original[0], destination = original[1]
+        var requests: [String] = []
+        DelayedSaveProtocol.handler = { request in
+            requests.append(request.httpMethod! + " " + request.url!.path)
+            if request.url!.path == ("/api/" + AppStore.dayPath(source)).removingPercentEncoding! {
+                return request.httpMethod == "GET" ? (200, try JSONEncoder().encode(source)) : (500, Data("{}".utf8))
+            }
+            return (200, try JSONEncoder().encode(requests.count == 1 ? destination.addingToDefaultRoute(["demo-0"]) : destination))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.transferDayPlaces(["demo-0"], from: source, to: destination, copy: false, using: client()))
+        XCTAssertFalse(store.trips[0].days[0].markerIds.contains("demo-0"))
+        XCTAssertTrue(store.trips[0].days[1].markerIds.contains("demo-0"))
+        try await settle(store)
+        XCTAssertEqual(store.trips[0].days, original)
+        XCTAssertEqual(requests, [("PUT /api/" + AppStore.dayPath(destination)).removingPercentEncoding!, ("PUT /api/" + AppStore.dayPath(source)).removingPercentEncoding!,
+                                  ("GET /api/" + AppStore.dayPath(source)).removingPercentEncoding!, ("PUT /api/" + AppStore.dayPath(destination)).removingPercentEncoding!])
+        XCTAssertNotNil(store.errorMessage)
+    }
+    @MainActor func testLostMoveResponseDoesNotUndoSuccessfullyMovedPlace() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        let source = store.trips[0].days[0], destination = store.trips[0].days[1]
+        let movedSource = source.removing("demo-0"), movedDestination = destination.addingToDefaultRoute(["demo-0"])
+        var destinationWrites = 0
+        DelayedSaveProtocol.handler = { request in
+            if request.url!.path == ("/api/" + AppStore.dayPath(destination)).removingPercentEncoding! {
+                destinationWrites += 1
+                return (200, try JSONEncoder().encode(movedDestination))
+            }
+            return request.httpMethod == "GET" ? (200, try JSONEncoder().encode(movedSource)) : (500, Data("{}".utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.transferDayPlaces(["demo-0"], from: source, to: destination, copy: false, using: client()))
+        try await settle(store)
+        XCTAssertEqual(destinationWrites, 1)
+        XCTAssertEqual(store.trips[0].days[0], movedSource)
+        XCTAssertEqual(store.trips[0].days[1], movedDestination)
+    }
+
 }

@@ -104,6 +104,20 @@ struct PanelCloseToolbarItem: ToolbarContent {
 }
 
 extension MarkerIcon {
+    var themeColor: Color {
+        switch self {
+        case .activity: .orange
+        case .location: .pink
+        case .hotel: .indigo
+        case .shopping: .purple
+        case .food: .brown
+        case .landmark: .teal
+        case .park: .green
+        case .natural: .mint
+        case .culture: .red
+        case .transit: .blue
+        }
+    }
     var mapColor: Color {
         Color(red: Double((colorRGB >> 16) & 255) / 255,
               green: Double((colorRGB >> 8) & 255) / 255, blue: Double(colorRGB & 255) / 255)
@@ -114,7 +128,7 @@ struct MapMarkerCircle: View {
     var selected = false
     var compact = false
     var body: some View {
-        Text(compact ? "" : icon.emoji).font(.system(size: 12))
+        PlaceIconView(emoji: icon.emoji, size: 16).opacity(compact ? 0 : 1)
             .frame(width: 28, height: 28)
             .background(selected ? Color(red: 0.145, green: 0.388, blue: 0.922) : icon.mapColor.opacity(0.75), in: Circle())
             .overlay(Circle().stroke(.white, lineWidth: 2))
@@ -160,5 +174,93 @@ enum SearchPinAppearance {
             ink.setFill()
             UIBezierPath(ovalIn: CGRect(x: width/2-4, y: 50, width: 8, height: 8)).fill()
         }
+    }
+}
+
+/// Mirrors Web place and trip presentation assets; persisted emoji values are untouched.
+enum PlaceIconAssets {
+    static func name(for emoji: String) -> String? {
+        switch emoji.replacingOccurrences(of: "\u{FE0F}", with: "") {
+        case "⛩": "Place-shrine"
+        case "🎯": "Place-activity"
+        case "📍": "Place-location"
+        case "🏨": "Place-hotel"
+        case "🛍": "Place-shopping"
+        case "🍜": "Place-food"
+        case "🌆": "Place-landmark"
+        case "🎡": "Place-park"
+        case "🗻": "Place-natural"
+        case "🚉": "Place-transit"
+        case "✈": "Place-plane"
+        case "📅": "Place-calendar"
+        case "🗺": "Place-map"
+        case "🚞": "Trip-railway"
+        case "🚢": "Trip-ship"
+        case "🚗": "Trip-car"
+        case "🏍": "Trip-motorcycle"
+        case "🏕": "Trip-camping"
+        case "🏖": "Trip-beach"
+        case "🏯": "Trip-japanese-castle"
+        case "🎒": "Trip-backpack"
+        case "🍣": "Trip-sushi"
+        case "🍲": "Trip-hot-pot"
+        case "🍛": "Trip-curry"
+        case "🍖": "Trip-meat"
+        case "🚲": "Trip-bicycle"
+        case "🚐": "Trip-van"
+        case "⛵": "Trip-sailboat"
+        case "🚠": "Trip-cable-car"
+        case "🎈": "Trip-balloon"
+        case "🏜": "Trip-desert"
+        case "🌋": "Trip-volcano"
+        case "🏝": "Trip-island"
+        case "🌌": "Trip-night-sky"
+        case "🌸": "Trip-blossom"
+        case "🏰": "Trip-castle"
+        case "🗼": "Trip-tower"
+        case "🕌": "Trip-mosque"
+        case "🗽": "Trip-statue-liberty"
+        case "🎿": "Trip-ski"
+        case "🤿": "Trip-diving"
+        case "🏄": "Trip-surf"
+        case "🥾": "Trip-hiking-boot"
+        case "♨": "Trip-hot-spring"
+        case "🎭": "Trip-theatre"
+        case "🎨": "Trip-art"
+        case "🎪": "Trip-circus"
+        case "🎶": "Trip-music"
+        case "🐼": "Trip-panda"
+        case "🐘": "Trip-elephant"
+        case "🐋": "Trip-whale"
+        case "🦒": "Trip-giraffe"
+        case "🐧": "Trip-penguin"
+        case "☕": "Trip-coffee"
+        case "🍷": "Trip-wine"
+        case "🍺": "Trip-beer"
+        case "🥐": "Trip-croissant"
+        case "🍕": "Trip-pizza"
+        case "🇨🇳": "Trip-flag-cn"
+        case "🇯🇵": "Trip-flag-jp"
+        case "🇰🇷": "Trip-flag-kr"
+        case "🇸🇬": "Trip-flag-sg"
+        case "🇹🇭": "Trip-flag-th"
+        case "🇺🇸": "Trip-flag-us"
+        case "🇫🇷": "Trip-flag-fr"
+        case "🇬🇧": "Trip-flag-gb"
+        case "🇮🇹": "Trip-flag-it"
+        case "🇩🇪": "Trip-flag-de"
+        default: nil
+        }
+    }
+}
+struct PlaceIconView: View {
+    let emoji: String
+    var size: CGFloat = 24
+    var body: some View {
+        Group {
+            if let asset = PlaceIconAssets.name(for: emoji) {
+                Image(asset).resizable().scaledToFit()
+            } else { Text(emoji).font(.system(size: size)) }
+        }.frame(width: size, height: size).accessibilityHidden(true)
     }
 }

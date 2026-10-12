@@ -62,7 +62,7 @@ actor MarkerRepository {
         if let task = detailTasks[detailKey] { _ = try await task.value; return nil }
         if let attempt = detailAttempts[detailKey], Date().timeIntervalSince(attempt) < 30 { return nil }
         // A fresh full list already contains the details; do not immediately fetch again.
-        if let value = cached(using: client), Date().timeIntervalSince(value.fetchedAt) < 30 { return nil }
+        if let value = cached(using: client), Date().timeIntervalSince(value.fetchedAt) < 30, value.markers.contains(where: { $0.id == id }) { return nil }
         detailAttempts[detailKey] = Date()
         let generation = generations[key] ?? UUID(); generations[key] = generation
         let task = Task<Marker, Error> { try await client.request("markers/" + APIClient.id(id)) }
@@ -78,6 +78,9 @@ actor MarkerRepository {
                 if value.markers[index] != marker {
                     value.markers[index] = marker; snapshots[key] = value; persist(value, key: key)
                 }
+            }
+            if var value = snapshots[key], !value.markers.contains(where: { $0.id == id }) {
+                value.markers.append(marker); snapshots[key] = value; persist(value, key: key)
             }
             return marker
         } catch {

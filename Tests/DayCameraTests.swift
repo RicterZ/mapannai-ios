@@ -2,7 +2,7 @@ import XCTest
 @testable import MapAnNai
 
 final class DayCameraTests: XCTestCase {
-    @MainActor func testTripSelectionUsesFirstValidStopAtZoom12() throws {
+    @MainActor func testTripSelectionFitsAllValidMembersAndRouteStops() throws {
         let store = AppStore(settings: Settings(), demo: true)
         var trip = try XCTUnwrap(store.trip)
         var first = trip.days[0]
@@ -11,14 +11,14 @@ final class DayCameraTests: XCTestCase {
         trip.days = [trip.days[1], first]
         store.select(trip: nil, focus: false)
         store.select(trip: trip)
-        XCTAssertEqual(store.camera?.points, [store.markers[2].coordinates])
-        XCTAssertEqual(store.camera?.zoomLevel, 12)
+        XCTAssertEqual(store.camera?.points, [0, 2, 3, 4].map { store.markers[$0].coordinates })
+        XCTAssertNil(store.camera?.zoomLevel)
         let camera = store.camera?.id
         store.select(trip: nil, focus: false)
         store.select(trip: trip, focus: false)
         XCTAssertEqual(store.camera?.id, camera)
         first.chains = []; first.markerIds = []
-        trip.days = [first, trip.days[0]]
+        trip.days = [first]
         store.select(trip: trip)
         XCTAssertEqual(store.camera?.id, camera)
     }
@@ -39,7 +39,7 @@ final class DayCameraTests: XCTestCase {
         await store.awaitRouteUpdates()
         XCTAssertFalse(try XCTUnwrap(store.displayRoutes.first).isPlanned)
     }
-    @MainActor func testDayUsesFirstNonemptyChainAndAbsoluteZoom() throws {
+    @MainActor func testDayFitsAllValidMembersAndRouteStops() throws {
         let store = AppStore(settings: Settings(), demo: true)
         let trip = try XCTUnwrap(store.trip)
         var day = trip.days[0]
@@ -47,24 +47,25 @@ final class DayCameraTests: XCTestCase {
         day.markerIds = [store.markers[0].id, store.markers[2].id]
         store.select(trip: trip, focus: false)
         store.select(trip: trip, day: day)
-        XCTAssertEqual(store.camera?.points, [store.markers[2].coordinates])
-        XCTAssertEqual(store.camera?.zoomLevel, 15)
+        XCTAssertEqual(store.camera?.points, [store.markers[0].coordinates, store.markers[2].coordinates])
+        XCTAssertNil(store.camera?.zoomLevel)
         XCTAssertNil(store.selectedMarker)
-        let camera = store.camera?.id
+        let points = store.camera?.points
         store.select(trip: trip, day: day)
-        XCTAssertEqual(store.camera?.id, camera)
+        XCTAssertEqual(store.camera?.points, points)
+        let camera = store.camera?.id
         store.select(trip: trip, day: trip.days[1], focus: false)
         XCTAssertEqual(store.camera?.id, camera)
     }
-    @MainActor func testMissingRoutePointNeverFitsWholeDayOrUsesMemberOrder() throws {
+    @MainActor func testDayFitsUnplannedMembersAndEmptyDayKeepsCamera() throws {
         let store = AppStore(settings: Settings(), demo: true)
         let trip = try XCTUnwrap(store.trip)
-        store.focus(store.markers[0]); let camera = store.camera?.id
         var day = trip.days[0]; day.chains = [[], ["missing"]]
         store.select(trip: trip, focus: false)
         store.select(trip: trip, day: day)
-        XCTAssertEqual(store.camera?.id, camera)
-        day.id = "no-route"; day.chains = []
+        XCTAssertEqual(store.camera?.points, [0, 1, 2].map { store.markers[$0].coordinates })
+        let camera = store.camera?.id
+        day.id = "empty-day"; day.chains = []; day.markerIds = []
         store.select(trip: trip, day: day)
         XCTAssertEqual(store.camera?.id, camera)
     }

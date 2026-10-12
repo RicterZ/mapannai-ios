@@ -2,6 +2,92 @@ import XCTest
 import UIKit
 
 final class AIPlannerUITests: XCTestCase {
+    @MainActor func testArchiveTopCardIsFullyVisibleAndDividerIsNotAnAction() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--scroll-demo", "--archive-preview"]
+        app.launch()
+        let top = app.buttons["archive-trip-scroll-trip-10"]
+        let next = app.buttons["archive-trip-scroll-trip-12"]
+        XCTAssertTrue(top.waitForExistence(timeout: 5))
+        XCTAssertEqual(top.frame.height, 204, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(next.frame.minY, top.frame.maxY + 20)
+        app.scrollViews.firstMatch.swipeUp()
+        let divider = app.descendants(matching: .any)["archive-year-2026"].firstMatch
+        XCTAssertTrue(divider.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["archive-year-2026"].exists)
+        let beforeDivider = top
+        let afterDivider = next
+        XCTAssertEqual(divider.frame.minY - beforeDivider.frame.maxY, 24, accuracy: 1)
+        XCTAssertEqual(afterDivider.frame.minY - divider.frame.minY, 82, accuracy: 1)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Top card and archive divider"; shot.lifetime = .keepAlways; add(shot)
+    }
+
+    @MainActor func testPastTripReturnWithTopCardKeepsArchiveGeometry() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--scroll-demo", "--archive-preview"]
+        app.launch()
+        let top = app.buttons["archive-trip-scroll-trip-10"]
+        XCTAssertTrue(top.waitForExistence(timeout: 5))
+        let past = app.buttons["archive-trip-scroll-trip-9"]
+        XCTAssertTrue(past.isHittable)
+        let originalTop = top.frame
+        let originalPast = past.frame
+        let before = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        before.name = "Past trip before opening"; before.lifetime = .keepAlways; add(before)
+        past.tap()
+        let close = app.buttons["archive-detail-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
+        XCTAssertEqual(top.frame.minY, originalTop.minY, accuracy: 2)
+        XCTAssertEqual(top.frame.height, originalTop.height, accuracy: 2)
+        XCTAssertEqual(past.frame.minY, originalPast.minY, accuracy: 2)
+        let after = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        after.name = "Past trip restored"; after.lifetime = .keepAlways; add(after)
+    }
+
+    @MainActor func testPastTripReturnWithTwoTopCardsPreservesSpacing() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--ongoing-archive-preview"]
+        app.launch()
+        let first = app.buttons["archive-trip-ongoing-new"]
+        let second = app.buttons["archive-trip-ongoing-old"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        let past = app.buttons["archive-trip-completed"]
+        XCTAssertTrue(past.isHittable)
+        let originalFirst = first.frame
+        let originalSecond = second.frame
+        past.tap()
+        let close = app.buttons["archive-detail-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5)); close.tap()
+        XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
+        XCTAssertEqual(first.frame.minY, originalFirst.minY, accuracy: 2)
+        XCTAssertEqual(second.frame.minY, originalSecond.minY, accuracy: 2)
+        XCTAssertEqual(second.frame.minY - first.frame.maxY, 24, accuracy: 2)
+        XCTAssertTrue(past.isHittable)
+    }
+
+    @MainActor func testMultipleOngoingTripsAreFullTopCardsWithSpacingAndStatus() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--ongoing-archive-preview"]
+        app.launch()
+        let first = app.buttons["archive-trip-ongoing-new"]
+        let second = app.buttons["archive-trip-ongoing-old"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertEqual(first.frame.height, 204, accuracy: 1)
+        XCTAssertEqual(second.frame.height, 204, accuracy: 1)
+        XCTAssertEqual(second.frame.minY - first.frame.maxY, 24, accuracy: 1)
+        XCTAssertTrue(first.label.contains("旅途中"))
+        XCTAssertTrue(second.label.contains("旅途中"))
+        let oldY = second.frame.minY
+        second.tap()
+        let close = app.buttons["archive-detail-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5)); close.tap()
+        XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
+        XCTAssertEqual(second.frame.minY, oldY, accuracy: 2)
+    }
+
     @MainActor func testWalletDayAndMapRoundTripPreservesArchive() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--scroll-demo", "--archive-preview"]
@@ -32,7 +118,7 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
         XCTAssertEqual(card.frame.minY, initialY, accuracy: 2)
         card.press(forDuration: 1)
-        XCTAssertTrue(app.buttons["编辑旅行"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["编辑旅途"].waitForExistence(timeout: 3))
     }
 
     @MainActor func testWalletHeaderScrollsAndClosesFromScrolledPosition() {
@@ -68,6 +154,11 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
         for id in ["11", "12", "10", "12"] {
             let card = app.buttons["archive-trip-scroll-trip-" + id]
+            for _ in 0..<5 {
+                if card.isHittable { break }
+                app.scrollViews.firstMatch.swipeUp()
+            }
+            XCTAssertTrue(card.isHittable)
             let oldY = card.frame.minY
             card.tap()
             let close = app.buttons["archive-detail-close"]

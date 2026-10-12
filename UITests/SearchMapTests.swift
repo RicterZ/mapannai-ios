@@ -64,7 +64,8 @@ final class SearchMapTests: XCTestCase {
         let trip = app.buttons["archive-trip-demo-trip"]
         XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
         let add = app.buttons["trip-add-place"]
-        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
+        let list = app.collectionViews["itinerary-marker-list"]
+        for _ in 0..<5 where !add.isHittable { list.swipeUp() }
         XCTAssertTrue(add.isHittable); add.tap()
         let search = app.searchFields["map-place-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
@@ -118,20 +119,20 @@ final class SearchMapTests: XCTestCase {
     }
 
     @MainActor func testAddOpensDraftAndOnlySaveAttemptsMutation() {
-        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--paged-search-demo"]; app.launch()
         openSearch(app)
         let search = app.searchFields["map-place-search"]
-        search.tap(); search.typeText("静安\n")
-        let add = app.buttons["add-search-place-demo-3"].firstMatch
+        search.tap(); search.typeText("咖啡\n")
+        let add = app.buttons["add-search-place-paged-0"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()
-        XCTAssertTrue(app.textFields["地点名称"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["当前为只读示例，连接服务后可添加地点。"].exists)
-        app.buttons["保存"].tap()
-        XCTAssertTrue(app.staticTexts["当前为只读示例，连接服务后可添加地点。"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.alerts.count, 0)
-        app.buttons["取消"].tap()
+        XCTAssertTrue(app.textFields["marker-name-field"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["当前为只读示例，无法保存。"].exists)
+        app.buttons["save-marker-editor"].tap()
+        XCTAssertTrue(app.staticTexts["当前为只读示例，无法保存。"].firstMatch.waitForExistence(timeout: 5))
+        if app.alerts.firstMatch.exists { app.alerts.firstMatch.buttons["知道了"].tap() }
+        app.buttons["cancel-marker-editor"].tap()
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertEqual(search.value as? String, "静安")
+        XCTAssertEqual(search.value as? String, "咖啡")
     }
 
     @MainActor func testIPadRotationKeepsSearchAndSideBySideMap() throws {

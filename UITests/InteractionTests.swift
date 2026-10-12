@@ -45,12 +45,12 @@ final class InteractionTests: XCTestCase {
         itinerary.swipeUp()
         XCTAssertTrue(app.buttons["新建路线"].waitForExistence(timeout: 5))
         app.buttons["新建路线"].tap()
-        XCTAssertTrue(app.navigationBars["新建路线"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["保存"].isEnabled)
+        XCTAssertTrue(app.navigationBars["新的路线"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["save-chain-editor"].isEnabled)
         XCTAssertFalse(app.buttons["chain-add-marker-demo-3"].exists)
         app.buttons["chain-add-marker-demo-0"].tap()
         app.buttons["chain-add-marker-demo-1"].tap()
-        XCTAssertTrue(app.buttons["保存"].isEnabled)
+        XCTAssertTrue(app.buttons["save-chain-editor"].isEnabled)
         app.buttons["取消"].tap()
         app.buttons["trip-breadcrumb"].tap()
         XCTAssertTrue(app.buttons["journey-day-day-1"].waitForExistence(timeout: 5))
@@ -59,9 +59,9 @@ final class InteractionTests: XCTestCase {
         list.swipeDown()
         XCTAssertTrue(app.buttons["create-journey"].waitForExistence(timeout: 5))
         app.buttons["create-journey"].tap()
-        XCTAssertTrue(app.navigationBars["创建旅行"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.textFields["旅行名称"].exists)
-        XCTAssertFalse(app.buttons["保存"].isEnabled)
+        XCTAssertTrue(app.staticTexts["新的旅途"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["trip-name-field"].exists)
+        XCTAssertFalse(app.buttons["trip-create-submit"].isEnabled)
         app.buttons["取消"].tap()
         XCTAssertTrue(app.buttons["journey-demo-trip"].exists)
         let overviewImage = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); overviewImage.name = "Journey overview"; overviewImage.lifetime = .keepAlways; add(overviewImage)
@@ -351,55 +351,34 @@ final class MarkerActionTests: XCTestCase {
 }
 
 final class MarkerPanelTransitionTests: XCTestCase {
-    @MainActor func testSelectingPlaceFromFullPlanningReturnsToHalfAndNotesFollowActions() throws {
-        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "Phone full-page planning interaction")
+    @MainActor func testSelectingPlaceRestoresFullPlanningAndCompactMapSelection() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "Phone panel interaction")
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let panel = app.otherElements["phone-itinerary-panel"]
-        let handle = app.buttons["itinerary-panel-toggle"]
+        let handle = app.buttons["面板高度"]
         XCTAssertTrue(handle.waitForExistence(timeout: 10))
-        let start = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -500)))
-        let full = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            panel.frame.minY < 2
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [full], timeout: 5), .completed)
-        let marker = app.buttons["route-0-marker-demo-1"]
-        XCTAssertTrue(marker.waitForExistence(timeout: 5))
-        marker.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
-        XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(app.navigationBars["地点"].frame.minY, app.windows.firstMatch.frame.height * 0.4)
-        let initial = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        initial.name = "Marker over half-height journey"; initial.lifetime = .keepAlways; add(initial)
-        let detailScroll = app.scrollViews.firstMatch
-        detailScroll.swipeUp()
-        let note = app.descendants(matching: .any)["marker-note"].firstMatch
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        let actions = app.buttons["marker-delete"]
-        let itinerary = app.buttons["marker-itinerary-day-1"]
-        let status = app.descendants(matching: .any)["marker-in-current-day"].firstMatch
-        XCTAssertGreaterThanOrEqual(note.frame.minY, actions.frame.maxY)
-        XCTAssertGreaterThanOrEqual(note.frame.minY, itinerary.frame.maxY)
-        XCTAssertGreaterThanOrEqual(note.frame.minY, status.frame.maxY)
-        let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        image.name = "Marker notes below actions"; image.lifetime = .keepAlways; add(image)
-        app.buttons["close-marker-detail"].tap()
-        let half = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let height = panel.frame.height
-            return height > 260 && height < 450 && panel.frame.minY > 300
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [half], timeout: 5), .completed)
-        XCTAssertTrue(app.buttons["trip-breadcrumb"].exists)
-        XCTAssertTrue(app.buttons["定位到当前位置"].exists)
         handle.tap()
-        let compact = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            panel.frame.height < 150
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [compact], timeout: 5), .completed)
-        app.buttons["map-marker-demo-4"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["route-0-marker-demo-1"].waitForExistence(timeout: 5))
+        app.buttons["route-0-marker-demo-1"].tap()
+        XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
+        let review = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        review.name = "Place detail with light close control"; review.lifetime = .keepAlways; add(review)
+        XCTAssertFalse(app.buttons["day-search-add-place"].isHittable)
         app.buttons["close-marker-detail"].tap()
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            panel.frame.height > 260 && panel.frame.height < 450
-        }, object: nil)], timeout: 5), .completed)
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            panel.frame.height > app.frame.height * 0.8
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
+        let grabber = app.buttons["面板高度"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        grabber.press(forDuration: 0.1, thenDragTo: grabber.withOffset(CGVector(dx: 0, dy: 650)))
+        let compact = app.otherElements["compact-journey-controls"]
+        XCTAssertTrue(compact.waitForExistence(timeout: 5))
+        let marker = app.descendants(matching: .any)["saved/demo-1"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 5))
+        marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
+        app.buttons["close-marker-detail"].tap()
+        XCTAssertTrue(compact.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["day-search-add-place"].isHittable)
     }
 }

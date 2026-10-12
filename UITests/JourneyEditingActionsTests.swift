@@ -62,7 +62,7 @@ final class JourneyEditingActionsTests: XCTestCase {
         XCTAssertGreaterThan(edit.frame.width, 200)
         XCTAssertGreaterThanOrEqual(edit.frame.minY, app.buttons["journey-add-day"].frame.maxY)
         edit.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertTrue(app.navigationBars["编辑旅行"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["编辑旅途"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields["trip-name-field"].value as? String, "上海 · 秋日散步")
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "trip-start-date").firstMatch.exists)
         capture("Trip editing name icon and dates")

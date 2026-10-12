@@ -111,7 +111,8 @@ struct RouteOrderWrite {
     let body: [String: Any]
     init(previous: TripDay, updated: TripDay) throws {
         let base = "trips/" + APIClient.id(previous.tripId) + "/days/" + APIClient.id(previous.id)
-        if let old = previous.routeChains, let new = updated.routeChains, old.map(\.id) == new.map(\.id) {
+        if previous.markerIds == updated.markerIds,
+           let old = previous.routeChains, let new = updated.routeChains, old.map(\.id) == new.map(\.id) {
             let changed = old.indices.filter { old[$0].stops.map(\.markerId) != new[$0].stops.map(\.markerId) }
             if changed.count == 1, let index = changed.first, new[index].stops.count >= 2 {
                 path = base + "/chains/" + APIClient.id(old[index].id)

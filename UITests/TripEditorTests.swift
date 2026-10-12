@@ -1,28 +1,30 @@
 import XCTest
 
 final class TripEditorTests: XCTestCase {
-    @MainActor func testInlineIconNameAndDatesWithoutDescription() {
-        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
-        let exit = app.buttons["exit-journey"]
-        XCTAssertTrue(exit.waitForExistence(timeout: 10)); exit.tap()
-        let create = app.buttons["create-journey"]
-        XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
-        XCTAssertTrue(app.navigationBars["创建旅行"].waitForExistence(timeout: 5))
+    @MainActor func testIconNameAndRangeWithoutDescription() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
+        let create = app.buttons["archive-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10)); create.tap()
+        XCTAssertTrue(app.staticTexts["新的旅途"].waitForExistence(timeout: 5))
+        let search = app.textFields["trip-destination-search"]
+        XCTAssertTrue(search.exists)
+        search.tap(); search.typeText("京都")
+        let result = app.buttons["trip-destination-result-0"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
+        XCTAssertTrue(app.buttons["trip-destination-remove-0"].exists)
         let name = app.textFields["trip-name-field"]
         let icon = app.buttons["trip-icon-picker"]
         XCTAssertTrue(name.exists); XCTAssertTrue(icon.exists)
         XCTAssertEqual(icon.frame.midY, name.frame.midY, accuracy: 2)
         XCTAssertLessThan(icon.frame.maxX, name.frame.minX)
         XCTAssertFalse(app.textFields["简介"].exists)
-        XCTAssertFalse(app.textFields["旅行图标"].exists)
-        XCTAssertFalse(app.buttons["保存"].isEnabled)
+        XCTAssertFalse(app.buttons["trip-create-submit"].isEnabled)
         icon.tap(); app.buttons["trip-icon-option-🏍️"].tap()
         XCTAssertTrue(icon.label.contains("🏍️"))
         name.tap(); name.typeText("Weekend ride")
-        XCTAssertTrue(app.buttons["保存"].isEnabled)
-        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        shot.name = "Inline trip editor"; shot.lifetime = .keepAlways; add(shot)
-        app.buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["trip-create-submit"].isEnabled)
+        XCTAssertTrue(app.buttons["trip-date-range"].exists)
+        app.buttons["trip-create-cancel"].tap()
     }
     @MainActor func testLargerNotesKeepTypingAndFormatting() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()

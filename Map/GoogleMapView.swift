@@ -51,7 +51,6 @@ struct GoogleMapRenderer: UIViewRepresentable {
         var lastCamera: UUID?
         var lastLocate: UUID?
         var pendingLocate = false
-        var searchStyleEnabled: Bool?
         weak var map: GMSMapView?
         var locationObservation: NSKeyValueObservation?
         init(_ store: AppStore) { self.store = store; super.init(); headingManager.delegate = self }
@@ -60,6 +59,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
         }
         func update(_ map: GMSMapView) {
             self.map = map
+            navigationGestures.onTransformInteraction = { [weak self] in self?.store.noteDayMapTransform() }
             navigationGestures.observe(map) { [weak self] in self?.store.noteMapInteraction() }
             userDirection.attach(to: map, project: { [weak map] in
                 guard let map, let location = map.myLocation else { return nil }
@@ -93,9 +93,10 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 let marker = markers[key] ?? GMSMarker()
                 marker.position = Self.coordinate(value.0); marker.title = value.1; marker.userData = key
                 marker.groundAnchor = CGPoint(x: 0.5, y: key == "draft" ? 42.0/48.0 : value.2 == nil ? 54.0/64.0 : 0.5)
-                marker.zIndex = key == "draft" ? 1000 : value.2 != nil && store.selectedMarker?.id == value.2?.id ? 3 : key.hasPrefix("saved/") ? 2 : 999
+                marker.zIndex = key == "draft" ? 1000 : value.2 != nil && store.mapHighlightedMarkerID == value.2?.id ? 3 : key.hasPrefix("saved/") ? 2 : 999
                 if let saved = value.2 {
-                    marker.icon = MapMarkerAppearance.image(icon: saved.icon, compact: MapZoomPresentation.isCompact(Double(map.camera.zoom)), selected: store.selectedMarker?.id == saved.id)
+                    marker.icon = store.dayMapNumber(for: saved.id).map { MapMarkerAppearance.dayImage(number: $0, focused: store.mapHighlightedMarkerID == saved.id) }
+                        ?? MapMarkerAppearance.image(icon: saved.icon, compact: MapZoomPresentation.isCompact(Double(map.camera.zoom)), selected: store.mapHighlightedMarkerID == saved.id)
                 } else if key == "draft" { marker.icon = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location) }
                 else { marker.icon = SearchPinAppearance.image(name: value.1) }
                 if key == "draft" {
@@ -111,10 +112,10 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 }
                 marker.map = map; markers[key] = marker
             }
-            let snapshot = store.displayRoutes.map(RouteOverlayGeometry.init)
+            let snapshot = store.mapDisplayRoutes.map(RouteOverlayGeometry.init)
             if snapshot != geometries {
                 overviewLines.forEach { $0.map = nil }
-                overviewLines = store.displayRoutes.map { route in
+                overviewLines = store.mapDisplayRoutes.map { route in
                     let path = GMSMutablePath()
                     MapZoomPresentation.overviewCurve(route).forEach { path.add(Self.coordinate($0)) }
                     let line = GMSPolyline(path:path)
@@ -140,7 +141,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
             }
             for line in overviewLines { line.map = MapZoomPresentation.isCompact(Double(map.camera.zoom)) ? map : nil }
             for line in lines.values { line.isTappable = !store.placeSearchPresented; line.map = MapZoomPresentation.isCompact(Double(map.camera.zoom)) ? nil : map }
-            let selected = store.displayRoutes.filter { $0.dayID == store.dayID }
+            let selected = store.mapDisplayRoutes.filter { $0.dayID == store.dayID }
             let selectedIDs = Set(selected.map(\.id))
             for (id, line) in lines {
                 let dashed = geometries.first(where: { $0.id == id })?.isDashed == true
@@ -164,12 +165,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
                     }
                 } else { line.spans = nil }
             }
-            map.isBuildingsEnabled = !store.placeSearchPresented
-            // Hide commercial POIs during server search; road labels remain visible.
-            if searchStyleEnabled != store.placeSearchPresented {
-                searchStyleEnabled = store.placeSearchPresented
-                map.mapStyle = store.placeSearchPresented ? try? GMSMapStyle(jsonString: "[{\"featureType\":\"poi\",\"stylers\":[{\"visibility\":\"off\"}]}]") : nil
-            }
+            map.isBuildingsEnabled = true
             if let command = store.camera, command.id != lastCamera { lastCamera = command.id; focus(map, command) }
             headingManager.stopUpdatingHeading()
             if lastLocate == nil { lastLocate = store.locating }
@@ -218,7 +214,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
         func mapView(_ mapView: GMSMapView, didTap marker: GMSMarker) -> Bool {
             store.noteMapInteraction(); tapArbiter.claim()
             guard let key = marker.userData as? String else { return true }
-            if key.hasPrefix("saved/"), let value = store.mapMarkers.first(where: { "saved/" + $0.id == key }) { store.focus(value) }
+            if key.hasPrefix("saved/"), let value = store.mapMarkers.first(where: { "saved/" + $0.id == key }) { store.selectMapMarker(value) }
             else if key.hasPrefix("search/"), let place = store.searchResults.first(where: { "search/" + $0.id == key }) { store.choose(place, fromMap: true) }
             return true
         }
@@ -233,7 +229,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
                 let screen = mapView.projection.point(for: Self.coordinate(marker.coordinates))
                 return abs(screen.x - point.x) <= 22 && abs(screen.y - point.y) <= 22
             }) {
-                tapArbiter.claim(); store.focus(saved); return
+                tapArbiter.claim(); store.selectMapMarker(saved); return
             }
             tapArbiter.claim()
             store.noteMapInteraction(); store.create(at: Coordinate(latitude: location.latitude, longitude: location.longitude), poiName: name, placeReferences: PlaceReferences(google: PlaceReference(placeId: placeID)))
@@ -245,7 +241,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
             poiInfoMarker = info; poiDraftID = store.draft?.id
         }
         func mapView(_ mapView: GMSMapView, didTap overlay: GMSOverlay) {
-            guard !store.placeSearchPresented, let id = overlay.userData as? String, let route = store.displayRoutes.first(where: { $0.id == id }) else { return }
+            guard !store.placeSearchPresented, let id = overlay.userData as? String, let route = store.mapDisplayRoutes.first(where: { $0.id == id }) else { return }
             store.noteMapInteraction()
             tapArbiter.scheduleRoute { [weak self] in self?.store.selectRoute(route) }
         }

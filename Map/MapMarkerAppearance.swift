@@ -26,14 +26,28 @@ import UIKit
                 cg.strokeEllipse(in: circle.insetBy(dx: -3, dy: -3))
             }
             if !compact {
-                let text = icon.emoji as NSString
-                let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12)]
-                let size = text.size(withAttributes: attrs)
-                text.draw(at: CGPoint(x: (44-size.width)/2, y: (44-size.height)/2), withAttributes: attrs)
+                if let name = PlaceIconAssets.name(for: icon.emoji), let artwork = UIImage(named: name) {
+                    artwork.draw(in: CGRect(x: 13, y: 13, width: 18, height: 18))
+                }
+
             }
         }
         cache[key] = image
         return image
+    }
+    static func dayImage(number: Int, focused: Bool) -> UIImage {
+        let key = "day/\(number)/\(focused)"
+        if let image = cache[key] { return image }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 44, height: 44)).image { _ in
+            let circle = UIBezierPath(ovalIn: CGRect(x: 5, y: 5, width: 34, height: 34))
+            (focused ? UIColor.black : UIColor.systemBlue).setFill(); circle.fill()
+            UIColor.white.setStroke(); circle.lineWidth = 2; circle.stroke()
+            let text = String(number) as NSString
+            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 16, weight: .semibold), .foregroundColor: UIColor.white]
+            let size = text.size(withAttributes: attributes)
+            text.draw(at: CGPoint(x: (44 - size.width) / 2, y: (44 - size.height) / 2), withAttributes: attributes)
+        }
+        cache[key] = image; return image
     }
     static func draftImage(icon: MarkerIcon) -> UIImage {
         let symbol = icon == .location ? "circle" : icon.symbol

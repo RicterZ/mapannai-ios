@@ -66,7 +66,7 @@ final class AIPlannerTests: XCTestCase {
         XCTAssertEqual(try AIConfiguration(baseUrl: " https://model.example/v1 ", model: " model ").validated().model, "model")
     }
     @MainActor func testEntryRemainsHiddenAndDemoCannotWrite() async {
-        XCTAssertTrue(AIPlannerStore.entryEnabled)
+        XCTAssertFalse(AIPlannerStore.entryEnabled)
         let settings = Settings(), planner = AIPlannerStore()
         await planner.configure(for: settings)
         planner.send("创建旅行", store: AppStore(settings: settings, demo: true))

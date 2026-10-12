@@ -125,7 +125,7 @@ final class CoreTests: XCTestCase {
         let command = try XCTUnwrap(store.camera)
         let insets = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: true)
         XCTAssertEqual(store.mapViewportInsets, collapsed)
-        XCTAssertEqual(insets.bottom, 852 * 0.55 + 25, accuracy: 0.001)
+        XCTAssertEqual(insets.bottom, 852 * 0.5 + 25, accuracy: 0.001)
         let full = MapLayout(width: 393, height: 852, regularWidth: false, expanded: true, sheetHeight: 852).insets
         XCTAssertEqual(command.viewportInsets(base: full, height: 852, bottomSafeArea: 34, bottomSheet: true).bottom, insets.bottom)
         let centerY = (852 + insets.top - insets.bottom) / 2
@@ -137,17 +137,15 @@ final class CoreTests: XCTestCase {
         let ipad = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: false)
         XCTAssertEqual(ipad, collapsed)
     }
-    @MainActor func testCoverDetailUsesTallerRestingHeightAndCameraOcclusion() {
+    @MainActor func testCoverDetailUsesSameHalfHeightCameraOcclusion() {
         let store = AppStore(settings: Settings(), demo: true)
         var marker = store.markers[1]
         let withoutCover = MarkerDetailLayout(marker: marker, itineraryCount: 1, hasSelectedDay: true)
         marker.content.headerImage = "https://example.invalid/cover.jpg"
         let withCover = MarkerDetailLayout(marker: marker, itineraryCount: 1, hasSelectedDay: true)
-        XCTAssertFalse(withoutCover.compact)
-        XCTAssertFalse(withCover.compact)
-        XCTAssertGreaterThan(withCover.restingFraction, withoutCover.restingFraction)
-        XCTAssertGreaterThan(withCover.occlusion(height: 852, bottomSafeArea: 34),
-                             withoutCover.occlusion(height: 852, bottomSafeArea: 34) + 100)
+        XCTAssertEqual(withCover.occlusion(height: 852, bottomSafeArea: 34), 426)
+        XCTAssertEqual(withCover.occlusion(height: 852, bottomSafeArea: 34),
+                       withoutCover.occlusion(height: 852, bottomSafeArea: 34))
     }
 
     @MainActor func testCompactDetailCameraUsesSameHeightAsSheetIncludingSafeArea() throws {
@@ -156,14 +154,12 @@ final class CoreTests: XCTestCase {
         marker.content.markdownContent = "<p><br></p>"
         marker.content.headerImage = nil
         let detail = MarkerDetailLayout(marker: marker, itineraryCount: 7, hasSelectedDay: true)
-        XCTAssertTrue(detail.compact)
-        XCTAssertEqual(detail.compactHeight, 520)
         let command = CameraCommand(points: [marker.coordinates], detailLayout: detail)
         let insets = command.viewportInsets(base: MapViewportInsets(top: 85, left: 35, bottom: 93, right: 35),
             height: 852, bottomSafeArea: 34, bottomSheet: true)
-        XCTAssertEqual(insets.bottom, 579)
+        XCTAssertEqual(insets.bottom, 451)
         XCTAssertGreaterThan(insets.bottom, 852 * 0.48)
-        XCTAssertLessThan((852 + insets.top - insets.bottom) / 2 + 22, 852 - 554)
+        XCTAssertLessThan((852 + insets.top - insets.bottom) / 2 + 22, 852 - 426)
     }
     @MainActor func testMarkerItinerariesIncludeAllMembershipsWithChronologicalDayNumbers() {
         let sample = AppStore(settings: Settings(), demo: true)
@@ -350,6 +346,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(new.markerIds, ["a","b","c","d","e"])
         XCTAssertEqual(new.chains.last, ["b","e"])
         XCTAssertEqual(new.chains.first, ["a","b","c"])
+        XCTAssertEqual(try day.replacingChain(at: nil, with: ["e"]).chains.last, ["e"])
+        XCTAssertThrowsError(try day.replacingChain(at: nil, with: []))
         XCTAssertThrowsError(try day.replacingChain(at: nil, with: ["a","a"]))
         XCTAssertThrowsError(try day.replacingChain(at: 3, with: ["a","c"]))
     }
@@ -574,7 +572,7 @@ final class MapServiceTests: XCTestCase {
         XCTAssertThrowsError(try Settings.normalizedURL("example.invalid"))
     }
 }
-private func requestBody(_ request: URLRequest) -> Data {
+func requestBody(_ request: URLRequest) -> Data {
     if let body = request.httpBody { return body }
     guard let stream = request.httpBodyStream else { return Data() }
     stream.open(); defer { stream.close() }
@@ -586,6 +584,23 @@ private func requestBody(_ request: URLRequest) -> Data {
     return data
 }
 final class MapLayoutTests: XCTestCase {
+    func testPhoneCameraUsesUncoveredAreaAndFullUsesHalfHeight() {
+        let compact = MapLayout(width: 393, height: 852, regularWidth: false, expanded: false, sheetHeight: 160).insets
+        let half = MapLayout(width: 393, height: 852, regularWidth: false, expanded: true, sheetHeight: 426).insets
+        let full = MapLayout(width: 393, height: 852, regularWidth: false, expanded: true, sheetHeight: 852).insets
+        XCTAssertEqual(compact.bottom, 185)
+        XCTAssertEqual(half.bottom, 451)
+        XCTAssertEqual(full, half)
+        let compactCenter = (852 + compact.top - compact.bottom) / 2
+        let halfCenter = (852 + half.top - half.bottom) / 2
+        XCTAssertGreaterThan(compactCenter, halfCenter)
+        let base = MapViewportInsets.phone
+        let fullCommand = CameraCommand(points: [], bottomSheetFraction: 1)
+        let halfCommand = CameraCommand(points: [], bottomSheetFraction: 0.5)
+        XCTAssertEqual(fullCommand.viewportInsets(base: base, height: 852, bottomSafeArea: 34, bottomSheet: true),
+                       halfCommand.viewportInsets(base: base, height: 852, bottomSafeArea: 34, bottomSheet: true))
+    }
+
     func testIPadLandscapeAndPortraitReserveLeftWorkspace() {
         let landscape = MapLayout(width: 1133, height: 744, regularWidth: true, expanded: true)
         XCTAssertTrue(landscape.usesSidebar)
@@ -696,6 +711,47 @@ final class LongPressLookupTests: XCTestCase {
         XCTAssertEqual(store.draft?.coordinates, Coordinate(latitude: 32, longitude: 122))
         XCTAssertEqual(store.draft?.address, "查询地址")
     }
+    @MainActor func testSearchLongPressKeepsNamedResultAndResolvesAfterCancel() async throws {
+        let store = AppStore(settings: Settings(), demo: false, services: PlaceLookupMock())
+        store.beginAddingPlace()
+        store.searchText = "保留搜索"
+        let coordinate = Coordinate(latitude: 31, longitude: 121)
+        store.create(at: coordinate, poiName: "底图POI")
+        let initial = try XCTUnwrap(store.searchResults.first)
+        XCTAssertEqual(initial.name, "底图POI")
+        XCTAssertFalse(initial.address.isEmpty)
+        store.draft = nil
+        store.editingSearchPlaceID = nil
+        try await Task.sleep(for: .milliseconds(50))
+        let result = try XCTUnwrap(store.searchResults.first)
+        XCTAssertEqual(result.id, initial.id)
+        XCTAssertEqual(result.name, "底图POI")
+        XCTAssertEqual(result.address, "查询地址")
+        XCTAssertEqual(result.coordinates, coordinate)
+        XCTAssertEqual(store.searchText, "保留搜索")
+        XCTAssertNil(store.draft)
+    }
+    @MainActor func testSearchLongPressFailureAndExitedSessionCannotLeaveBlankOrStaleResults() async throws {
+        let store = AppStore(settings: Settings(), demo: false, services: PlaceLookupMock(fails: true))
+        store.beginAddingPlace()
+        store.create(at: Coordinate(latitude: 31, longitude: 121))
+        store.draft = nil
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(store.searchResults.first?.name, "地图选点")
+        XCTAssertFalse(try XCTUnwrap(store.searchResults.first).address.isEmpty)
+        store.endAddingPlace()
+        store.beginAddingPlace()
+        XCTAssertTrue(store.searchResults.isEmpty)
+
+        let resolving = AppStore(settings: Settings(), demo: false, services: PlaceLookupMock())
+        resolving.beginAddingPlace()
+        resolving.create(at: Coordinate(latitude: 31, longitude: 121))
+        resolving.endAddingPlace()
+        resolving.beginAddingPlace()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(resolving.searchResults.isEmpty)
+        XCTAssertNil(resolving.draft)
+    }
     @MainActor func testLookupFailureKeepsEditableDraft() async throws {
         let store = AppStore(settings: Settings(), demo: false, services: PlaceLookupMock(fails: true))
         store.create(at: Coordinate(latitude: 31, longitude: 121))
@@ -720,12 +776,14 @@ final class RouteEditingTests: XCTestCase {
         var newer = day; newer.chains[1].reverse()
         XCTAssertThrowsError(try edit.applying(to: newer))
     }
-    func testRemovingAllStopsDeletesOnlyRouteAndNewRouteRequiresTwoStops() throws {
+    func testRemovingAllStopsDeletesOnlyRouteAndNewRouteAllowsOneStop() throws {
         let day = TripDay(id: "day", tripId: "trip", date: "2026-10-02", markerIds: ["a", "b"], chains: [["a", "b"]])
         let empty = RouteEditSession(day: day, index: 0, ids: [])
         XCTAssertEqual(try empty.applying(to: day).chains, [])
         XCTAssertEqual(try empty.applying(to: day).markerIds, day.markerIds)
-        XCTAssertThrowsError(try RouteEditSession(day: day, index: nil, ids: ["a"]).applying(to: day))
+        let single = try RouteEditSession(day: day, index: nil, ids: ["a"]).applying(to: day)
+        XCTAssertEqual(single.chains, [["a", "b"], ["a"]])
+        XCTAssertEqual(single.markerIds, day.markerIds)
     }
     @MainActor func testSaveUpdatesImmediatelyAndFailedAPIRestoresDay() async throws {
         let defaults = UserDefaults.standard, previousURL = defaults.object(forKey: "baseURL")

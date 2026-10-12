@@ -6,8 +6,10 @@ import CoreImage
 struct JourneyDaysContents: View {
     @ObservedObject var store: AppStore
     let trip: Trip
+    var onSelectDay: ((TripDay) -> Void)? = nil
     var archiveColorIndex: Int? = nil
     var archiveHeaderVisible = true
+    var archivePhoto: UIImage? = nil
     var onArchiveHeaderFrame: (CGRect) -> Void = { _ in }
     private var unscheduledPlaces: [Marker] {
         if store.tripPlacesPreview { return store.previewTripPlaces[trip.id] ?? [] }
@@ -23,7 +25,7 @@ struct JourneyDaysContents: View {
         List {
             if let archiveColorIndex {
                 Section {
-                    JourneyArchiveCard(trip: trip, colorIndex: archiveColorIndex)
+                    JourneyArchiveCard(trip: trip, colorIndex: archiveColorIndex, photo: archivePhoto)
                         .frame(height: 204)
                         .opacity(archiveHeaderVisible ? 1 : 0)
                         // The snapshot owns motion; the live header must hand off without a cross-fade.
@@ -46,7 +48,10 @@ struct JourneyDaysContents: View {
 
             ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, day in
                 Section {
-                NavigationLink(value: JourneyDestination.day(trip.id, day.id)) {
+                Button {
+                    if let onSelectDay { onSelectDay(day) }
+                    else { store.select(trip: trip, day: day); store.beginDayMapBrowsing() }
+                } label: {
                     dayRow(day, index: index)
                         .contentShape(Rectangle())
                         .background(GeometryReader { geometry in
@@ -67,10 +72,13 @@ struct JourneyDaysContents: View {
                     }
                 }
             }
-            if !unscheduledPlaces.isEmpty || !store.demo {
+            if !unscheduledPlaces.isEmpty {
                 Section {
+                    JourneyPlaceGroupHeading(title: "未安排日期", count: unscheduledPlaces.count)
                     ForEach(unscheduledPlaces) { marker in
-                        PlaceSelectionRow(marker: marker)
+                        DayPlaceIdentity(marker: marker)
+                            .listRowBackground(Color(uiColor: .systemBackground))
+                            .listRowSeparator(.hidden)
                             .contentShape(Rectangle())
                             .onTapGesture { store.focus(marker) }
                             .accessibilityElement(children: .combine)
@@ -89,33 +97,30 @@ struct JourneyDaysContents: View {
                                 .tint(.red).accessibilityLabel("从旅行移除").disabled(store.saving)
                             }
                     }
-                    Button { store.beginAddingPlace(tripID: trip.id) } label: {
-                        Label("添加地点", systemImage: "plus").fullRowActionLabel()
-                    }.foregroundStyle(Theme.accent)
-                } header: {
-                    Text("未安排日期")
-                        .font(.subheadline.weight(.regular))
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
                 }
-                  footer: { Text("已收藏到这次旅行，之后可以安排到某一天。") }
             }
             Section {
-                Button { Task {
-                    let next = Calendar(identifier: .gregorian).date(byAdding: .day, value: 1, to: .fromDay(trip.endDate))!.dayString
-                    _ = await store.perform { client in
-                        try await client.mutate("trips/\(APIClient.id(trip.id))/days", method: "POST", body: ["date": next])
-                        try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: ["endDate": next])
+                JourneyActionGroup(compact: true) {
+                    if !unscheduledPlaces.isEmpty || !store.demo {
+                        Button { store.beginAddingPlace(tripID: trip.id) } label: {
+                            Label("添加地点", systemImage: "plus")
+                        }.accessibilityIdentifier("trip-add-place")
                     }
-                }} label: { Label("添加一天", systemImage: "plus").fullRowActionLabel() }
-                    .buttonStyle(.plain).foregroundStyle(Theme.accent).disabled(store.saving)
-                    .accessibilityIdentifier("journey-add-day")
-                Button { editing = true } label: {
-                    Label("编辑旅行", systemImage: "pencil").fullRowActionLabel()
-                }.buttonStyle(.plain).foregroundStyle(Theme.accent)
-                    .disabled(store.saving).accessibilityIdentifier("journey-edit-trip")
-            } header: {
-                Color.clear.frame(height: 16).accessibilityHidden(true)
+                    Button { Task {
+                        let next = Calendar(identifier: .gregorian).date(byAdding: .day, value: 1, to: .fromDay(trip.endDate))!.dayString
+                        _ = await store.perform { client in
+                            try await client.mutate("trips/\(APIClient.id(trip.id))/days", method: "POST", body: ["date": next])
+                            try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: ["endDate": next])
+                        }
+                    }} label: { Label("添加一天", systemImage: "plus") }
+                        .disabled(store.saving)
+                        .accessibilityIdentifier("journey-add-day")
+                    Button { editing = true } label: {
+                        Label("编辑旅途", systemImage: "pencil")
+                    }
+                        .disabled(store.saving).accessibilityIdentifier("journey-edit-trip")
+                }.listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
             }
         }
@@ -128,7 +133,7 @@ struct JourneyDaysContents: View {
                     _ = assignPreviewPlaces(["trip-place/" + trip.id + "/" + id], to: day)
                 }
             })
-            .sheet(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
+            .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: $deletion) { day in
                 DayDeletionView(store: store, day: day)
             }
@@ -159,31 +164,9 @@ struct JourneyDaysContents: View {
     }
 
     private func dayRow(_ day: TripDay, index: Int) -> some View {
-        let title = day.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let titles = day.markerIds.compactMap { id in store.markers.first { $0.id == id }?.title }
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("第\(index + 1)天").font(.title3.weight(.bold))
-                Spacer(minLength: 12)
-                Text(Date.fromDay(day.date), format: .dateTime.month().day().weekday(.abbreviated))
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-            if !title.isEmpty && title != "第\(index + 1)天" && title != day.date {
-                Text(title).font(.headline).fixedSize(horizontal: false, vertical: true)
-            }
-            if !titles.isEmpty {
-                Text(titles.joined(separator: " · "))
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-            }
-            HStack(spacing: 6) {
-                Circle().fill(Theme.color(day.colorIndex ?? 0)).frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
-                Text(day.markerIds.isEmpty ? "尚未安排地点" : "\(day.markerIds.count) 个地点")
-                if !day.chains.isEmpty {
-                    Text("· \(day.chains.count) 条路线")
-                }
-            }.font(.footnote).foregroundStyle(.secondary)
-        }.foregroundStyle(.primary).padding(.vertical, 10).contentShape(Rectangle())
+        JourneyDayCardContent(day: day, index: index, markers: store.markers,
+            loadPhotos: archiveColorIndex == nil || archiveHeaderVisible)
+            .contentShape(Rectangle())
     }
 
 }
@@ -214,6 +197,9 @@ struct JourneyArchiveView: View {
     @State private var headerGeometry = ArchiveHeaderGeometry()
     @State private var cardFrames: [String: CGRect] = [:]
     @State private var transferCards: [ArchiveTransferCard] = []
+    @State private var dividerFrames: [Int: CGRect] = [:]
+    @State private var transferDividers: [ArchiveTransferDivider] = []
+    @State private var photos: [URL: UIImage] = [:]
     @State private var creating = false
     @State private var editing: Trip?
     @State private var deleting: Trip?
@@ -225,17 +211,16 @@ struct JourneyArchiveView: View {
         return store.markers.filter { !assigned.contains($0.id) }
     }
     private var trips: [Trip] {
-        let today = Date.now.dayString
-        return store.trips.sorted {
-            let a = archiveOrder($0, today: today), b = archiveOrder($1, today: today)
-            if a != b { return a < b }
-            return $0.id < $1.id
-        }
+        JourneyArchiveOrdering.sorted(store.trips, today: Date.now.dayString)
     }
-    private func archiveOrder(_ trip: Trip, today: String) -> String {
-        if trip.startDate <= today && trip.endDate >= today { return "0/" + trip.startDate }
-        if trip.startDate > today { return "1/" + trip.startDate }
-        return "2/" + trip.endDate.map { $0.wholeNumberValue.map { String(9 - $0) } ?? String($0) }.joined()
+    private var photoURLs: [URL] {
+        trips.compactMap { JourneyDaySummary.cover(trip: $0, markers: store.markers) }
+    }
+    private func coverPhoto(_ trip: Trip) -> UIImage? {
+        JourneyDaySummary.cover(trip: trip, markers: store.markers).flatMap { photos[$0] }
+    }
+    private var yearGroups: [Int: JourneyArchiveYearGroup] {
+        JourneyArchiveOrdering.yearGroups(trips, today: Date.now.dayString)
     }
 
     var body: some View {
@@ -246,8 +231,9 @@ struct JourneyArchiveView: View {
                     .accessibilityHidden(openedID != nil)
                 if let trip = openedTrip {
                     ZStack(alignment: .topLeading) {
-                        JourneyDaysContents(store: store, trip: trip, archiveColorIndex: openingIndex,
+                        JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, archiveColorIndex: openingIndex,
                             archiveHeaderVisible: cardInList,
+                            archivePhoto: transferCards.first { $0.id == trip.id }?.photo,
                             onArchiveHeaderFrame: {
                                 let origin = geometry.frame(in: .global).origin
                                 headerGeometry.frame = $0.offsetBy(dx: -origin.x, dy: -origin.y)
@@ -255,6 +241,7 @@ struct JourneyArchiveView: View {
                             .id(trip.id)
                             .listStyle(.insetGrouped)
                             .contentMargins(.top, 16, for: .scrollContent)
+                            .scrollClipDisabled()
                             .scrollContentBackground(.hidden)
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
                             .opacity(detailVisible ? 1 : 0)
@@ -264,7 +251,7 @@ struct JourneyArchiveView: View {
                             .zIndex(Double(openingIndex))
                             .task(id: trip.id) { await beginTransition(trip) }
                         if transitionStarted {
-                            ArchiveCardTransition(cards: transferCards, selectedID: trip.id,
+                            ArchiveCardTransition(cards: transferCards, dividers: transferDividers, selectedID: trip.id,
                                 destination: destinationFrame, height: geometry.size.height,
                                 expanded: detailVisible, handedOff: cardInList, reduceMotion: reduceMotion) {
                                     if detailVisible && !closing {
@@ -284,53 +271,45 @@ struct JourneyArchiveView: View {
                 }
             }
             .coordinateSpace(name: "journey-archive")
-            .clipped()
+            .mask(alignment: .top) {
+                Rectangle().ignoresSafeArea(.container)
+            }
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle(openedID == nil ? "我的旅途" : "")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Visibility.hidden, for: .navigationBar)
         .tint(Color(uiColor: .label))
         .toolbar {
-            if let trip = openedTrip {
+            if openedTrip != nil {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(action: close) { Image(systemName: "xmark").foregroundStyle(Color(uiColor: .label)) }
-                        .accessibilityLabel("返回我的旅途").accessibilityIdentifier("archive-detail-close")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { onSelect(trip, nil) } label: { Label("地图", systemImage: "map").foregroundStyle(Color(uiColor: .label)) }
-                        .accessibilityIdentifier("archive-detail-map")
-                }
+                        .accessibilityLabel("关闭旅途详情").accessibilityIdentifier("archive-detail-close").buttonStyle(.plain)
+                }.journeyBareBackground
             } else {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { creating = true } label: { HStack(spacing: 6) { Image(systemName: "plus"); Text("新建") }.foregroundStyle(Color(uiColor: .label)) }
+                    Button { creating = true } label: { Image(systemName: "plus").foregroundStyle(Color(uiColor: .label)) }
+                        .buttonBorderShape(.circle)
                         .accessibilityLabel("创建旅行").accessibilityIdentifier("archive-create")
                 }
             }
         }
-        .navigationDestination(for: JourneyDestination.self) { destination in
-            if case let .day(tripID, dayID) = destination,
-               let trip = store.trips.first(where: { $0.id == tripID }),
-               let day = trip.days.first(where: { $0.id == dayID }) {
-                DayContentsView(store: store, day: day, onViewRoute: { onSelect(trip, day) })
-                    .listStyle(.insetGrouped)
-                    .navigationTitle("第\((trip.days.sorted { $0.date < $1.date }.firstIndex { $0.id == day.id } ?? 0) + 1)天")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button { onSelect(trip, day) } label: { Label("地图", systemImage: "map").foregroundStyle(Color(uiColor: .label)) }
-                                .accessibilityIdentifier("archive-day-map")
-                        }
-                    }
-                    .onAppear { store.select(trip: trip, day: day, focus: false) }
+        .task(id: openedID == nil ? photoURLs : []) {
+            guard openedID == nil else { return }
+            let urls = photoURLs
+            for url in urls where photos[url] == nil {
+                let image = await JourneyPhotoCache.shared.image(for: url)
+                guard !Task.isCancelled, openedID == nil else { return }
+                var transaction = Transaction(); transaction.disablesAnimations = true
+                withTransaction(transaction) { photos[url] = image }
             }
+            photos = photos.filter { urls.contains($0.key) }
         }
         .onPreferenceChange(ArchiveCardFrames.self) { if openedID == nil { cardFrames = $0 } }
+        .onPreferenceChange(ArchiveDividerFrames.self) { if openedID == nil { dividerFrames = $0 } }
         .onAppear { if let trip = openedTrip { store.select(trip: trip, focus: false) } }
         .onChange(of: path) { _, value in
             if value.isEmpty, let trip = openedTrip { store.select(trip: trip, focus: false) }
-        }
-        .onChange(of: store.placeSearchPresented) { _, presented in
-            if presented, !mapVisible, let trip = openedTrip { onSelect(trip, store.day) }
         }
         .onChange(of: store.selectedMarker?.id) { _, id in
             if id != nil, !mapVisible, independentDetail == nil, let trip = openedTrip { onSelect(trip, store.day) }
@@ -347,11 +326,14 @@ struct JourneyArchiveView: View {
                 }
             })
         }
-        .sheet(isPresented: $creating) { TripEditorView(store: store, trip: nil).presentationDetents([.medium]) }
-        .sheet(item: $editing) { TripEditorView(store: store, trip: $0) }
+        .fullScreenCover(isPresented: $creating) { TripEditorView(store: store, trip: nil) }
+        .fullScreenCover(item: $editing) { TripEditorView(store: store, trip: $0) }
         .sheet(item: $deleting) { TripDeletionView(store: store, trip: $0) }
-        .sheet(item: Binding(get: { mapVisible ? nil : store.tripSaveRecovery }, set: { if !mapVisible { store.tripSaveRecovery = $0 } })) { draft in
+        .fullScreenCover(item: Binding(get: { mapVisible || store.tripSaveRecovery?.trip == nil ? nil : store.tripSaveRecovery }, set: { if !mapVisible { store.tripSaveRecovery = $0 } })) { draft in
             TripEditorView(store: store, trip: draft.trip, initial: draft)
+        }
+        .fullScreenCover(item: Binding(get: { !mapVisible && store.tripSaveRecovery?.trip == nil ? store.tripSaveRecovery : nil }, set: { if !mapVisible { store.tripSaveRecovery = $0 } })) { draft in
+            TripCreationView(store: store, initial: draft)
         }
         .alert("操作失败", isPresented: Binding(get: { !mapVisible && store.errorMessage != nil }, set: { if !$0 && !mapVisible { store.errorMessage = nil } })) {
             if store.canResumeFailedSave { Button("继续编辑") { store.resumeFailedSave() } }
@@ -362,9 +344,12 @@ struct JourneyArchiveView: View {
     private func archive(height: CGFloat) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("旅の目的地は、まだ見ぬ地平線の向こうに")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .opacity(detailVisible ? 0 : 1)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("我的旅途").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("archive-page-title")
+                    Text("旅の目的地は、まだ見ぬ地平線の向こうに")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.opacity(detailVisible ? 0 : 1)
                 if trips.isEmpty {
                     ContentUnavailableView {
                         Label("还没有旅途", systemImage: "suitcase.rolling")
@@ -372,10 +357,22 @@ struct JourneyArchiveView: View {
                     actions: { Button("创建旅行") { creating = true }.buttonStyle(.borderedProminent) }
                 }
                 VStack(spacing: 0) {
+                    let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
-                        let compact = index != trips.count - 1 && !typeSize.isAccessibilitySize
+                        if let group = yearGroups[index] {
+                            JourneyArchiveYearCard(year: group.year, count: group.count)
+                                .frame(height: typeSize.isAccessibilitySize ? 204 : 82, alignment: .top)
+                                .background(GeometryReader { proxy in
+                                    Color.clear.preference(key: ArchiveDividerFrames.self,
+                                        value: [index: proxy.frame(in: .named("journey-archive"))])
+                                })
+                                .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+                                .zIndex(Double(index) - 0.5)
+                        }
+                        let isTop = topIDs.contains(trip.id)
+                        let compact = !isTop && index != trips.count - 1 && !typeSize.isAccessibilitySize
                         Button { open(trip, index: index) } label: {
-                            JourneyArchiveCard(trip: trip, colorIndex: index)
+                            JourneyArchiveCard(trip: trip, colorIndex: index, photo: coverPhoto(trip))
                                 .frame(height: 204)
                                 .frame(height: compact ? 82 : 204, alignment: .top)
                                 .contentShape(Rectangle())
@@ -387,24 +384,21 @@ struct JourneyArchiveView: View {
                         .opacity(openedID == nil || !transitionStarted ? 1 : 0)
                         .zIndex(Double(index))
                         .contextMenu {
-                            Button("编辑旅行", systemImage: "pencil") { editing = trip }
-                            DestructiveMenuButton(title: "删除旅行", systemImage: "trash") { deleting = trip }
+                            Button("编辑旅途", systemImage: "pencil") { editing = trip }
+                            DestructiveMenuButton(title: "删除旅途", systemImage: "trash") { deleting = trip }
                         }
                         .accessibilityIdentifier("archive-trip-\(trip.id)")
-                        .accessibilityHint("打开旅行详情")
+                        .accessibilityHint(isTop ? "置顶旅途，打开旅行详情" : "打开旅行详情")
+                        .padding(.bottom, isTop && index + 1 < trips.count ? 24 : 0)
                     }
                 }
                 VStack(spacing: 24) {
                     Text("\(trips.count) 次旅途").font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
-                    Form {
-                        Section {
-                            Button(action: onOpenSettings) {
-                                HStack { Text("设置"); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
-                            }.foregroundStyle(Color(uiColor: .label)).accessibilityIdentifier("archive-settings")
-                        }
-                    }.scrollDisabled(true).scrollContentBackground(.hidden)
-                        .contentMargins(.top, 0).frame(height: 70).padding(.horizontal, -20)
+                    Button(action: onOpenSettings) {
+                        Label("设置", systemImage: "gearshape")
+                    }.buttonStyle(JourneyActionStyle())
+                        .accessibilityIdentifier("archive-settings")
                     if !independent.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("未加入行程").font(.headline)
@@ -418,25 +412,34 @@ struct JourneyArchiveView: View {
                 }.opacity(detailVisible ? 0 : 1)
             }.padding(.horizontal, 16).padding(.vertical, 20).frame(maxWidth: 640).frame(maxWidth: .infinity)
         }.scrollDisabled(openedID != nil)
+            .refreshable { await store.refresh(force: true) }
+            .accessibilityIdentifier("archive-trip-list")
     }
 
     private func open(_ trip: Trip, index: Int) {
         guard openedID == nil, let frame = cardFrames[trip.id] else { return }
         openingFrame = frame
+        let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
         transferCards = trips.enumerated().compactMap { position, value in
-            cardFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, frame: $0) }
+            cardFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, frame: $0,
+                photo: coverPhoto(value), isTop: topIDs.contains(value.id)) }
+        }
+        transferDividers = dividerFrames.compactMap { position, frame in
+            yearGroups[position].map { group in
+                ArchiveTransferDivider(index: position, frame: frame, year: group.year, count: group.count)
+            }
         }
         openingIndex = index
         closing = false
-        transitionStarted = false
+        transitionStarted = true
         cardInList = false
         destinationFrame = openingFrame
         headerGeometry.frame = .zero
         openedID = trip.id
     }
     @MainActor private func beginTransition(_ trip: Trip) async {
-        guard !transitionStarted else { return }
-        var previous = CGRect.zero
+        guard !detailVisible else { return }
+        var previous = headerGeometry.frame
         var stableFrames = 0
         while stableFrames < 2 {
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
@@ -450,10 +453,7 @@ struct JourneyArchiveView: View {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             destinationFrame = previous
-            transitionStarted = true
         }
-        do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-        guard openedID == trip.id, !closing else { return }
         detailVisible = true
     }
 
@@ -467,6 +467,70 @@ struct JourneyArchiveView: View {
     }
 }
 
+private struct JourneyArchiveYearCard: View {
+    let year: Int
+    let count: Int
+    private var seed: UInt64 { UInt64(max(0, year)) &* 2_654_435_761 }
+    private var tint: Color { Color(hue: Double(seed % 360) / 360, saturation: 0.20, brightness: 0.60) }
+    var body: some View {
+        HStack(spacing: 16) {
+            Text(String(year)).font(.system(size: 27, weight: .medium, design: .rounded)).monospacedDigit()
+            Spacer(minLength: 0)
+            Text("\(count)次旅途").font(.footnote)
+        }
+        .foregroundStyle(tint)
+        .frame(height: 38).padding(22)
+        .frame(maxWidth: .infinity, minHeight: 204, maxHeight: 204, alignment: .topLeading)
+        .background {
+            RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .systemBackground))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 26).fill(tint.opacity(0.09))
+                    Canvas { context, size in
+                        let variant = Int(seed % 3)
+                        for index in 0..<7 {
+                            let x = size.width * Double((seed &+ UInt64(index * 73)) % 100) / 100
+                            let y = 102 + Double((seed &+ UInt64(index * 29)) % 84)
+                            let radius = 22 + Double((seed &+ UInt64(index * 11)) % 44)
+                            var path = Path()
+                            if variant == 0 {
+                                path.addEllipse(in: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
+                            } else if variant == 1 {
+                                path.move(to: CGPoint(x: x - radius, y: y))
+                                path.addQuadCurve(to: CGPoint(x: x + radius * 2, y: y - 32), control: CGPoint(x: x, y: y - 72))
+                            } else {
+                                path.move(to: CGPoint(x: x - radius, y: y + radius))
+                                path.addLine(to: CGPoint(x: x, y: y - radius))
+                                path.addLine(to: CGPoint(x: x + radius, y: y + radius))
+                            }
+                            context.stroke(path, with: .color(tint.opacity(0.12)), lineWidth: 1)
+                        }
+                        var arc = Path()
+                        arc.move(to: CGPoint(x: size.width * 0.45, y: 50))
+                        arc.addQuadCurve(to: CGPoint(x: size.width + 30, y: 100),
+                            control: CGPoint(x: size.width * 0.7, y: Double(seed % 40) + 16))
+                        context.stroke(arc, with: .color(tint.opacity(0.13)), lineWidth: 1)
+                    }.accessibilityHidden(true)
+                }.clipShape(RoundedRectangle(cornerRadius: 26))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("archive-year-\(year)")
+    }
+}
+
+private struct ArchiveDividerFrames: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct ArchiveTransferDivider {
+    let index: Int
+    let frame: CGRect
+    let year: Int
+    let count: Int
+}
+
 private struct ArchiveCardFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
@@ -477,34 +541,59 @@ private struct ArchiveCardFrames: PreferenceKey {
 private struct JourneyArchiveCard: View {
     let trip: Trip
     let colorIndex: Int
+    var photo: UIImage? = nil
     var body: some View {
         let today = Date.now.dayString
+        let ongoing = JourneyArchiveOrdering.isOngoing(trip, today: today)
         let status = trip.startDate > today ? "即将出发" : trip.endDate < today ? "旅行回忆" : "旅行中"
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                Text(trip.emoji ?? "✈️").font(.system(size: 30))
+                PlaceIconView(emoji: trip.emoji ?? "✈️", size: 26).padding(.top, 2)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(trip.name).font(.title3.weight(.semibold)).lineLimit(2)
                     Text("\(trip.startDate) — \(trip.endDate)").font(.footnote).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                if ongoing {
+                    HStack(spacing: 5) {
+                        Circle().fill(Color(red: 0.60, green: 0.73, blue: 0.63))
+                            .frame(width: 6, height: 6).accessibilityHidden(true)
+                        Text("旅途中").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .fixedSize().padding(.top, 4)
+                    .accessibilityIdentifier("archive-ongoing-\(trip.id)")
+                }
             }
             Spacer(minLength: 8)
             HStack {
-                Text(status).font(.subheadline.weight(.medium))
+                if !ongoing { Text(status).font(.subheadline.weight(.medium)) }
                 Spacer()
                 Text("\(trip.days.count) 天 · \(Set(trip.days.flatMap(\.markerIds) + (trip.markerIds ?? [])).count) 个地点")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .systemBackground))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 26).fill(
-                        LinearGradient(colors: [Theme.color(colorIndex).opacity(0.20), Theme.color(colorIndex).opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
+            GeometryReader { geometry in
+                let base = Color(uiColor: .systemBackground)
+                ZStack {
+                    base
+                    LinearGradient(colors: [Theme.color(colorIndex).opacity(0.16), Theme.color(colorIndex).opacity(0.04)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing)
+                    if let photo {
+                        Image(uiImage: photo).resizable().scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .saturation(0.64)
+                        LinearGradient(stops: [.init(color: base, location: 0),
+                            .init(color: base.opacity(0.96), location: 0.32),
+                            .init(color: base.opacity(0.72), location: 0.58),
+                            .init(color: base.opacity(0.18), location: 1)],
+                            startPoint: .leading, endPoint: .trailing)
+                        LinearGradient(colors: [.clear, base.opacity(0.92)], startPoint: .center, endPoint: .bottom)
+                    }
+                }.clipShape(RoundedRectangle(cornerRadius: 26))
+            }
         }
-        .overlay { RoundedRectangle(cornerRadius: 26).strokeBorder(Color(uiColor: .separator).opacity(0.18)) }
+        .overlay { RoundedRectangle(cornerRadius: 26).strokeBorder(Color(uiColor: .separator).opacity(0.12)) }
         .accessibilityElement(children: .combine)
     }
 }
@@ -526,12 +615,16 @@ private struct ArchiveTransferCard: Identifiable {
     let trip: Trip
     let index: Int
     let frame: CGRect
+    let photo: UIImage?
+    let isTop: Bool
     var id: String { trip.id }
 }
 
 // UIKit animates cached pixels; SwiftUI/List do no layout or blur work per frame.
 private struct ArchiveCardTransition: UIViewRepresentable {
+    private static let imageContext = CIContext()
     let cards: [ArchiveTransferCard]
+    let dividers: [ArchiveTransferDivider]
     let selectedID: String
     let destination: CGRect
     let height: CGFloat
@@ -547,10 +640,18 @@ private struct ArchiveCardTransition: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let container = UIView()
         container.isUserInteractionEnabled = false
-        let ciContext = CIContext()
+        let ciContext = Self.imageContext
+        let selectedIndex = cards.first { $0.id == selectedID }?.index ?? 0
+        let topBoundary = max(0, cards.filter { $0.isTop && $0.index < selectedIndex }
+            .map { $0.frame.minY + 204 + 24 }.max() ?? 0)
+        let upperStack = UIView(frame: CGRect(x: 0, y: topBoundary,
+            width: cards.map { $0.frame.maxX }.max() ?? 0, height: max(0, height - topBoundary)))
+        upperStack.clipsToBounds = true
+        upperStack.layer.zPosition = CGFloat(selectedIndex) - 0.25
+        container.addSubview(upperStack)
         for card in cards where card.trip.id == selectedID ||
             (card.frame.minY < height && card.frame.minY + 204 > 0) {
-            let renderer = ImageRenderer(content: JourneyArchiveCard(trip: card.trip, colorIndex: card.index)
+            let renderer = ImageRenderer(content: JourneyArchiveCard(trip: card.trip, colorIndex: card.index, photo: card.photo)
                 .frame(width: card.frame.width, height: 204)
                 .environment(\.colorScheme, colorScheme)
                 .environment(\.dynamicTypeSize, typeSize))
@@ -558,7 +659,12 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             guard let image = renderer.uiImage else { continue }
             let view = UIImageView(image: image)
             view.frame = CGRect(x: card.frame.minX, y: card.frame.minY, width: card.frame.width, height: 204)
-            container.addSubview(view)
+            view.layer.zPosition = CGFloat(card.index)
+            if !card.isTop && card.index < selectedIndex {
+                // Restore the stacked group below the stationary full top cards.
+                view.frame.origin.y -= topBoundary
+                upperStack.addSubview(view)
+            } else { container.addSubview(view) }
             context.coordinator.views[card.id] = view
             if card.id != selectedID, let cg = image.cgImage {
                 let input = CIImage(cgImage: cg)
@@ -572,6 +678,23 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                     view.addSubview(overlay)
                     context.coordinator.blurs[card.id] = overlay
                 }
+            }
+        }
+        for divider in dividers where divider.frame.minY < height && divider.frame.minY + 204 > 0 {
+            let renderer = ImageRenderer(content: JourneyArchiveYearCard(year: divider.year, count: divider.count)
+                .frame(width: divider.frame.width, height: 204)
+                .environment(\.colorScheme, colorScheme)
+                .environment(\.dynamicTypeSize, typeSize))
+            renderer.scale = displayScale
+            if let image = renderer.uiImage {
+                let view = UIImageView(image: image)
+                view.frame = CGRect(x: divider.frame.minX, y: divider.frame.minY, width: divider.frame.width, height: 204)
+                view.layer.zPosition = CGFloat(divider.index) - 0.5
+                if divider.index <= selectedIndex {
+                    view.frame.origin.y -= topBoundary
+                    upperStack.addSubview(view)
+                } else { container.addSubview(view) }
+                context.coordinator.dividerViews[divider.index] = view
             }
         }
         return container
@@ -609,10 +732,17 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                 } else {
                     let offset = card.index < index ? -max(0, upperBottom) - 24 : max(0, height - lowerTop) + 24
                     cardView.transform = CGAffineTransform(translationX: 0,
-                        y: expanded && !reduceMotion ? offset : 0)
+                        y: expanded && !reduceMotion && !card.isTop ? offset : 0)
                     cardView.alpha = expanded ? 0 : 1
                     coordinator.blurs[card.id]?.alpha = expanded && !reduceMotion ? 1 : 0
                 }
+            }
+            for divider in dividers {
+                guard let dividerView = coordinator.dividerViews[divider.index] else { continue }
+                let offset = divider.index <= index ? -max(0, upperBottom) - 24 : max(0, height - lowerTop) + 24
+                dividerView.transform = CGAffineTransform(translationX: 0,
+                    y: expanded && !reduceMotion ? offset : 0)
+                dividerView.alpha = expanded ? 0 : 1
             }
         }
         animator.addCompletion { position in
@@ -628,7 +758,55 @@ private struct ArchiveCardTransition: UIViewRepresentable {
     final class Coordinator {
         var views: [String: UIImageView] = [:]
         var blurs: [String: UIImageView] = [:]
+        var dividerViews: [Int: UIImageView] = [:]
         var expanded: Bool = false
         var animator: UIViewPropertyAnimator?
+    }
+}
+
+
+struct JourneyArchiveYearGroup: Equatable {
+    let year: Int
+    let count: Int
+}
+
+enum JourneyArchiveOrdering {
+    /// Receives the displayed order; top trips retain their own full-card group.
+    static func yearGroups(_ trips: [Trip], today: String) -> [Int: JourneyArchiveYearGroup] {
+        let topIDs = Set(topTrips(trips, today: today).map(\.id))
+        let remaining = trips.enumerated().filter { !topIDs.contains($0.element.id) }
+        let counts = Dictionary(grouping: remaining, by: { String($0.element.startDate.prefix(4)) })
+        var groups: [Int: JourneyArchiveYearGroup] = [:]
+        var previousYear: Int?
+        for (index, trip) in remaining {
+            guard let year = Int(trip.startDate.prefix(4)) else { continue }
+            if year != previousYear { groups[index] = JourneyArchiveYearGroup(year: year, count: counts[String(year)]?.count ?? 0) }
+            previousYear = year
+        }
+        return groups
+    }
+    static func isOngoing(_ trip: Trip, today: String) -> Bool {
+        trip.startDate <= today && trip.endDate >= today
+    }
+    static func topTrips(_ trips: [Trip], today: String) -> [Trip] {
+        let ongoing = trips.filter { isOngoing($0, today: today) }.sorted(by: newestFirst)
+        if !ongoing.isEmpty { return ongoing }
+        let top = trips.filter { $0.startDate > today }.min {
+            $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate < $1.startDate
+        } ?? trips.min {
+            let a = abs(Date.fromDay($0.startDate).timeIntervalSince(Date.fromDay(today)))
+            let b = abs(Date.fromDay($1.startDate).timeIntervalSince(Date.fromDay(today)))
+            return a == b ? $0.id < $1.id : a < b
+        }
+        return top.map { [$0] } ?? []
+    }
+    static func sorted(_ trips: [Trip], today: String) -> [Trip] {
+        let top = topTrips(trips, today: today)
+        let topIDs = Set(top.map(\.id))
+        let remainder = trips.filter { !topIDs.contains($0.id) }.sorted(by: newestFirst)
+        return top + remainder
+    }
+    private static func newestFirst(_ a: Trip, _ b: Trip) -> Bool {
+        a.startDate == b.startDate ? a.id < b.id : a.startDate > b.startDate
     }
 }

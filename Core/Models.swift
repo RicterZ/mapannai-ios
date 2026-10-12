@@ -72,6 +72,18 @@ struct Marker: Codable, Identifiable, Hashable {
     var title: String { content.title ?? "未命名地点" }
     var icon: MarkerIcon { content.iconType ?? .location }
 }
+struct TripDestination: Codable, Hashable {
+    let name: String
+    let latitude: Double
+    let longitude: Double
+    var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 200 &&
+        latitude.isFinite && longitude.isFinite && (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
+    var coordinateKey: String { String(format: "%.6f:%.6f", latitude, longitude) }
+    var requestBody: [String: Any] { ["name": name, "latitude": latitude, "longitude": longitude] }
+}
+
 struct Trip: Codable, Identifiable, Hashable {
     var id: String
     var name: String
@@ -82,7 +94,37 @@ struct Trip: Codable, Identifiable, Hashable {
     var emoji: String?
     var days: [TripDay]
     var markerIds: [String]? = nil
+    var destination: TripDestination? = nil
+    var destinations: [TripDestination]? = nil
+    var selectedDestinations: [TripDestination] { destinations ?? destination.map { [$0] } ?? [] }
 }
+extension Trip {
+    var minimumEditableDayCount: Int {
+        max(days.count, TripDateRange(savedStart: .fromDay(startDate), savedEnd: .fromDay(endDate)).dayCount)
+    }
+    func edited(name: String, emoji: String, start: Date, end: Date) throws -> Trip {
+        guard start.dayString <= end.dayString else { throw AppError.message("结束日期不能早于开始日期") }
+        let range = TripDateRange(savedStart: start, savedEnd: end)
+        guard range.isValid else { throw AppError.message("一次最多安排 367 天") }
+        guard range.dayCount >= minimumEditableDayCount else {
+            throw AppError.message("至少保留原有 \(minimumEditableDayCount) 天，可整体改期或延长旅途")
+        }
+        var result = self
+        result.name = name; result.emoji = emoji; result.startDate = start.dayString; result.endDate = end.dayString
+        var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        result.days = days.sorted { $0.date < $1.date }.enumerated().map { index, day in
+            var shifted = day
+            shifted.date = utc.date(byAdding: .day, value: index, to: start)!.dayString
+            return shifted
+        }
+        for index in result.days.count..<range.dayCount {
+            result.days.append(TripDay(id: "pending-day-" + UUID().uuidString, tripId: id,
+                date: utc.date(byAdding: .day, value: index, to: start)!.dayString, markerIds: [], chains: []))
+        }
+        return result
+    }
+}
+
 struct TripDay: Codable, Identifiable, Hashable {
     var id: String
     var tripId: String
@@ -106,8 +148,19 @@ struct TripDay: Codable, Identifiable, Hashable {
         copy.setRouteOrders(chains.map { $0.filter { $0 != markerID } })
         return copy
     }
+    /// Only newly joined members take the default route; existing placements stay put.
+    func addingToDefaultRoute(_ ids: [String]) -> TripDay {
+        var copy = self
+        let additions = ids.reduce(into: [String]()) { result, id in
+            if !copy.markerIds.contains(id), !result.contains(id) { result.append(id) }
+        }
+        copy.markerIds.append(contentsOf: additions)
+        guard !additions.isEmpty, copy.chains.count <= 1 else { return copy }
+        copy.setRouteOrders(copy.chains.isEmpty ? [additions] : [copy.chains[0] + additions])
+        return copy
+    }
     func replacingChain(at index: Int?, with ids: [String]) throws -> TripDay {
-        guard ids.count >= 2, Set(ids).count == ids.count else { throw AppError.message("路线至少需要两个不同地点") }
+        guard !ids.isEmpty, Set(ids).count == ids.count else { throw AppError.message("请选择至少一个地点，且不能重复") }
         var copy = self
         for id in ids where !copy.markerIds.contains(id) { copy.markerIds.append(id) }
         if let index {
@@ -135,7 +188,7 @@ struct RouteEditSession: Equatable {
         if let index, ids.isEmpty {
             var updated = latest; updated.removeRoute(at: index); return updated
         }
-        // Existing single-stop routes are valid; new routes still need two stops.
+        // Single-stop routes are valid for both creation and editing.
         if let index, ids.count == 1 {
             var updated = latest; var orders = updated.chains; orders[index] = ids; updated.setRouteOrders(orders); return updated
         }
@@ -165,6 +218,19 @@ struct Place: Identifiable, Hashable {
     var markerId: String? = nil
     var types: [String] = []
     var rating: Double? = nil
+    var categoryLabel: String? {
+        let labels = ["lodging": "住宿", "hotel": "酒店", "restaurant": "餐厅", "food": "美食",
+                      "cafe": "咖啡馆", "tourist_attraction": "景点", "park": "公园",
+                      "museum": "博物馆", "shopping_mall": "购物中心", "store": "商店",
+                      "train_station": "火车站", "transit_station": "车站", "airport": "机场",
+                      "place_of_worship": "宗教场所", "natural_feature": "自然景观"]
+        for type in types {
+            let value = type.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let label = labels[value.lowercased()] { return label }
+            if value.range(of: "[\\p{Han}\\p{Hiragana}\\p{Katakana}]", options: .regularExpression) != nil { return value }
+        }
+        return nil
+    }
 }
 
 enum PlaceSearchMerger {

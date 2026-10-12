@@ -26,6 +26,14 @@ struct APIClient {
         do { return try JSONDecoder().decode(T.self, from: data) }
         catch { throw AppError.message("服务返回的数据格式与当前应用不兼容") }
     }
+    nonisolated func searchDestinations(_ query: String) async throws -> [TripDestination] {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= 200 else { throw AppError.message("请输入省市名称（最多200字）") }
+        struct Response: Decodable { let data: [TripDestination] }
+        let response: Response = try await request("destinations?q=" + Self.id(text))
+        guard response.data.allSatisfy(\.isValid) else { throw AppError.message("目的地数据无效，请重新搜索") }
+        return response.data
+    }
     nonisolated func mutate(_ path: String, method: String, body: [String: Any]? = nil) async throws {
         let _: IgnoredResponse = try await request(path, method: method, body: body)
     }

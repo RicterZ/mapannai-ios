@@ -8,6 +8,7 @@ struct TripSaveDraft: Identifiable {
     let start: Date
     let end: Date
     let emoji: String
+    var destinations: [TripDestination] = []
 }
 
 @MainActor final class AppStore: ObservableObject {
@@ -47,6 +48,10 @@ struct TripSaveDraft: Identifiable {
     @Published var trips: [Trip] = []
     @Published var tripID: String?
     @Published var dayID: String?
+    @Published var dayMapBrowsing = false
+    @Published private(set) var dayMapFocusID: String?
+    @Published private(set) var dayMapCameraFollowing = true
+    var mapHighlightedMarkerID: String? { selectedMarker?.id ?? (dayMapBrowsing ? dayMapFocusID : nil) }
     @Published var selectedMarker: Marker?
     @Published var tripSaveRecovery: TripSaveDraft?
     @Published private(set) var canResumeFailedSave = false
@@ -118,7 +123,19 @@ struct TripSaveDraft: Identifiable {
         if let trip { return trip.days }
         return trips.flatMap(\.days)
     }
-    var mapMarkers: [Marker] { markers }
+    var mapMarkers: [Marker] {
+        guard !placeSearchPresented, dayMapBrowsing, let day else { return markers }
+        let ids = Set(day.markerIds + day.chains.flatMap { $0 })
+        return markers.filter { ids.contains($0.id) }
+    }
+    func dayMapNumber(for id: String) -> Int? {
+        guard dayMapBrowsing, let day else { return nil }
+        return DayMapJourney.stops(day: day, markers: markers).firstIndex { $0.marker.id == id }.map { $0 + 1 }
+    }
+    var mapDisplayRoutes: [DisplayRoute] {
+        guard dayMapBrowsing, let dayID else { return displayRoutes }
+        return displayRoutes.filter { $0.dayID == dayID }
+    }
     var visibleMarkers: [Marker] {
         guard tripID != nil else { return markers }
         let ids = Set(visibleDays.flatMap(\.markerIds) + (day == nil ? (trip?.markerIds ?? []) : [])); return markers.filter { ids.contains($0.id) }
@@ -136,6 +153,7 @@ struct TripSaveDraft: Identifiable {
         failedSaveAction = nil; canResumeFailedSave = false; tripSaveRecovery = nil
         pendingCreatedMarkers = [:]; pendingCreatedTrips = [:]
         endAddingPlace()
+        endDayMapBrowsing()
         tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceTripID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
         camera = nil; startupCameraPending = true
         resetSearchSession(); rebuildRoutes()
@@ -185,8 +203,14 @@ struct TripSaveDraft: Identifiable {
         do {
             guard let marker = try await markerRepository.detail(id, using: client) else { return }
             try Task.checkCancellation()
-            guard revision == connectionRevision, dataVersion == dataRevision,
-                  !saving, let index = markers.firstIndex(where: { $0.id == id }), markers[index] != marker else { return }
+            guard revision == connectionRevision, dataVersion == dataRevision, !saving else { return }
+            guard let index = markers.firstIndex(where: { $0.id == id }) else {
+                guard trips.contains(where: { trip in
+                    (trip.markerIds ?? []).contains(id) || trip.days.contains(where: { $0.markerIds.contains(id) || $0.chains.contains(where: { $0.contains(id) }) })
+                }) else { return }
+                markers.append(marker); rebuildRoutes(); return
+            }
+            guard markers[index] != marker else { return }
             let moved = markers[index].coordinates != marker.coordinates
             markers[index] = marker
             if selectedMarker?.id == id { selectedMarker = marker }
@@ -212,7 +236,40 @@ struct TripSaveDraft: Identifiable {
         startupLocation = coordinate
         applyStartupLocationFallback()
     }
-    func noteMapInteraction() { startupMapInteracted = true; stopLocationFollowing() }
+    func noteMapInteraction() {
+        startupMapInteracted = true; stopLocationFollowing()
+        if dayMapBrowsing { dayMapCameraFollowing = false }
+    }
+    func noteDayMapTransform() { if dayMapBrowsing { dayMapCameraFollowing = false } }
+    func beginDayMapBrowsing() {
+        guard let day else { return }
+        dayMapBrowsing = true; dayMapCameraFollowing = true
+        dayMapFocusID = DayMapJourney.stops(day: day, markers: markers).first?.marker.id
+        showWholeDayOnMap()
+    }
+    func endDayMapBrowsing() { dayMapBrowsing = false; dayMapFocusID = nil }
+    func showWholeDayOnMap() {
+        guard dayMapBrowsing, let day else { return }
+        dayMapCameraFollowing = true
+        let points = mapMarkers.filter { $0.coordinates.isValid }.map(\.coordinates)
+            + mapDisplayRoutes.filter { $0.dayID == day.id }.flatMap(\.points)
+        guard !points.isEmpty else { return }
+        camera = CameraCommand(points: points, singlePointZoom: 15)
+    }
+    func focusDayMapMarker(_ id: String, moveCamera: Bool = true) {
+        guard dayMapBrowsing, let marker = mapMarkers.first(where: { $0.id == id }) else { return }
+        guard dayMapFocusID != id else { return }
+        dayMapFocusID = id
+        guard moveCamera, dayMapCameraFollowing, marker.coordinates.isValid else { return }
+        camera = CameraCommand(points: [marker.coordinates], singlePointZoom: 15)
+    }
+    func openDayMapPlaceDetails(_ id: String) {
+        guard selectedMarker?.id != id, let marker = mapMarkers.first(where: { $0.id == id }) else { return }
+        dayMapFocusID = id
+        selectedMarker = marker
+        camera = CameraCommand(points: [marker.coordinates], detailLayout: MarkerDetailLayout(marker: marker,
+            itineraryCount: MarkerPresentation.itineraries(for: id, trips: trips).count, hasSelectedDay: day != nil))
+    }
     private func applyStartupLocationFallback() {
         guard let location = startupLocation, !startupLocationFinished, !startupMapInteracted else { return }
         guard !startupCameraPending, camera == nil, draft == nil, selectedMarker == nil else { return }
@@ -378,24 +435,64 @@ struct TripSaveDraft: Identifiable {
     @discardableResult
     func saveTripInBackground(_ value: TripSaveDraft, using suppliedClient: APIClient? = nil) -> Bool {
         guard !value.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入旅行名称"; return false }
+        if value.trip == nil {
+            guard !value.destinations.isEmpty, value.destinations.count <= 20,
+                  value.destinations.allSatisfy(\.isValid),
+                  Set(value.destinations.map(\.coordinateKey)).count == value.destinations.count else {
+                errorMessage = "请搜索并选择目的地省市"; return false
+            }
+            guard value.start.dayString <= value.end.dayString else { errorMessage = "结束日期不能早于开始日期"; return false }
+            guard TripDateRange(savedStart: value.start, savedEnd: value.end).isValid else {
+                errorMessage = "一次最多创建 367 天，请缩短日期范围"; return false
+            }
+        }
+        let previous = value.trip.flatMap { trip in trips.first { $0.id == trip.id } }
+        var optimistic: Trip?
+        if let trip = value.trip {
+            guard let previous else { errorMessage = "旅行已不存在"; return false }
+            do { optimistic = try previous.edited(name: value.name, emoji: value.emoji, start: value.start, end: value.end) }
+            catch { errorMessage = error.localizedDescription; return false }
+            guard previous.minimumEditableDayCount == trip.minimumEditableDayCount else {
+                errorMessage = "行程天数已变化，请重新打开编辑"; return false
+            }
+        }
         guard reserveEditorSave() else { return false }
         let revision = connectionRevision, client = suppliedClient ?? api
-        let previous = value.trip.flatMap { trip in trips.first { $0.id == trip.id } }
-        if var optimistic = previous {
-            let offset = Calendar.current.dateComponents([.day], from: Date.fromDay(optimistic.startDate), to: Date.fromDay(value.start.dayString)).day ?? 0
-            optimistic.name = value.name; optimistic.emoji = value.emoji; optimistic.startDate = value.start.dayString
-            optimistic.endDate = Calendar.current.date(byAdding: .day, value: offset, to: Date.fromDay(optimistic.endDate))?.dayString ?? optimistic.endDate
-            for index in optimistic.days.indices {
-                optimistic.days[index].date = Calendar.current.date(byAdding: .day, value: offset, to: Date.fromDay(optimistic.days[index].date))?.dayString ?? optimistic.days[index].date
-            }
-            if let index = trips.firstIndex(where: { $0.id == optimistic.id }) { trips[index] = optimistic }
-        }
+        if let optimistic, let index = trips.firstIndex(where: { $0.id == optimistic.id }) { trips[index] = optimistic }
         Task {
             let ok = await perform(reserved: true, expectedRevision: revision) { _ in
                 var body: [String: Any] = ["name": value.name, "startDate": value.start.dayString, "emoji": value.emoji]
-                if let trip = value.trip { try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: body) }
-                else {
+                if let trip = value.trip {
+                    let path = "trips/\(APIClient.id(trip.id))"
+                    let latest: Trip = try await client.request(path)
+                    guard revision == self.connectionRevision else { throw CancellationError() }
+                    _ = try latest.edited(name: value.name, emoji: value.emoji, start: value.start, end: value.end)
+                    try await client.mutate(path, method: "PUT", body: body)
+                    // Re-read after shifting: retries reuse days created before a partial failure.
+                    let shifted: Trip = try await client.request(path)
+                    guard revision == self.connectionRevision else { throw CancellationError() }
+                    var existing = Set(shifted.days.map(\.date))
+                    var savedDays = shifted.days
+                    var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(secondsFromGMT: 0)!
+                    let count = TripDateRange(savedStart: value.start, savedEnd: value.end).dayCount
+                    for index in 0..<count {
+                        try Task.checkCancellation()
+                        guard revision == self.connectionRevision else { throw CancellationError() }
+                        let date = utc.date(byAdding: .day, value: index, to: value.start)!.dayString
+                        if !existing.contains(date) {
+                            let created: TripDay = try await client.request(path + "/days", method: "POST", body: ["date": date])
+                            savedDays.append(created)
+                            existing.insert(date)
+                        }
+                    }
+                    guard revision == self.connectionRevision else { throw CancellationError() }
+                    try await client.mutate(path, method: "PUT", body: ["endDate": value.end.dayString])
+                    if revision == self.connectionRevision, let index = self.trips.firstIndex(where: { $0.id == trip.id }) {
+                        self.trips[index].days = savedDays.sorted { $0.date < $1.date }
+                    }
+                } else {
                     body["endDate"] = value.end.dayString
+                    body["destinations"] = value.destinations.map(\.requestBody)
                     let created: Trip
                     if let pending = self.pendingCreatedTrips[value.id] {
                         created = pending
@@ -476,6 +573,7 @@ struct TripSaveDraft: Identifiable {
         guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
         let revision = expectedRevision ?? connectionRevision
         var createdMarker: Marker?
+        var joinedDay: TripDay?
         let ok = await perform(reserved: reserved, expectedRevision: revision) { defaultClient in
             let client = suppliedClient ?? defaultClient
             if let marker = draft.marker {
@@ -494,9 +592,8 @@ struct TripSaveDraft: Identifiable {
                 createdMarker = created
             }
             guard revision == self.connectionRevision else { throw CancellationError() }
-            if let targetDay, let marker = createdMarker ?? draft.marker,
-               !self.trips.flatMap(\.days).contains(where: { $0.id == targetDay.id && $0.markerIds.contains(marker.id) }) {
-                try await client.mutate(Self.dayPath(targetDay) + "/markers", method: "POST", body: ["markerId": marker.id])
+            if let targetDay, let marker = createdMarker ?? draft.marker {
+                joinedDay = try await self.joinDefaultRoute(marker.id, day: targetDay, client: client, revision: revision)
             }
             if let tripTarget, let marker = createdMarker ?? draft.marker {
                 try await client.mutate("trips/\(APIClient.id(tripTarget))/markers", method: "POST", body: ["markerId": marker.id])
@@ -519,10 +616,13 @@ struct TripSaveDraft: Identifiable {
                 if selectedMarker?.id == updated.id { selectedMarker = updated }
                 saved = updated
             }
-            if let saved, let targetDay,
-               let ti = trips.firstIndex(where: { $0.id == targetDay.tripId }),
-               let di = trips[ti].days.firstIndex(where: { $0.id == targetDay.id }),
-               !trips[ti].days[di].markerIds.contains(saved.id) { trips[ti].days[di].markerIds.append(saved.id) }
+            if let joinedDay, let ti = trips.firstIndex(where: { $0.id == joinedDay.tripId }),
+               let di = trips[ti].days.firstIndex(where: { $0.id == joinedDay.id }) {
+                // Refresh may already have supplied real visit IDs; don't replace it with a local draft.
+                if !trips[ti].days[di].markerIds.contains(createdMarker?.id ?? draft.marker?.id ?? "") {
+                    trips[ti].days[di] = joinedDay
+                }
+            }
             if let saved, let tripTarget, let ti = trips.firstIndex(where: { $0.id == tripTarget }),
                !(trips[ti].markerIds ?? []).contains(saved.id) { trips[ti].markerIds = (trips[ti].markerIds ?? []) + [saved.id] }
             if let saved, let targetDay, let ti = trips.firstIndex(where: { $0.id == targetDay.tripId }) {
@@ -605,6 +705,21 @@ struct TripSaveDraft: Identifiable {
         if before != after { rebuildRoutes(preservingPlannedGeometry: true) }
     }
     static func dayPath(_ day: TripDay) -> String { "trips/\(APIClient.id(day.tripId))/days/\(APIClient.id(day.id))" }
+    private func joinDefaultRoute(_ id: String, day: TripDay, client: APIClient, revision: UUID) async throws -> TripDay {
+        guard revision == connectionRevision,
+              let latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else {
+            throw AppError.message("目标日期已不存在")
+        }
+        let updated = latest.addingToDefaultRoute([id])
+        if updated != latest {
+            let write = try RouteOrderWrite(previous: latest, updated: updated)
+            let confirmed: TripDay = try await client.request(write.path, method: write.method, body: write.body)
+            guard revision == connectionRevision else { throw CancellationError() }
+            return confirmed
+        }
+        guard revision == connectionRevision else { throw CancellationError() }
+        return updated
+    }
     @discardableResult func addMarker(_ marker: Marker, to day: TripDay) async -> Bool {
         addMarkerInBackground(marker, to: day)
     }
@@ -612,10 +727,8 @@ struct TripSaveDraft: Identifiable {
     func addMarkerInBackground(_ marker: Marker, to day: TripDay, using client: APIClient? = nil) -> Bool {
         guard var latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return false }
         if latest.markerIds.contains(marker.id) { return true }
-        latest.markerIds.append(marker.id)
-        return persistDayInBackground(latest, animated: true, using: client) {
-            try await $0.mutate(Self.dayPath(day) + "/markers", method: "POST", body: ["markerId": marker.id])
-        }
+        latest = latest.addingToDefaultRoute([marker.id])
+        return saveDayInBackground(latest, using: client)
     }
     @discardableResult
     func removeTripPlaceInBackground(_ markerID: String, from tripID: String) -> Bool {
@@ -694,6 +807,101 @@ struct TripSaveDraft: Identifiable {
         }
         return true
     }
+    /// Reuse saved places. Write the destination first so a failed move never loses the source.
+    @discardableResult
+    func transferDayPlaces(_ ids: Set<String>, from source: TripDay, to destination: TripDay,
+                           copy: Bool, using suppliedClient: APIClient? = nil) -> Bool {
+        guard !demo || suppliedClient != nil else { errorMessage = "当前为只读示例，无法保存。"; return false }
+        guard !saving, source.tripId == destination.tripId, source.id != destination.id,
+              let ti = trips.firstIndex(where: { $0.id == source.tripId }),
+              let si = trips[ti].days.firstIndex(where: { $0.id == source.id }),
+              let di = trips[ti].days.firstIndex(where: { $0.id == destination.id }) else { return false }
+        let originalSource = trips[ti].days[si], originalDestination = trips[ti].days[di]
+        guard originalSource == source, originalDestination == destination else {
+            errorMessage = "行程已更新，请重新选择地点。"; return false
+        }
+        let ordered = originalSource.markerIds.filter { ids.contains($0) }
+        guard !ordered.isEmpty else { return false }
+        let updatedDestination = originalDestination.addingToDefaultRoute(ordered)
+        let updatedSource = copy ? originalSource : ordered.reduce(originalSource) { $0.removing($1) }
+        let destinationWrite: RouteOrderWrite, sourceWrite: RouteOrderWrite
+        do {
+            destinationWrite = try RouteOrderWrite(previous: originalDestination, updated: updatedDestination)
+            sourceWrite = try RouteOrderWrite(previous: originalSource, updated: updatedSource)
+        } catch { report(error); return false }
+        let revision = connectionRevision, client = suppliedClient ?? api
+        dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; saving = true
+        withAnimation(AppMotion.listMutation(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
+            trips[ti].days[si] = updatedSource; trips[ti].days[di] = updatedDestination
+        }
+        rebuildRoutes(preservingPlannedGeometry: true)
+        Task {
+            await markerRepository.invalidate(using: client)
+            guard revision == connectionRevision else { return }
+            var destinationWritten = false
+            var compensationFailed = false
+            do {
+                if updatedDestination != originalDestination {
+                    let confirmed: TripDay = try await client.request(destinationWrite.path, method: destinationWrite.method, body: destinationWrite.body)
+                    guard revision == connectionRevision else { return }
+                    acceptRouteSchedule(confirmed, revision: revision)
+                    destinationWritten = true
+                }
+                guard revision == connectionRevision else { return }
+                if !copy {
+                    let confirmed: TripDay = try await client.request(sourceWrite.path, method: sourceWrite.method, body: sourceWrite.body)
+                    guard revision == connectionRevision else { return }
+                    acceptRouteSchedule(confirmed, revision: revision)
+                }
+                guard revision == connectionRevision else { return }
+                await markerRepository.invalidate(using: client)
+                guard revision == connectionRevision else { return }
+                saving = false; await refresh(quietly: true)
+            } catch {
+                guard revision == connectionRevision else { return }
+                if !copy {
+                    // There is no cross-day transaction API; check the source before compensating.
+                    do {
+                        let serverSource: TripDay = try await client.request(Self.dayPath(originalSource))
+                        guard revision == connectionRevision else { return }
+                        if ordered.allSatisfy({ !serverSource.markerIds.contains($0) }) {
+                            // A lost response can follow a successful write; don't undo a completed move.
+                            acceptRouteSchedule(serverSource, revision: revision)
+                            saving = false; await refresh(quietly: true); return
+                        }
+                        guard ordered.allSatisfy({ serverSource.markerIds.contains($0) }) else {
+                            throw AppError.message("源日期的地点已发生变化")
+                        }
+                        if destinationWritten {
+                            let confirmed: TripDay = try await client.request(Self.dayPath(originalDestination), method: "PUT", body: [
+                                "markerIds": originalDestination.markerIds, "chains": originalDestination.chains])
+                            guard revision == connectionRevision else { return }
+                            acceptRouteSchedule(confirmed, revision: revision)
+                        }
+                    } catch { compensationFailed = true }
+                }
+                guard revision == connectionRevision else { return }
+                if let ti = trips.firstIndex(where: { $0.id == source.tripId }) {
+                    if let si = trips[ti].days.firstIndex(where: { $0.id == source.id }) { trips[ti].days[si] = originalSource }
+                    if let di = trips[ti].days.firstIndex(where: { $0.id == destination.id }) {
+                        trips[ti].days[di] = compensationFailed ? updatedDestination : originalDestination
+                    }
+                }
+                saving = false; rebuildRoutes(preservingPlannedGeometry: true)
+                if compensationFailed {
+                    errorMessage = "移动未完成，目标日期可能已保留副本，请检查两天的行程。"
+                    await refresh(quietly: true)
+                } else { report(error) }
+            }
+        }
+        return true
+    }
+    @discardableResult
+    func removeDayPlacesInBackground(_ ids: Set<String>, from day: TripDay) -> Bool {
+        guard let latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }),
+              latest == day else { errorMessage = "行程已更新，请重新选择地点。"; return false }
+        return saveDayInBackground(ids.reduce(latest) { $0.removing($1) })
+    }
     func removeMarker(_ markerID: String, from day: TripDay, animated: Bool = true) async {
         guard var latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return }
         latest = latest.removing(markerID)
@@ -716,6 +924,10 @@ struct TripSaveDraft: Identifiable {
         }) { try await $0.deleteDay(tripID: day.tripId, dayID: day.id, deleteExclusiveMarkers: deleteExclusiveMarkers) }
     }
     func select(trip: Trip?, day: TripDay? = nil, focus: Bool = true) {
+        if tripID != trip?.id || dayID != day?.id {
+            dayMapFocusID = nil; dayMapCameraFollowing = true
+        }
+        if day == nil { endDayMapBrowsing() }
         tripID = trip?.id; dayID = day?.id; selectedMarker = nil
         rebuildRoutes(preservingPlannedGeometry: true)
         guard focus else { return }
@@ -751,14 +963,21 @@ struct TripSaveDraft: Identifiable {
         routeCandidates = []
         routeSelectionRequest = UUID()
     }
+    func selectMapMarker(_ marker: Marker) {
+        if dayMapBrowsing && !placeSearchPresented {
+            focusDayMapMarker(marker.id, moveCamera: false)
+            openDayMapPlaceDetails(marker.id)
+        } else { focus(marker) }
+    }
     func focus(_ marker: Marker) {
         if placeSearchPresented {
             guard draft == nil else { return }
-            let place = Place(id: "saved-" + marker.id, name: marker.title, address: marker.content.address ?? "", coordinates: marker.coordinates)
+            let place = Place(id: "saved-" + marker.id, name: marker.title, address: marker.content.address ?? "", coordinates: marker.coordinates, markerId: marker.id)
             if !searchResults.contains(where: { $0.id == place.id }) { searchResults.append(place) }
             choose(place, fromMap: true)
             return
         }
+        if dayMapBrowsing { focusDayMapMarker(marker.id, moveCamera: false); return }
         guard selectedMarker?.id != marker.id else { return }
         let detail = MarkerDetailLayout(marker: marker,
             itineraryCount: MarkerPresentation.itineraries(for: marker.id, trips: trips).count,
@@ -770,12 +989,17 @@ struct TripSaveDraft: Identifiable {
     func create(at coordinate: Coordinate, poiName: String? = nil, placeReferences: PlaceReferences? = nil) {
         guard coordinate.isValid, draft?.marker == nil, !saving else { return }
         if draft?.coordinates == coordinate { return }
+        let selectedName = poiName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let searchSession = addSession, revision = connectionRevision
+        var searchPlaceID: String?
         if placeSearchPresented {
-            let place = Place(id: UUID().uuidString, name: "", address: "", coordinates: coordinate)
+            let place = Place(id: UUID().uuidString, name: selectedName.isEmpty ? "地图选点" : selectedName,
+                              address: String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude),
+                              coordinates: coordinate, placeReferences: placeReferences)
             searchResults.append(place); editingSearchPlaceID = place.id
+            searchPlaceID = place.id
         }
         selectedSearchPlaceID = nil; draftExpanded = false
-        let selectedName = poiName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var pending = draft ?? MarkerDraft(coordinates: coordinate)
         applePOIRequest?.task.cancel(); applePOIRequest = nil
         pending.placeReferences = placeReferences
@@ -790,6 +1014,21 @@ struct TripSaveDraft: Identifiable {
         Task {
             do {
                 let place = try await mapServices.details(at: coordinate)
+                if let searchPlaceID, searchSession == self.addSession, revision == self.connectionRevision,
+                   let index = self.searchResults.firstIndex(where: { $0.id == searchPlaceID }) {
+                    var result = place
+                    result.id = searchPlaceID
+                    result.coordinates = coordinate
+                    result.name = selectedName.isEmpty ? place.name : selectedName
+                    if result.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        result.name = self.searchResults[index].name
+                    }
+                    if result.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        result.address = self.searchResults[index].address
+                    }
+                    result.placeReferences = placeReferences ?? place.placeReferences
+                    self.searchResults[index] = result
+                }
                 guard self.draft?.id == draftID, self.draft?.coordinates == coordinate else { return }
                 if selectedName.isEmpty, self.draft?.title == pending.title {
                     self.draft?.title = place.name
@@ -809,6 +1048,19 @@ struct TripSaveDraft: Identifiable {
         addPlaceDay = day
         addPlaceTripID = day == nil ? tripID : nil
         placeSearchPresented = true
+        showNearbySearchPlaces()
+    }
+    func showNearbySearchPlaces() {
+        guard placeSearchPresented, searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let center: Coordinate?
+        if let bounds {
+            center = Coordinate(latitude: (bounds.south + bounds.north) / 2, longitude: (bounds.west + bounds.east) / 2)
+        } else { center = camera?.points.first ?? markers.first(where: { $0.coordinates.isValid })?.coordinates }
+        guard let center, center.isValid else { searchResults = []; return }
+        searchResults = markers.filter { $0.coordinates.isValid && Coordinates.distance(center, $0.coordinates) <= 30_000 }
+            .sorted { Coordinates.distance(center, $0.coordinates) < Coordinates.distance(center, $1.coordinates) }
+            .map { Place(id: "saved-" + $0.id, name: $0.title, address: $0.content.address ?? "",
+                         coordinates: $0.coordinates, markerId: $0.id) }
     }
     func endAddingPlace() {
         searchDetailPlace = nil
@@ -895,20 +1147,20 @@ struct TripSaveDraft: Identifiable {
         searching = false; loadingMoreSearch = false; searchHasMore = false; searchPageError = nil; searchError = nil
         searchResults = []; selectedSearchPlaceID = nil; searchPageRevision = UUID()
     }
-    func clearSearch() { resetSearchSession(); searchText = "" }
+    func clearSearch() { resetSearchSession(); searchText = ""; showNearbySearchPlaces() }
     func choose(_ place: Place, fromMap: Bool = false) {
         guard place.coordinates.isValid else { return }
         if placeSearchPresented {
             guard draft == nil else { return }
-            if fromMap, savedMarker(for: place) != nil, addPlaceDay == nil, addPlaceTripID == nil {
-                Task { await activateSavedSearchPlace(place) }
-                return
-            }
             if selectedSearchPlaceID != place.id {
                 selectedSearchPlaceID = place.id; addPlaceError = nil
                 fly([place.coordinates])
             }
-            if fromMap && !isPlaceAdded(place) { prepareSearchPlaceAddition(place) }
+            if fromMap {
+                withAnimation(AppMotion.crossfade(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
+                    searchDetailPlace = place
+                }
+            }
             return
         }
         if fromMap, selectedSearchPlaceID == place.id, draft != nil {
@@ -1009,8 +1261,9 @@ struct TripSaveDraft: Identifiable {
                 marker.content.markdownContent = value.html; marker.content.headerImage = value.headerImage
                 createdSearchMarkers[place.id] = marker
             }
+            var joinedDay: TripDay?
             if let target, !isPlaceAdded(place) {
-                try await client.mutate(Self.dayPath(target) + "/markers", method: "POST", body: ["markerId": marker.id])
+                joinedDay = try await joinDefaultRoute(marker.id, day: target, client: client, revision: revision)
             }
             if let targetTripID, !isPlaceAdded(place) {
                 try await client.mutate("trips/\(APIClient.id(targetTripID))/markers", method: "POST", body: ["markerId": marker.id])
@@ -1018,9 +1271,8 @@ struct TripSaveDraft: Identifiable {
             guard revision == connectionRevision, session == addSession else { return false }
             if let index = markers.firstIndex(where: { $0.id == marker.id }) { markers[index] = marker }
             else { markers.append(marker) }
-            if let target, let ti = trips.firstIndex(where: { $0.id == target.tripId }),
-               let di = trips[ti].days.firstIndex(where: { $0.id == target.id }),
-               !trips[ti].days[di].markerIds.contains(marker.id) { trips[ti].days[di].markerIds.append(marker.id) }
+            if let joinedDay, let ti = trips.firstIndex(where: { $0.id == joinedDay.tripId }),
+               let di = trips[ti].days.firstIndex(where: { $0.id == joinedDay.id }) { trips[ti].days[di] = joinedDay }
             if let targetTripID, let ti = trips.firstIndex(where: { $0.id == targetTripID }),
                !(trips[ti].markerIds ?? []).contains(marker.id) {
                 trips[ti].markerIds = (trips[ti].markerIds ?? []) + [marker.id]
@@ -1145,6 +1397,9 @@ struct TripSaveDraft: Identifiable {
         }
 
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--day-stale-member-preview") {
+            trips[0].days[0].markerIds.insert("deleted-marker", at: 0)
+        }
         if ProcessInfo.processInfo.arguments.contains("--transport-schedule-preview") {
             let stops = [ChainStop(id: "preview-stop-0", markerId: "demo-0", startTime: "09:30", durationMinutes: 60),
                          ChainStop(id: "preview-stop-1", markerId: "demo-1", startTime: "10:45", durationMinutes: 45),
@@ -1156,6 +1411,48 @@ struct TripSaveDraft: Identifiable {
                 trips[0].days[0].markerIds.append("demo-3")
             }
 
+        }
+        #endif
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--inline-address-preview") {
+            for index in markers.indices {
+                markers[index].content.address = "上海市徐汇区淮海中路与武康路交叉口，历史文化风貌街区入口旁，沿街步行至建筑南侧入口"
+            }
+        }
+        if ProcessInfo.processInfo.arguments.contains("--day-detail-style-preview") {
+            // Read-only typography fixture for notes, long names, and the untitled header.
+            trips[0].days[0].markerIds.append("demo-3")
+            trips[0].days[0].routeChains?[0].stops[0].note = "沿街散步，看看老建筑。"
+            if ProcessInfo.processInfo.arguments.contains("--day-detail-long-preview") {
+                markers[0].content.title = "武康大楼与衡复历史文化风貌区漫步"
+                trips[0].days[0].title = nil
+                trips[0].days[0].routeChains?[0].stops[0].note = "先到沿街入口集合，参观前核对预约时间；雨天从侧门进入，沿着连廊前往展厅。"
+            }
+        }
+        #endif
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--journey-card-style-preview") {
+            // Read-only fixture; photos come from the developer's local preview server.
+            markers[0].content.headerImage = "http://localhost:8766/tokyo.jpg"
+            markers[3].content.headerImage = "http://localhost:8766/street.jpg"
+            trips[0].days[1].title = nil
+            let summaryIDs = ["demo-2", "demo-3", "demo-4", "demo-0", "demo-1"]
+            let summaryStops = summaryIDs.enumerated().map { index, id in
+                ChainStop(id: "summary-stop-\(index)", markerId: id,
+                    startTime: index == 1 ? "10:30" : index == 2 ? "12:00" : nil)
+            }
+            trips[0].days[1].markerIds = summaryIDs
+            trips[0].days[1].chains = [summaryIDs]
+            trips[0].days[1].routeChains = [RouteChain(id: "summary-route", stops: summaryStops,
+                legs: [TransportMode.cycling, .walking, .bus, .subway].enumerated().map { index, mode in
+                    ChainLeg(fromStopId: summaryStops[index].id, toStopId: summaryStops[index + 1].id, mode: mode)
+                })]
+            trips[0].days.append(TripDay(id: "day-3", tripId: "demo-trip", date: "2026-10-03",
+                title: nil, markerIds: ["demo-1", "demo-4"], chains: []))
+            trips[0].days.append(TripDay(id: "day-4", tripId: "demo-trip", date: "2026-10-04", markerIds: [], chains: []))
+            trips[0].endDate = "2026-10-04"
+            trips.append(Trip(id: "style-trip-2", name: "冬日 · 城市漫游", startDate: "2026-12-12", endDate: "2026-12-14", emoji: "❄️", days: []))
+            trips.append(Trip(id: "style-trip-3", name: "周末小旅行", startDate: "2026-09-12", endDate: "2026-09-13", emoji: "🌿", days: [], markerIds: ["demo-3"]))
         }
         #endif
         if ProcessInfo.processInfo.arguments.contains("--overlapping-routes-demo") {
@@ -1183,6 +1480,26 @@ struct TripSaveDraft: Identifiable {
         } else {
             tripID = trips.first?.id; dayID = days.first?.id
         }
+        if ProcessInfo.processInfo.arguments.contains("--ongoing-archive-preview") {
+            let today = Date.fromDay(Date.now.dayString)
+            trips = [("ongoing-new", -1, 7), ("ongoing-old", -3, 5),
+                     ("upcoming", 20, 22), ("completed", -30, -28)].map { id, start, end in
+                Trip(id: id, name: id == "ongoing-new" ? "京都漫游" : id == "ongoing-old" ? "关西之旅" : "示例旅途",
+                     startDate: Calendar.current.date(byAdding: .day, value: start, to: today)!.dayString,
+                     endDate: Calendar.current.date(byAdding: .day, value: end, to: today)!.dayString, days: [])
+            }
+            tripID = nil; dayID = nil
+        }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--year-archive-preview") {
+            trips += [("year-2025-a", "2025-11-02", "京都 · 秋色"),
+                      ("year-2025-b", "2025-05-10", "海边的周末"),
+                      ("year-2024", "2024-08-20", "山间散步"),
+                      ("year-2023", "2023-03-14", "春日出发")].map { id, date, name in
+                Trip(id: id, name: name, startDate: date, endDate: date, emoji: "🌿", days: [])
+            }
+        }
+        #endif
         rebuildRoutes(); fly(markers.map(\.coordinates))
     }
 }
@@ -1193,11 +1510,15 @@ struct CameraCommand: Identifiable {
     var detailLayout: MarkerDetailLayout? = nil
     var revealDraft = false
     var bottomSheetFraction: Double? = nil
+    var bottomSheetHeight: Double? = nil
     func viewportInsets(base: MapViewportInsets, height: Double, bottomSafeArea: Double,
                         bottomSheet: Bool) -> MapViewportInsets {
         var insets = base
         if let bottomSheetFraction {
-            insets = MapViewportInsets(top: 80, left: 25, bottom: height * bottomSheetFraction + bottomSafeArea + 25, right: 25)
+            insets = MapViewportInsets(top: 80, left: 25, bottom: height * min(0.5, bottomSheetFraction) + bottomSafeArea + 25, right: 25)
+        }
+        if let bottomSheetHeight {
+            insets = MapViewportInsets(top: 80, left: 25, bottom: min(bottomSheetHeight, height * 0.5) + bottomSafeArea + 25, right: 25)
         }
         if bottomSheet, revealDraft { insets.bottom = height * 0.5 + bottomSafeArea + 25 }
         if bottomSheet, let detailLayout {

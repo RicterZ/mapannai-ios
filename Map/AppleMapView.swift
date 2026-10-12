@@ -65,11 +65,12 @@ struct AppleMapRenderer: UIViewRepresentable {
                     map.setUserTrackingMode(desired, animated: !UIAccessibility.isReduceMotionEnabled)
                 }
             }
+            navigationGestures.onTransformInteraction = { [weak self] in self?.store.noteDayMapTransform() }
             navigationGestures.observe(map) { [weak self] in self?.store.noteMapInteraction() }
             let insets = store.mapViewportInsets
             map.insetsLayoutMarginsFromSafeArea = false
             // Search focus supplies the complete panel padding in its camera command.
-            map.layoutMargins = store.searchDetailPlace != nil ? .zero : UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
+            map.layoutMargins = store.searchDetailPlace != nil || store.dayMapBrowsing ? .zero : UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
             compact = isCompact(map)
             userDirection.attach(toAnnotation: { [weak map] in
                 guard let map, map.userLocation.location != nil else { return nil }
@@ -97,10 +98,10 @@ struct AppleMapRenderer: UIViewRepresentable {
                 if pins[key] == nil { pins[key] = pin; map.addAnnotation(pin) }
                 if let view = map.view(for: pin) { style(view, pin: pin) }
             }
-            map.pointOfInterestFilter = store.placeSearchPresented ? .excludingAll : .includingAll
+            map.pointOfInterestFilter = .includingAll
             map.selectableMapFeatures = store.placeSearchPresented ? [] : [.pointsOfInterest]
-            if routes.map(RouteOverlayGeometry.init) != store.displayRoutes.map(RouteOverlayGeometry.init) {
-                routes = store.displayRoutes
+            if routes.map(RouteOverlayGeometry.init) != store.mapDisplayRoutes.map(RouteOverlayGeometry.init) {
+                routes = store.mapDisplayRoutes
                 map.removeOverlays(map.overlays.filter { $0 is Line })
                 dashScale = 0
                 for route in routes {
@@ -239,9 +240,19 @@ struct AppleMapRenderer: UIViewRepresentable {
             let firstDraft = pin.key == "draft" && view.accessibilityIdentifier != "map-draft-pin"
             let firstSearch = pin.place != nil && view.accessibilityIdentifier != pin.key
             view.alpha = 1
+            view.isAccessibilityElement = true
+            view.accessibilityLabel = pin.title
+            view.accessibilityTraits = .button
             view.accessibilityIdentifier = pin.key == "draft" ? "map-draft-pin" : pin.key
             if let marker = pin.marker {
-                view.image = MapMarkerAppearance.image(icon: marker.icon, compact: compact, selected: store.selectedMarker?.id == marker.id)
+                let focused = store.mapHighlightedMarkerID == marker.id
+                let image = store.dayMapNumber(for: marker.id).map { MapMarkerAppearance.dayImage(number: $0, focused: focused) }
+                    ?? MapMarkerAppearance.image(icon: marker.icon, compact: compact, selected: focused)
+                if view.image !== image {
+                    let changedFocus = view.image != nil && focused
+                    view.image = image
+                    if changedFocus { MapInteractionFeedback.appear(view) }
+                }
             } else if pin.key == "draft" {
                 view.image = MapMarkerAppearance.draftImage(icon: store.draft?.icon ?? .location)
             } else {
@@ -249,7 +260,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             }
             view.centerOffset = pin.key == "draft" ? CGPoint(x: 0, y: -18) : pin.marker == nil ? CGPoint(x: 0, y: -22) : .zero
             view.transform = .identity
-            view.zPriority = store.selectedMarker?.id == pin.marker?.id && pin.marker != nil ? .max : pin.marker != nil ? .defaultSelected : .defaultUnselected
+            view.zPriority = store.mapHighlightedMarkerID == pin.marker?.id && pin.marker != nil ? .max : pin.marker != nil ? .defaultSelected : .defaultUnselected
             if pin.key == "draft" || pin.place != nil { view.zPriority = .max }
             if firstDraft || firstSearch { MapInteractionFeedback.appear(view) }
             view.displayPriority = .required
@@ -273,11 +284,11 @@ struct AppleMapRenderer: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let pin = annotation as? Pin {
                 tapArbiter.claim()
-                if let marker = pin.marker { store.focus(marker) }
+                if let marker = pin.marker { store.selectMapMarker(marker) }
                 else if let place = pin.place { store.choose(place, fromMap: true) }
             } else if let feature = annotation as? MKMapFeatureAnnotation, !store.placeSearchPresented {
                 if let point = lastTap, let pin = hitPin(mapView, at: point), let marker = pin.marker {
-                    tapArbiter.claim(); store.focus(marker)
+                    tapArbiter.claim(); store.selectMapMarker(marker)
                 } else {
                     tapArbiter.claim()
                     selectedPOI = feature
@@ -311,7 +322,7 @@ struct AppleMapRenderer: UIViewRepresentable {
             lastTap = point
             if let pin = hitPin(map, at: point) {
                 tapArbiter.claim()
-                if let marker = pin.marker { store.focus(marker) }
+                if let marker = pin.marker { store.selectMapMarker(marker) }
                 else if let place = pin.place { store.choose(place, fromMap: true) }
                 return
             }

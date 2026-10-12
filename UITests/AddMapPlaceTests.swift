@@ -33,7 +33,7 @@ final class AddMapPlaceTests: XCTestCase {
         let result = app.buttons["add-place-result-demo-0"]
         XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
         XCTAssertEqual(app.textFields["地点名称"].value as? String, "武康大楼")
-        XCTAssertTrue(app.buttons["保存"].exists)
+        XCTAssertTrue(app.buttons["save-marker-editor"].exists)
         let image = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         image.name = "Map search selected place editor"; image.lifetime = .keepAlways; add(image)
         app.buttons["取消"].tap()

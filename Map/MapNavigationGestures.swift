@@ -6,6 +6,8 @@ import UIKit
     private let recognizers = NSHashTable<UIGestureRecognizer>.weakObjects()
     private var policy = LocationGesturePolicy()
     var onTransformEnded: (() -> Void)?
+    var onTransformInteraction: (() -> Void)?
+    private var transforming = false
     private var onPan: (() -> Void)?
     var isInteracting: Bool { recognizers.allObjects.contains { $0.state == .began || $0.state == .changed } }
 
@@ -27,6 +29,8 @@ import UIKit
     private func classify() {
         let active = recognizers.allObjects.filter { $0.state == .began || $0.state == .changed }
         let transform = active.contains { $0.numberOfTouches > 1 || $0 is UIPinchGestureRecognizer || $0 is UIRotationGestureRecognizer }
+        if transform && !transforming { onTransformInteraction?() }
+        transforming = transform
         let distances = active.compactMap { recognizer -> Double? in
             guard let pan = recognizer as? UIPanGestureRecognizer, pan.state == .changed, pan.numberOfTouches == 1 else { return nil }
             let translation = pan.translation(in: pan.view)

@@ -65,18 +65,6 @@ enum MarkerPresentation {
 
 // Shared by the sheet and the camera command before presentation begins.
 struct MarkerDetailLayout {
-    let compact: Bool
-    let compactHeight: Double
-    let restingFraction: Double
-    init(marker: Marker, itineraryCount: Int, hasSelectedDay: Bool) {
-        let image = URLComponents(string: marker.content.headerImage ?? "")
-        let hasImage = (image?.scheme == "https" || image?.scheme == "http") && image?.url != nil
-        restingFraction = hasImage ? 0.72 : 0.55
-        compact = !NoteContent.hasContent(marker.content.markdownContent) && !hasImage
-        compactHeight = min(520, 240 + (marker.content.address?.isEmpty == false ? 40 : 0)
-            + Double(itineraryCount) * 52 + (hasSelectedDay ? 48 : 0))
-    }
-    func occlusion(height: Double, bottomSafeArea: Double) -> Double {
-        compact ? compactHeight + bottomSafeArea : height * restingFraction
-    }
+    init(marker: Marker, itineraryCount: Int, hasSelectedDay: Bool) {}
+    func occlusion(height: Double, bottomSafeArea: Double) -> Double { height * 0.5 }
 }

@@ -31,11 +31,11 @@ SDK 由 `Scripts/fetch-sdk.py` 下载固定官方版本，无需 CocoaPods。`Ve
 
 搜索、地点详情和路线规划通过 `ServerMapServices` 调用现有服务端 API，不使用原生搜索 SDK，也不覆盖服务端 provider。搜索加载更多需要服务端分页支持；缺少分页字段时保留第一页。
 
-搜索结果仅在列表中展示，加载与翻页不移动地图镜头；点选后地图只显示当前结果，以暖黑色名称标签、细连接线和白边小圆落点突出显示，不使用行程序号。三个地图底图共用标记样式，原有行程标记和路线保留。
+添加地点、附近地点及搜索结果复用同一个地图面板和 NavigationStack。进入时按当前地图中心30公里列出已保存地点，按距离排序；清空关键词恢复附近列表。手机下拉至80pt仅保留输入框，不退出搜索、不清空关键词或结果，点返回才恢复之前旅途；输入时恢复半屏。地点预览与添加草稿在同一容器内导航。地图点选从半屏或全屏进入地点详情时记住原档位，详情显示半屏，关闭后动画恢复原档位；退出添加地点时旅途面板动画恢复，只有首次进入全屏日详情省略面板呈现动画。搜索结果仅在列表中展示，加载与翻页不移动地图镜头；点选后地图只显示当前结果，以暖黑色名称标签、细连接线和白边小圆落点突出显示，不使用行程序号。三个地图底图共用标记样式，原有行程标记和路线保留。
 
 搜索与 Web 的 mergeSearchResults 使用相同合并规则：已加载地点的标题全局匹配并优先显示，POI 仍按冻结的视口范围分页请求 /api/search。坐标按六位小数匹配已有地点，结果携带本地 markerId 以复用地点及其内容；跨页去重保留独立的地点与 POI 身份。POI 请求失败时保留已匹配的收藏地点。
 
-已收藏搜索结果显示原地点图标与“已收藏”。其操作按入口层级直接加入目标日成员或旅行未安排地点，不打开地点创建/编辑表单；总览入口直接查看地点详情。普通 POI 继续进入添加草稿。
+已收藏搜索结果显示原地点图标与“已收藏”。搜索期间点击地图标记或列表正文只选择并打开地点预览，不隐式加入行程；预览中的加入按钮与列表加号才按入口层级加入目标日成员或旅行未安排地点，总览入口查看已收藏地点。普通 POI 的明确添加操作进入添加草稿。地图长按的临时搜索结果立即显示 POI 名称或“地图选点”和坐标，异步补全名称与地址；取消草稿保留有效结果，退出或更换搜索会话后丢弃旧补全结果。
 
 “打开地图”偏好保存在本机，默认系统地图，切换不重建地图或重新连接服务。高德导航使用官方 iosamap URL，传入原始 WGS-84 坐标及 dev=1；无法打开时提示用户安装或选择系统地图。
 
@@ -45,13 +45,21 @@ SDK 由 `Scripts/fetch-sdk.py` 下载固定官方版本，无需 CocoaPods。`Ve
 
 ## 交通与游览安排
 
-TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与相邻 legs；旧服务缺失字段时保留现有距离展示。日详情相邻地点间展示交通摘要并进入原生 Form，交通出发时间与时长位于摘要右上角，距离和备注显示在下方；地点名称行右上角显示游览时间与时长，未设置显示时钟和 --:--；点击该区域可编辑游览安排，备注单独显示在地址下方。线路/车次号单独使用 serviceNumber；时间按行程当地 HH:mm 存储，durationMinutes 为用户计划分钟数。
+TripDay 解码可选 routeChains，使用稳定路线 ID、stops 访问 ID 与相邻 legs；旧服务缺失字段时保留现有距离展示。天详情使用白色路线分组、淡色序号节点与连续细线表示访问顺序；颜色仅在列表内从当天路线色降饱和，不改地图颜色。地点使用原emoji与中等字重名称，地址及备注沿名称对齐。游览时间位于右侧、停留时长在其下，未设置保留时钟和 --:--；长名称或辅助功能大字时另起一行。交通摘要不铺整块灰底，方式、原有车次小标签与距离在左（以中点分隔距离），出发时间和计划时长在右，下一行仅显示备注；交通与游览编辑共用 `RouteScheduleEditor`：整页 `systemBackground` 白底，不使用灰色表单底和独立卡片；起终点横向紧凑显示，交通方式用两行五列直接点选，选择仅使用中性淡灰底，辅助功能大字改为两列。车次、时间与备注用细分隔线组织，底部复用 `JourneyEditorSubmit` 的白底版本固定“保存安排”，游览安排隐藏交通专属控件。保留当地时间、不填即空、清除与取消不保存的现有合约。装饰线不参与点击或拖放，实际序号仍直接订阅本地顺序。整页天详情上方显示主题（无主题时显示地点/路线数）与 MM/dd·周X 日期，地图工作区已有页头时不重复。线路/车次号单独使用 serviceNumber；时间按行程当地 HH:mm 存储，durationMinutes 为用户计划分钟数。
 
 保存调用 PATCH /api/trips/:id/days/:dayId/chains/:chainId，仅发送 stops 或 legs 元数据，空字段显式 null，清除交通使用 remove=true。服务端返回完整 TripDay 后立即更新本地；交通方式变化时按新的有向边重新匹配规划缓存并请求缺失路线，仅修改时间/备注不重新寻路。提交前校验路线快照，切换服务器拒绝旧结果。拖动松手同步更新 chains、访问及有向边；同路线中仍按原方向相邻的边生效，断开的边存入 inactiveLegs，恢复原方向相邻时重新生效。跨路线产生新访问，不继承游览安排；移出路线清理涉及该访问的边。计划时间不自动重排。单路线排序使用稳定 chainId PATCH，其他变更使用现有整日 PUT；对服务端旧接口无法明确安排归属的移动在提交前拒绝，避免错配。服务响应的访问 ID 直接提交，不等待刷新。所有当天地点拖动共用落点解析，孤立点拖入、路线内排序和跨路线移动不按来源区分命中规则；使用拖动开始时冻结的行中线，地点、交通块、行间空隙和卡片左右留白均接受。悬停与松手使用同一解析器；未收入路线区域保留拖动开始时的命中范围并跟随滚动补偿，避免系统插入占位推开容器后松手落错路线。地点拖动使用系统完整行预览，保留原样式及尺寸；松手后短暂屏蔽点击以防误开表单。
 
 旅途页未加入日期地点拖放时，目标日期使用系统列表底色高亮与默认动画，进入或切换目标触发原生 selection 触觉反馈；离开、取消和松手清除高亮，减少动态效果时禁用附加动画。日期命中使用当前可见位置，随滚动更新。
 
 只读设计预览参数 --demo --trip-places-preview --transport-schedule-preview 展示地铁、车次、时间与备注；不写入生产数据。
+
+## 旅途卡片内容
+
+每日卡片仅汇总现有数据：chains 内保留地点顺序、独立路线分行，无路线成员用中点分隔；空白/重复日期标题省略，无标题时用普通字重与弱箭头预览完整地点名称，放不下的成员以“另有N个地点”概括；无标题缩略图60pt，无图不占位。每日卡片日期固定为 `MM/dd·周X`（如 `10/03·周六`），按行程日期计算，不随设备时区偏移。时间来自实际首站的 startTime，首站未填写时统计地点游览与有效相邻交通段的已有时间/正时长安排，每个访问或交通段最多计1项；无安排（包括空日）固定显示0项时间安排；交通仅采用有效相邻 legs，不读取 inactiveLegs。照片按日期、路线和成员顺序稳定选择已有地点封面，无照片保留文字布局。
+
+照片由独立 actor 下载、降采样并缓存；首页、详情头卡和 UIKit 转场快照共用已解码 UIImage。旅途打开期间不更新首页图片，转场完成后才加载每日缩略图，并预留照片内容高度。保留现有转场状态、坐标、时长、层叠与手势。外层遮罩只维持顶部标题边界，底部覆盖系统安全区，让首页与每日列表自然滚出屏幕边缘。
+
+只读样式预览使用 `--demo --archive-preview --transport-schedule-preview --journey-card-style-preview`；照片从开发机 localhost:8766 提供，不打包库存照片，不修改真实行程。
 
 ## 示例与模拟器
 
@@ -108,9 +116,9 @@ xcodebuild -project MapAnNai.xcodeproj -scheme MapAnNai \
 
 `Core/AppMotion.swift` 按交互场景维护动画：原生导航使用系统默认过渡，侧栏与工作区展示使用无弹跳的 smooth，标题交接使用淡入淡出，路线展开与自动滚动分别使用内容展开和滚动动画。动画尽量限定在对应视图或状态提交处，避免工作区动画传入整页列表和工具栏布局。
 
-地点详情切换保留同一个系统sheet，内容向左翻页；固定标识的自定义detent通过UISheetPresentationController.animateChanges更新高度，封面预览使用更高档位，展开至全屏时保持全屏。减少动态效果时直接更新。
+地点详情切换保留同一个贴边面板，内容向左翻页；默认半屏，用户上拉全屏后切换地点保持全屏，笔记或封面更新不改变用户档位。下拉至最小档关闭并恢复之前的行程。减少动态效果时直接更新。
 
-旅途 sheet 的拖动和升降由系统负责。最小档标题与展开导航的顶部区域根据 sheet 屏幕上的呈现高度连续交接，正文保持不透明，标题遮罩覆盖底部安全区；工作区不追加矩形裁剪，由系统 sheet 外轮廓与列表滚动区域管理底部显示，避免整页淡入导致文字、图标和分组背景短暂灰白，松手归档时使用 UIKit presentation layer 的位置补偿已提前提交的目标布局高度，观察仅在布局变化及短暂归档期间运行，稳定后停止。退出中的标题保留最小档区域的中心；展开导航实例与滚动身份保持稳定。现有高度、工具栏及搜索栏对齐补偿保留。外层背景材质随高度过渡至systemGroupedBackground；仅内容分组行固定systemBackground，半屏和全屏保持白色。减少动态效果时取消额外位移、旋转与缓动。镜头和标点缩放保持 SDK / 渲染时序；路线方向箭头统一由共享几何组件生成，再由地图原生覆盖物绘制。
+iPhone 旅途、搜索和日期移动／复制选择器使用贴边面板：左右及底部占满，只有顶部圆角，提供拖动条、半屏／全屏及旅途80pt收起档。UIKit presentation controller 管理外框、拖动与键盘避让，SwiftUI 保留 NavigationStack、列表和编辑控件；背景地图可交互，日期选择器遮暗背景。iPad 侧栏和居中弹窗保持原布局。减少动态效果时取消额外缓动。
 
 ## unsigned IPA 与自动发布
 
@@ -158,15 +166,15 @@ AI配置缺失或无效时，聊天页显示“前往设置”入口并禁用发
 
 `--demo --note-composer-preview` 打开独立原生编辑预览，预填文字和两张本地示例缩略图。正文使用 UITextView，键盘上方显示字体样式工具，地点胶囊使用当前地点。PhotosPicker 支持最多九张本地多选预览；示例入口不上传图片、不保存服务端数据。正式地点表单通过“编写笔记/编辑笔记”进入同一编辑页，自动弹出键盘；勾选保存回地点草稿，再由地点表单保存提交服务端。多图复用现有压缩与COS上传流程，先追加到笔记末尾，失败保留已成功图片并允许重选。
 
-启动时单次获取系统位置，等待行程启动选择完成；仅当没有行程镜头时使用真实GPS位置（zoom12），不再跳到最近的收藏地点。用户操作和已有镜头优先，迟到定位不覆盖，周期刷新不重复定位。主动进入旅行地图适配全部日期及未安排地点，进入日期地图适配当天全部有效地点；即便之前已选中该日期也执行镜头更新。单点旅行zoom12、单点日期zoom15，多点使用renderer按实际地点范围与面板遮挡适配；focus=false保持镜头。空行程尚无目的地区域可定位，保留现有视野。
+启动时单次获取系统位置，等待行程启动选择完成；仅当没有行程镜头时使用真实GPS位置（zoom12），不再跳到最近的收藏地点。用户操作和已有镜头优先，迟到定位不覆盖，周期刷新不重复定位。从旅途／日详情右上角进入地图时保留所选日期，旅途面板保持80pt收起档，不自动弹出半屏日详情。主动进入旅行地图适配全部日期及未安排地点，进入日期地图适配当天全部有效地点；即便之前已选中该日期也执行镜头更新。单点旅行zoom12、单点日期zoom15，多点使用renderer按实际地点范围与面板遮挡适配；focus=false保持镜头。空行程尚无目的地区域可定位，保留现有视野。
 
-底部旅途收起胶囊在 iOS 26 及以上使用原生 `glassEffect`，较早系统回退到 `regularMaterial`。材质随原生 sheet 的实际高度过渡至展开背景；搜索使用不透明整页背景，AI工作区保持原有背景。控件按内容区加上上下安全区后的外框中心对齐，背景材质变化不改变按钮命中尺寸。胶囊背景上下各内收 2pt（总高度减少 4pt），仅改变绘制轮廓，不改变布局、安全区、元素中心或命中区域。
+手机地图操作采用右下方白色组合工具条，定位／搜索使用中性19pt图形、44pt命中区域，中间用短细线分隔。工具条随旅途档位避让，展开全屏或打开搜索时隐藏。旅途面板用×收起，收起栏左对齐日期／旅行名、右侧×关闭地图，没有返回箭头；日详情用无厚重圆底的×关闭，保留原导航路径。地点详情用名称右侧×关闭，编辑入口在内容底部；背景为白色。iPad 保留侧栏导航。
 
-创建旅行的所有入口使用固定 `.medium` 原生半屏 sheet，不提供全屏档位或拖动条；编辑旅行保持原有展示方式。键盘避让由系统处理，表单可滚动。
+创建与编辑旅途统一使用全屏表单，编辑复用名称、图标与日期范围控件。键盘避让由系统处理，表单可滚动。
 
-从日详情进入搜索时，展开和收起状态的标题统一为“搜索图标”，副标题为“同时添加到今日行程”；这里的今日行程指进入搜索时冻结的目标日。旅行入口冻结旅行 ID，副标题为“同时添加到当前旅行”；总览入口仅收藏地点。
+日详情的搜索弹窗冻结目标日，显示“添加到今日行程”；旅行入口冻结旅行 ID，显示“添加到当前旅行”；总览入口仅收藏地点。
 
-旅行级未安排地点读取 `Trip.markerIds`（旧服务缺失时按空列表处理），添加通过 `POST /api/trips/:id/markers`，body 为 `{markerId}`。旅行详情显示“未安排日期”，搜索/添加冻结目标旅行。拖入日期通过现有 `POST /api/trips/:id/days/:dayId/markers`，后端原子移除旅行级成员；本地乐观更新同时移除旅行成员，失败恢复两者。路线末尾追加使用已有日更新接口，仅更新成员/路线快照，不自动分配路线。
+旅行级未安排地点读取 `Trip.markerIds`（旧服务缺失时按空列表处理），添加通过 `POST /api/trips/:id/markers`，body 为 `{markerId}`。旅行详情显示“未安排日期”，搜索/添加冻结目标旅行。加入日期通过现有日更新接口同时提交成员与默认路线，后端原子移除旅行级成员；本地乐观更新同时移除旅行成员，失败恢复两者。当天0条路线时首次添加建立路线1，1条路线时追加其中，2条及以上只加入当天的“未安排”；已有地点的重复加入保留原位置。搜索、地图添加、详情加入和跨日移动／复制使用同一默认规则。
 
 `--demo --trip-places-preview` 保留本地设计预览，不向服务器写入。正式模式使用真实 `Trip.markerIds`，不使用预览地点。
 
@@ -174,11 +182,11 @@ AI配置缺失或无效时，聊天页显示“前往设置”入口并禁用发
 
 手机添加地点草稿默认半屏，包括搜索结果加号、地图搜索标记和地图 POI/长按入口；保留上拉全屏，搜索框开始输入时仍可展开。iPad 固定居中表单保持原样。
 
-地点行拖动使用系统拖动预览，保留原行尺寸/样式，提起与放下沿用系统拖动反馈，不叠加手动 impact；实际换位时使用一次 medium impact 反馈。当天孤立点可拖入路线任意可见行：固定行中线决定插入顺序，标题追加末尾；共享组件根据同一边界执行让位和松手提交，避免预览空隙与实际顺序偏移。不绘制额外蓝色插入标识线。路线地点滑动删除及“移出路线”菜单保留当天成员，清理当天路线引用后回到未规划地点区域；未规划地点的删除仍从当天移除。
+地点行拖动使用系统拖动预览，保留原行尺寸/样式，提起与放下沿用系统拖动反馈，不叠加手动 impact；实际换位时使用一次 medium impact 反馈。当天孤立点可拖入路线任意可见行：固定行中线决定插入顺序，标题追加末尾；共享组件根据同一边界执行让位和松手提交，避免预览空隙与实际顺序偏移。不绘制额外蓝色插入标识线。右滑地点显示移动、复制与删除，禁用全滑自动执行；左滑保留删除入口。删除需确认，只移除当天成员和当天全部路线引用，保留收藏及其他日期。
 
-搜索是无地图背景的独立整页：旅途入口通过导航进入，地图入口以不透明整页覆盖工作区并隐藏旅途sheet，不使用搜索弹窗、半屏或侧栏。顶部返回/输入/清除共用白色胶囊，下方直接显示地点结果；退出保留原旅途导航和档位。添加草稿在同一NavigationStack进入，取消返回整页搜索。
+搜索使用独立贴边面板，提供半屏／全屏档位和拖动条；地图入口保留可交互的背景地图，旅途入口在原页面上弹出。顶部返回／输入／清除共用单层白底输入行，下方显示白底plain地点结果；退出恢复原旅途导航和档位。添加草稿在弹窗内同一NavigationStack进入，取消保留关键词和结果。首页搜索点选结果时先关闭搜索弹窗，再由onDismiss交接地图；返回后在地图关闭回调恢复搜索，不用延时串联弹窗。
 
-日详情始终显示灰色小标题“未收入路线”，独立地点与添加地点入口共用分组。路线地点支持原生长按拖动排序、跨路线移动，拖到未收入路线区域清理路线引用并保留当天成员；路线编辑菜单保留在路线标题。
+日详情将未归属路线的成员归入“未安排”，无成员时不显示空分组。长按地点或路线标题直接进入当前页编辑模式，不切换页面；原生圆形多选与排序手柄用于选择／排序，底部显示全选、完成和批量移动／复制／删除。排序即时乐观保存，失败恢复；完成退出编辑模式。编辑状态保留路线间拖放，拖到未安排区域仅清理路线引用。新建路线仍使用独立编辑页；路线删除在标题左滑入口确认。移动／复制弹窗选择旅途内其他日期，复制复用地点ID并保留源日期；移动先写目标再写源，失败读取源状态后补偿目标，补偿失败明确提示并刷新，不隐藏部分成功。
 
 应用内地点拖放在松手回调中同步读取本地载荷并立即提交列表变化，不等待 NSItemProvider 异步加载或落点动画结束；路线几何与距离继续后台计算并补全。
 
@@ -244,11 +252,82 @@ Apple 点击使用 MKMapItemRequest 获取正式地点，保存前等待同一�
 
 ## 旅行档案卡堆
 
-“我的旅途”是整页卡堆首页。单击卡片进入整页旅行详情，卡片从原位置移到顶部；顶部卡片下方显示天列表，原生push展示每天安排。×返回首页，地图按钮进入现有地图工作区，返回保留整页上下文。首页ScrollView不重排、不补偿contentOffset；设置位于旅途计数下，未加入行程的地点保留首页。
+“我的旅途”是整页卡堆首页。Top优先展示所有开始日期≤今天≤结束日期的进行中旅途，按出发日期倒序、同日按ID稳定排序；每张完整204pt高，彼此及后续卡堆之间保留24pt间距，右上角显示6pt素绿色圆点和caption“旅途中”。没有进行中旅途时选最近的未来出发；两者都没有时按出发日期到今天的绝对距离选择Top。所有Top不在其余列表重复出现，其余未结束旅途及已完成旅途各自按开始日期倒序，同日按ID稳定排序。首页标题“我的旅途”在ScrollView内使用largeTitle，不作为navigationTitle。排除Top后，所有剩余旅途按出发年份分组，每个年份前插入204pt不可点击年份卡，共用82pt堆叠步距，不另加区块间距；没有未来旅途也显示年份分组。年份与右侧小字次数在露出区域中排列，不带图标或完成标签。年份乘固定整数种子生成低饱和配色和圆环／曲线／折线图案，坐标、颜色与模式只取决于年份，不使用随机数、hashValue、网络或持久化，刷新和重启一致。单击卡片进入整页旅行详情，卡片从原位置移到顶部；顶部卡片下方显示天列表，原生push展示每天安排。×返回首页，地图按钮进入现有地图工作区，返回保留整页上下文。未选中的完整Top卡在原位置淡入淡出，不随压叠卡上下移出/恢复，前置压叠卡及所有年份卡的移动裁切在Top下方，避免穿过完整Top表面；所有年份卡使用同次UIKit快照转场及原始层级（按插入位置保存各自frame），避免返回途中露出或交接闪现。详情实卡与UIKit快照同步切换可见性，实卡关闭额外opacity动画，避免继承日程List淡出而与移动快照重影；日程正文保留淡出。选中卡轨迹、时长与压叠卡移动保持原样。首页ScrollView不重排、不补偿contentOffset；设置位于旅途计数下，未加入行程的地点保留首页。
 
-转场层按原索引真实遮挡，所有卡片保持完整204pt高度。选中卡片始终清晰；转场开始前用ImageRenderer生成可见卡片快照，邻卡的模糊图也只生成一次。UIViewPropertyAnimator以0.48秒、dampingRatio=1的弹簧动画驱动快照位置、尺寸和透明度，运动期间不重新布局文字、不动态模糊List；上下邻卡分别作为一组移动到可见区域外。详情列表保持目标布局，延迟0.12秒淡入。落位后交给List真实头卡，转场层不参与命中或无障碍。详情实卡与UIKit快照立即交接可见性；实卡关闭额外opacity动画，避免返回时继承日程List淡出而与移动快照重影，日程正文保留淡出。头卡与天列表共用滚动，不固定。List头卡通过global坐标测量，再扣除首页内容容器的global原点，避免原生List丢失命名坐标空间后重复计入导航安全区。关闭先捕获头卡当前滚动矩形，再由同一UIKit转场层反向归位；首页保持原滚动位置。减少动态效果只淡入淡出。滚动几何写入非观察缓存，旅行选择和路线刷新在落位后执行。Info.plist启用CADisableMinimumFrameDurationOnPhone，允许支持ProMotion的手机使用高刷新率；实际帧率仍需设备录屏或Instruments验证。
+转场层按原索引真实遮挡，所有卡片保持完整204pt高度。选中卡片始终清晰；转场开始前用ImageRenderer生成可见卡片快照，邻卡的模糊图也只生成一次。UIViewPropertyAnimator以0.48秒、dampingRatio=1的弹簧动画驱动快照位置、尺寸和透明度，运动期间不重新布局文字、不动态模糊List；上下邻卡分别作为一组移动到可见区域外。详情列表保持目标布局，延迟0.12秒淡入。落位后交给List真实头卡，转场层不参与命中或无障碍。头卡与天列表共用滚动，不固定。List头卡通过global坐标测量，再扣除首页内容容器的global原点，避免原生List丢失命名坐标空间后重复计入导航安全区。关闭先捕获头卡当前滚动矩形，再由同一UIKit转场层反向归位；首页保持原滚动位置。减少动态效果只淡入淡出。滚动几何写入非观察缓存，旅行选择和路线刷新在落位后执行。Info.plist启用CADisableMinimumFrameDurationOnPhone，允许支持ProMotion的手机使用高刷新率；实际帧率仍需设备录屏或Instruments验证。
 
-旅行内的天列表按独立原生分组显示：第N天与本地化日期、已有当天主题、最多两行地点摘要、地点/路线数量。空日显示未安排状态，保留长按/左滑删除和跨日拖放。地点详情保持原布局和高度计算。
+旅行内的天列表按独立原生分组显示：第N天与本地化日期、已有当天主题、最多两行地点摘要、地点/路线数量。空日显示未安排状态，保留长按/左滑删除和跨日拖放。地点详情使用共享贴边白底面板，默认半屏。
+
+旅途转场在点击后即准备 UIKit 快照，同时构建详情布局；位置连续两次16ms采样稳定后直接启动，无额外16ms交接等待。复用 Core Image context，保留0.48秒弹簧、终点坐标与关闭轨迹。
+
+只读多旅途置顶预览：`--demo --archive-preview --ongoing-archive-preview`。
+
+已改版旅途页面的操作按钮共用 `JourneyActionStyle`：白底深色图文胶囊、轻描边与阴影、至少48pt高度。首页设置居中位于旅途次数下方；每日列表的添加地点/添加一天/编辑旅行同排，采用紧凑图文间距；天详情的添加地点/新建路线并排，操作组左边缘与上方内容卡片对齐，辅助功能大字模式改为纵排。仅调整入口样式与排列，表单内部、业务动作及首页卡片转场保持原实现。
+
+## 新的旅途
+
+新建旅途从首页及地图入口使用独立fullScreenCover，标题“新的旅途”。整页采用简洁名词标题、紧凑白色输入区和底部纯文字黑色“创建旅途”按钮；iPad内容最大560pt居中。首项“目的地”搜索省市，按选择顺序显示编号列表及移除按钮，至少一处、最多20处；名称/图标同排，图标使用不透明系统白底（深色模式跟随系统）的5列可滚动弹出面板，完整复用Web的60个预定义旅行图标，选择后收起；键盘不主动唤起，输入时收紧布局，safeAreaInset保留键盘上方操作区。
+
+日期范围在同页展开自定义月历，先点出发、再点结束，黑色端点与浅灰连续范围（灰带与圆同高，起点仅右半边、终点仅左半边，延伸至圆心并由圆盖住；同日不画连线）；反向点选归一化，同日为1天，切月保留范围，完成仅收起日历。TripDateRange按本地Calendar计算包含两端的日数，最多367天；保存及草稿恢复显式转换既有UTC日期编码，避免时区和夏令时偏移。编辑旅途复用同一页面与图标、名称、范围月历，整页呈现。范围允许整体改期和延长，至少保留原行程天数；少于原天数禁用保存。原日期ID、地点、路线与时间按顺序保留，新日期为空白。保存前读服务器快照，先PUT顺移原日，再读取新日期列表，仅POST缺失日期，最后PUT结束日期；部分失败回滚本地并保留草稿，重试读取已创建日期以免重复追加。编辑不发送目的地字段，保留服务器元数据。
+
+同步校验和写入预留后立即关闭；后台保存、重复提交保护和失败“继续编辑”沿用AppStore。创建草稿以整页恢复，编辑草稿保持sheet。测试使用只读示例和URLProtocol mock，不向生产服务写入。
+
+旅途/天详情底部胶囊操作使用紧凑行内边距，不添加透明Section页头占位。未安排日期地点复用天详情的emoji、名称和地址样式，未安排日期与天详情未收入路线共用卡片内标题，右侧数量采用深色数字与次要色单位；空列表隐藏整个分组与标题，添加地点胶囊仍保留，保留原点击、滑动移除和跨日拖放。
+
+搜索结果采用白色分组、加粗名称与次要色地址、无行分隔线，中性圆形添加按钮；搜索框使用中性圆角输入区。保留现有范围搜索、分页、已保存标识、选点与添加草稿流程。
+
+Trip已持久化有序目的地名称与WGS-84中心，创建支持多个目的地。地图尚未使用目的地定位空旅行，空旅行仍保留现有视野；已有地点适配实际地点。目的地合约没有行政区边界字段，不从旅行名称猜城市。
+
+搜索结果正文切换到地图并打开贴左右及底边的半屏地点详情，仅顶部圆角；拖动顶部手柄可展开或收起，半屏继续下拉返回搜索，地图背景可交互，顶部大标题与分类、地址/电话、有效评分及已保存标识，仅展示搜索接口实际字段，不将用户笔记或用户封面混作POI信息；底部加入旅行/当天或收藏及导航，未接入的照片、介绍和营业时间不生成占位内容。添加草稿在详情之后导航进入，取消保留半屏详情，返回搜索恢复原弹窗、关键词和分页结果。搜索详情导航当前打开Apple Maps。
+
+目的地搜索调用已存在的 `GET /api/destinations?q=…`（响应 `{data:[{name,latitude,longitude}]}`），不继承地图范围或国家限制、不调用原生POI搜索。输入400ms节流，换词/退出/切换服务取消旧任务，取消结果不发布；提供空结果、错误及重试。创建POST附带有序destinations数组，WGS-84坐标经过有限值与范围校验，坐标按六位小数去重，失败草稿保留全部目的地及顺序，重试复用已创建ID；编辑旧旅行不改目的地，读取兼容旧destination单值与新destinations数组，新数组（含空数组）优先。只读示例使用本地目的地结果，不向配置服务发送请求。
+
+## 地点与路线编辑页
+
+添加/编辑地点共用中性灰滚动页、22pt分组标题与20pt圆角白卡，名称与分类同排。分类使用5列系统符号白底面板；位置显示地址及可展开坐标，新地点允许修正经纬度。封面保留全宽16:9，笔记进入既有独立编辑器；底部黑色胶囊添加/保存，上传时禁用，保留搜索目标、部分创建重试与失败恢复。嵌入搜索的返回仍确认有修改草稿。
+
+新建/编辑路线使用同样标题、白色分组与底部按钮，访问顺序带01起始序号、地点名及地址；使用原生拖动手柄与删除控件，不改变每日成员。当天地点搜索位于添加分组内，右侧中性圆形加号加入草稿；新路线至少一个地点，保存同步提交本地更新、后台写入，拒绝覆盖外部路线变更。
+
+只读编辑页截图可用 `--demo --archive-preview --editor-preview trip|place-new|place-add|place-edit|route-create|route-edit`；无真实接口写入。
+
+## 日详情地图浏览
+
+日详情地图使用 `DayMapJourneyView` 横向行程链，行程卡内容高度160pt（底部安全区仅增加超出16pt的部分，减少额外留白）、地点卡84pt，顺序遵循每天各条路线，未安排成员在末尾，不在不同路线或未安排点之间伪造连接。日期以紧凑横向标签切换；当前地点完整显示，60pt封面（无封面时显示地点分类图标）、名称、分类标签与已有地址组成信息层次，已有简短时间与分类同排，长名称单行尾部省略，不重复显示地点编号、分页或路线标签；后接完整细直线箭头，下一地点约半露出并在右边缘渐隐；末站不显示尾箭头。距离优先取同段 `DisplayRoute` 已规划、非fallback的有效距离；无规划距离时按有效WGS-84坐标计算并标为“直线”，不冒充实际道路／铁路里程。交通与时间取对应活跃visit／leg，无字段时不制造数值，也不预留空行。
+
+进入一次适配当天地点和已显示路线，面板遮挡参与镜头计算。`dayMapBrowsing` 隔离当前日地点／路线，焦点独立于地点详情选择；地图适配器共用编号图像，焦点黑色，普通编号蓝色，点击标记同步行程链并打开地点详情，点击卡片也可打开详情。横向滚动换焦点可提交SDK原生镜头命令，纯刷新或几何补全不定位。手动拖动／缩放通过既有 `noteMapInteraction` 停用镜头跟随；后续滚动仅切换焦点。定位按钮复用当前位置逻辑，切换日期重新初始化。行程卡与半屏／全屏日详情共用一个贴边面板及拖动手柄，上拉展示共享 `DayDetailPage`，下拉恢复行程卡；全屏仍保留顶部安全区与64pt地图操作区，不替换地图实例。地图不跟随磁盘或API返回反复移动。
 
 
-搜索结果正文切换到地图并打开贴左右及底边的半屏地点详情，仅顶部圆角；拖动顶部手柄可展开或收起，半屏继续下拉返回搜索，地图背景可交互，顶部大标题与分类、地址/电话、有效评分及已保存标识，仅展示搜索接口实际字段，不将用户笔记或用户封面混作POI信息；底部加入旅行/当天或收藏及导航，未接入的照片、介绍和营业时间不生成占位内容。添加草稿在详情之后导航进入，取消保留半屏详情，返回搜索恢复原整页入口、关键词和分页结果。搜索详情导航当前打开Apple Maps。
+### Day detail reuse contract
+
+- Date cards in `JourneyDaysContents` call the archive day-selection callback directly. `HomeView` opens the day map with the draggable panel at full height; no archive day NavigationStack destination or trip-wide map entry remains. Returning closes the map workspace to the existing trip card list.
+- `DayDetailPage` from `TripsView.swift` is the expanded half/full page, retaining `DayContentsView` route editing/transfer/deletion. Expanded presentation includes trip name/date range and `DayMapDateStrip`; compact presentation shows the same date strip plus `DayMapJourneyView` cards. No repeated day navigation title or panel toolbar controls. Entering from a trip presents the day panel at full height without a second slide-in after the map. Category labels use a distinct theme color per marker type and form an inline attachment in a two-line, tail-truncated address paragraph; the second line starts at the paragraph’s leading edge. The last card uses the remaining panel width. Place/trip icons reuse the 13 SVG assets from Web commit ca8c400 in the asset catalog; emoji persistence and API values remain unchanged, and unmapped emoji retain their existing presentation. Map-level uncontained controls: top-left returns to its trip detail, preserving the archive state and scroll position; top-right opens the shared trip name/date editor. Place long press retains inline day editing and produces a light haptic. Normal place rows align artwork, name/address and visit time centrally. Selection mode shows only artwork/name with native selection/reorder controls, hiding ordinals, addresses, notes, transport and create actions. Its bottom actions have 44pt height with a compact selection summary. The first cover frame includes the full day content while UIKit prepares the draggable presentation. Full day panels reserve 64pt below the top safe area so both controls stay visible and hittable.
+- Keep compact and expanded content mounted inside one panel. UIKit follows the finger and settles with an interruptible damped spring; content opacity follows measured panel height, with a spring on snapping. Reduced motion uses immediate settling. Preserve the selected stop and list state during height changes.
+- Day-map date strips use 44pt intrinsic height. Top inset is 14pt; the visual inset is independent of the 96pt vertical gesture area. Other panels retain 24pt top inset. A downward vertical list gesture at its top hands off to the panel; horizontal date/card gestures remain independent.
+- Map tool controls use measured panel height and a 16pt gap; do not infer half height from a smaller safe-area GeometryReader, which places controls against the panel.
+- Background stays `systemBackground` at all day-map heights. Daily place identity and horizontal cards use `DayPlaceArtwork`, preferring `Marker.content.headerImage` through `imageURL` / `JourneyPhotoCache`. Category artwork is a fallback only.
+- Display counts and unplanned groups use existing marker IDs, consistent with Web. The server may retain a deleted ID in `markerIds` while marker detail returns 404. Preserve those raw memberships for round-tripping; do not display/count a phantom fourth place or an empty group, and do not repair production data automatically. Only explicit user writes change memberships.
+- Camera focus remains independent of height changes; manual pan/zoom keeps camera following disabled. Connector redesign remains a proposal until selected. Do not alter travel-card transition timing for daily map work.
+
+搜索地图保留全部已保存地点及底图 POI，不沿用当天成员过滤。首次搜索加载状态在结果区居中；分页加载保留现有列表和镜头。地点详情跳过 point_of_interest / establishment 等通用分类，具体分类显示中文名称，已保存地点优先显示自身类别。
+
+已保存地图标点点击打开地点详情；当天行程链横向滚动仅更新焦点。手机详情使用同一贴边面板默认半屏，可上拉全屏，下拉至80pt关闭并恢复原旅途档位与导航。名称、类别、地址在前，封面与所属行程／笔记随后，底部固定导航／编辑／删除，未加入目标日时提供加入今日。无封面、笔记或归属时不创建空内容区。
+
+旅途图标显示复用 Web 9262859 的55个 SVG（含手绘国旗），与地点图标共用资产映射组件；未知值保留 emoji 回退，存储及API仍使用原 emoji。
+
+天详情中的路线地点行与未安排地点行共用地点选择入口，打开半屏地点详情；关闭动画恢复进入前的天详情档位。仅焦点浏览调用focusDayMapMarker，不用于列表地点点击。地点编辑只展示已有地址，位置由地图选点维护，不显示或输入经纬度，保存沿用草稿坐标。
+
+手机定位/搜索浮动控件在面板拖动及呈现、关闭、档位切换期间隐藏，使用UIKit真实动画完成回调在落定后从右侧滑入，不逐帧跟随面板。减少动态效果时直接显示。面板头部两侧按钮保留触摸，不由中心拖动区域抢占；地点详情关闭按钮使用完整44pt矩形命中区。
+
+日详情原页编辑的完成入口为右上角44pt对号，底部仅保留选择与移动/复制/删除操作；进入和退出沿用同一列表动画，修改仍即时保存。手机镜头遮挡使用实际面板高度，最高按半屏计算；最小及半屏以未遮挡区域中心定位，全屏复用半屏参数，日地图镜头命令不强制使用最小档高度。
+
+地点编辑的空封面入口保留16:9全宽比例，采用柔和中性底色、28pt轻线重相片加号图标、subheadline标题和caption说明，居中布局；选图后仍使用原有16:9图片裁切、上传及替换流程。
+
+首页旅途卡片ScrollView使用refreshable下拉刷新，复用AppStore.refresh(force: true)的请求合并、连接/数据版本隔离及错误保留旧数据机制，不重置卡片展开状态或导航。
+
+地点详情导航/编辑/删除复用JourneyActionGroup(compact: true)，与日详情添加地点/新建路线采用同一字体、图标尺寸及胶囊样式，删除显示红色图文；可选加入今日单独排列避免四按钮挤压。
+
+地点详情在所属行程信息行下方、笔记上方依次显示导航、编辑和“从今日移除”，删除独立靠右，操作与正文一同滚动，不固定底部；今日移除仅在所选日期包含该地点时显示，确认后复用 `removeDayPlacesInBackground` 清理当天成员与全部路线引用，保留收藏与其他日期，失败沿用后台保存回滚。所属行程入口使用白底无容器信息行，移除重复地图图标，保留名称、第N天及箭头，以细线与地点信息分隔。移除底部操作区渐隐背景；详情ScrollView延伸至顶部面板边界，内容只由面板外轮廓裁切，不在拖动条后方叠不透明安全区横带；非成员继续显示加入今日。
+
+添加地点工作区点选已保存标记时直接嵌入共享 `MarkerDetailView`，不创建第二套详情：标题、主题分类标签、保存地址、封面、所属日期、笔记、导航／编辑／当前目标日移除／删除及随正文滚动的操作区均共用。搜索嵌入版本不读取其他 `selectedMarker`，当前日依据冻结的添加目标，不改变搜索档位恢复；编辑在原 NavigationStack 内 push，关闭／取消保留搜索。非目标日成员只在显式加入后修改成员，不因预览添加。未保存POI保留服务端可用信息和明确添加入口，标签／地址／关闭与底部渐隐沿用详情视觉。
+
+搜索半屏／全屏使用systemBackground白底，最小80pt档外层透明，仅显示48pt白底搜索胶囊（含返回按钮），左右16pt、顶部12pt，隐藏拖动条但保留面板上拉手势；输入框可点击恢复半屏，返回退出搜索。收起／展开沿用共享面板弹簧高度动画及0.22秒背景过渡，减少动态效果时直接切换。展开结果使用plain List、轻分隔线、24pt左侧对齐，地点名称中等字重与最多两行地址，已保存地点保留分类SVG；标题右侧仅显示结果数量，移除添加目标教学文案。保留分页、加载居中、错误重试、明确添加和档位恢复。

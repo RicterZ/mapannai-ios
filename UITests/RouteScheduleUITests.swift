@@ -1,29 +1,50 @@
 import XCTest
 
 final class RouteScheduleUITests: XCTestCase {
-    @MainActor func testTransportSummaryAndNativeEditor() {
+    @MainActor func testTransportEditorDesignAndCancelPreservesSchedule() {
         let app = XCUIApplication()
-        app.launchArguments = ["--demo", "--trip-places-preview", "--transport-schedule-preview", "--route-distance-preview"]
+        app.launchArguments = ["--demo", "--archive-preview", "--transport-schedule-preview", "--route-distance-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
         let day = app.buttons["journey-day-day-1"]
-        XCTAssertTrue(day.waitForExistence(timeout: 10)); day.tap()
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
         let leg = app.buttons["route-0-transport-0"]
-        XCTAssertTrue(leg.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["10号线"].exists)
-        let list = XCTAttachment(screenshot: app.screenshot()); list.name = "交通安排列表"; list.lifetime = .keepAlways; add(list)
-        leg.tap()
+        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.tap()
         let service = app.textFields["schedule-service"]
         XCTAssertTrue(service.waitForExistence(timeout: 5))
         XCTAssertEqual(service.value as? String, "10号线")
         XCTAssertEqual(app.textFields["schedule-duration"].value as? String, "15")
+        XCTAssertTrue(app.buttons["schedule-mode-subway"].isSelected)
         XCTAssertTrue(app.buttons["schedule-save"].exists)
-        let form = XCTAttachment(screenshot: app.screenshot()); form.name = "交通安排原生表单"; form.lifetime = .keepAlways; add(form)
-        app.buttons["取消"].tap()
-        XCTAssertTrue(leg.waitForExistence(timeout: 5))
-        app.buttons["route-0-transport-1"].tap()
+        capture(app, "交通安排 · 交通方式与车次")
+        app.buttons["schedule-mode-train"].tap()
+        XCTAssertTrue(app.buttons["schedule-mode-train"].isSelected)
+        XCTAssertFalse(app.buttons["schedule-mode-subway"].isSelected)
+        let scroll = app.scrollViews["schedule-editor-scroll"]
+        if !app.buttons["schedule-clear"].isHittable { scroll.swipeUp() }
+        XCTAssertTrue(app.textFields["schedule-duration"].isHittable)
+        XCTAssertTrue(app.buttons["schedule-clear"].isHittable)
+        capture(app, "交通安排 · 时间备注与操作")
+        app.buttons["schedule-cancel"].tap()
+        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.tap()
         XCTAssertTrue(service.waitForExistence(timeout: 5))
-        XCTAssertEqual(service.value as? String, "未设置")
-        XCTAssertFalse(app.buttons["schedule-clear"].exists)
+        XCTAssertTrue(app.buttons["schedule-mode-subway"].isSelected, "取消不能保存交通方式修改")
+        XCTAssertEqual(service.value as? String, "10号线")
+        app.buttons["schedule-cancel"].tap()
+        let visit = app.buttons["route-0-schedule-demo-1"]
+        XCTAssertTrue(visit.waitForExistence(timeout: 5)); visit.tap()
+        XCTAssertTrue(app.textFields["schedule-duration"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["schedule-mode-walking"].exists)
+        XCTAssertTrue(app.navigationBars["游览安排"].exists)
+        capture(app, "游览安排 · 共用设计语言")
+        app.buttons["schedule-cancel"].tap()
+    }
+    @MainActor private func capture(_ app: XCUIApplication, _ name: String) {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
     @MainActor func testDirectedTransportDisconnectsAndRestoresImmediatelyAfterDrop() {
         let app = XCUIApplication()
@@ -31,10 +52,14 @@ final class RouteScheduleUITests: XCTestCase {
         app.launch()
         let day = app.buttons["journey-day-day-1"]
         XCTAssertTrue(day.waitForExistence(timeout: 10)); day.tap()
+        // The redesigned rows include a separate duration line; expose both drop endpoints.
+        app.buttons["Sheet Grabber"].swipeUp()
         let a = app.buttons["route-0-marker-demo-0"]
         let b = app.buttons["route-0-marker-demo-1"]
         let c = app.buttons["route-0-marker-demo-2"]
         XCTAssertTrue(b.waitForExistence(timeout: 5))
+        b.press(forDuration: 0.7)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["10号线"].exists)
         let initialLayout = expectation(description: "Initial sheet layout settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { initialLayout.fulfill() }
@@ -75,6 +100,8 @@ final class RouteScheduleUITests: XCTestCase {
             let destination = app.cells.containing(.button, identifier: "route-0-marker-demo-1").firstMatch
             XCTAssertTrue(source.waitForExistence(timeout: 5))
             app.swipeUp()
+            source.press(forDuration: 0.7)
+            XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
             let frame = destination.frame
             let end = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.minX + frame.width * 0.3, dy: frame.minY + frame.height * fraction))
             source.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
@@ -95,6 +122,8 @@ final class RouteScheduleUITests: XCTestCase {
         app.swipeUp()
         let source = app.buttons["day-marker-demo-3"]
         XCTAssertTrue(source.waitForExistence(timeout: 5))
+        source.press(forDuration: 0.7)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         let target = app.buttons["route-0-marker-demo-1"]
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2,
             thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 0)

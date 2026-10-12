@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 struct MarkerDetailView: View {
     @ObservedObject var store: AppStore
     let marker: Marker
+    var edgeAttached = false
+    var embedded = false
+    var searchPlace: Place?
     var onClose: () -> Void
     var onNavigateItinerary: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -12,17 +15,20 @@ struct MarkerDetailView: View {
     @State private var navigationUnavailable = false
     @State private var editing = false
     @State private var deleting = false
+    @State private var removingFromDay = false
+    @State private var removalTarget: (day: TripDay, markerID: String)?
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var noteHeight: CGFloat = 1
-    private var current: Marker { store.selectedMarker ?? store.markers.first(where: { $0.id == marker.id }) ?? marker }
+    private var current: Marker {
+        (!embedded ? store.selectedMarker : nil) ?? store.markers.first(where: { $0.id == marker.id }) ?? marker
+    }
+    private var targetDay: TripDay? {
+        guard embedded else { return store.day }
+        guard let target = store.addPlaceDay else { return nil }
+        return store.trips.first(where: { $0.id == target.tripId })?.days.first(where: { $0.id == target.id })
+    }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
-    private var detailLayout: MarkerDetailLayout {
-        MarkerDetailLayout(marker: current, itineraryCount: itineraries.count, hasSelectedDay: store.day != nil)
-    }
-    private var compactDetails: Bool { detailLayout.compact }
     private var itineraries: [MarkerItinerary] { MarkerPresentation.itineraries(for: current.id, trips: store.trips) }
-    private var compactHeight: CGFloat {
-        detailLayout.compactHeight
-    }
     var body: some View {
         detailContent
             .alert("无法打开高德地图", isPresented: $navigationUnavailable) {
@@ -31,10 +37,64 @@ struct MarkerDetailView: View {
             } message: { Text("请确认已安装高德地图，或使用系统地图打开此地点。") }
     }
     private var detailContent: some View {
-        NavigationStack {
+        Group {
+            if embedded { detailPage }
+            else { NavigationStack { detailPage } }
+        }.onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
+            .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
+            .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose))
+    }
+    private var detailPage: some View {
+            detailScroll
+            .toolbar(.hidden, for: .navigationBar)
+
+                .sheet(isPresented: Binding(get: { editing && !embedded }, set: { editing = $0 })) {
+                    MarkerEditorView(store: store, initial: MarkerDraft(marker: current))
+                }
+                .navigationDestination(isPresented: Binding(get: { editing && embedded }, set: { editing = $0 })) {
+                    MarkerEditorView(store: store, initial: MarkerDraft(marker: current),
+                        embedded: true, onSaved: { editing = false }, onClosed: { editing = false })
+                        .toolbar(.visible, for: .navigationBar)
+                }
+                .alert("从今日行程移除？", isPresented: $removingFromDay) {
+                    Button("取消", role: .cancel) { removalTarget = nil }
+                    Button("移除", role: .destructive) {
+                        if let target = removalTarget,
+                           store.removeDayPlacesInBackground([target.markerID], from: target.day) { onClose() }
+                        removalTarget = nil
+                    }.accessibilityIdentifier("confirm-remove-marker-from-day")
+                } message: { Text("仅从当前日期和当天路线中移除，地点收藏及其他日期的安排会保留。") }
+                .alert("删除地点？", isPresented: $deleting) {
+                    Button("取消", role: .cancel) {}
+                    Button("删除", role: .destructive) { if store.deleteMarker(current) { onClose() } }
+                } message: { Text("会从所有每日行程和路线中移除这个地点。") }
+    }
+
+    private var detailScroll: some View {
             ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    HStack(alignment: .top, spacing: 16) {
+                        Text(current.title).font(.title.bold()).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+                        Button { onClose() } label: {
+                            Image(systemName: "xmark").font(.system(size: 20, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).foregroundStyle(.primary)
+                            .accessibilityLabel("关闭地点详情").accessibilityIdentifier(embedded ? "search-detail-back" : "close-marker-detail")
+                    }
+                    HStack(spacing: 8) {
+                        Text(current.icon.label).font(.caption.weight(.medium))
+                            .foregroundStyle(current.icon.themeColor)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(current.icon.themeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                        if let day = targetDay, day.markerIds.contains(current.id) {
+                            Label("在今日行程中", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("marker-in-current-day")
+                        }
+                    }
+                    if let address = current.content.address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(address).font(.subheadline).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let image = current.content.headerImage, let url = imageURL(image) {
                         MarkerCoverBanner {
                             AsyncImage(url: url) { phase in
@@ -43,70 +103,30 @@ struct MarkerDetailView: View {
                             }
                         }.clipShape(RoundedRectangle(cornerRadius: 20))
                     }
-                    Label(current.title, systemImage: current.icon.symbol).font(.title2.weight(.bold)).foregroundStyle(Theme.ink)
-                    if let address = current.content.address { Text(address).font(.subheadline).foregroundStyle(.secondary) }
-                    HStack(spacing: 12) {
-                        if current.coordinates.isValid {
-                            Button {
-                                if store.settings.navigationMapApp == .amap,
-                                   let url = MarkerPresentation.amapNavigationURL(for: current) {
-                                    UIApplication.shared.open(url, options: [:]) { opened in
-                                        Task { @MainActor in navigationUnavailable = !opened }
-                                    }
-                                } else if store.settings.navigationMapApp == .google,
-                                          let url = MarkerPresentation.googleNavigationURL(for: current) {
-                                    UIApplication.shared.open(url)
-                                } else {
-                                    Task { await MarkerPresentation.openAppleMaps(for: current, selectedItem: store.appleMapItem(for: current)) }
-                                }
-                            } label: {
-                                Label("导航", systemImage: "location")
-                                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
-                                    .foregroundStyle(Theme.accent).background(Theme.consoleRaised, in: RoundedRectangle(cornerRadius: 12))
-                            }.buttonStyle(.plain).accessibilityIdentifier("marker-navigate")
-                        }
-                        Button(role: .destructive) { deleting = true } label: {
-                            Label("删除", systemImage: "trash")
-                                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
-                                .foregroundStyle(.red).background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                        }.buttonStyle(.plain).accessibilityIdentifier("marker-delete")
-                    }
                     if !itineraries.isEmpty {
-                        VStack(spacing: 6) {
+                        VStack(spacing: 0) {
+                            Divider().padding(.bottom, 6)
                             ForEach(itineraries) { itinerary in
                                 Button {
                                     store.select(trip: itinerary.trip, day: itinerary.day, focus: false)
                                     onNavigateItinerary()
-                                    dismiss()
+                                    onClose()
                                 } label: {
                                     HStack(spacing: 8) {
-                                        Image(systemName: "map").foregroundStyle(Theme.muted)
                                         Text(itinerary.trip.name).lineLimit(1)
-                                        Text("· 第\(itinerary.dayNumber)天").foregroundStyle(Theme.muted).fixedSize()
+                                        Text("第\(itinerary.dayNumber)天").font(.caption).foregroundStyle(.secondary).fixedSize()
                                         Spacer(minLength: 0)
                                         Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
-                                    }.font(.subheadline.weight(.medium)).foregroundStyle(Theme.text)
-                                        .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                        .background(Theme.consoleRaised, in: RoundedRectangle(cornerRadius: 12))
+                                    }.font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                        .contentShape(Rectangle())
                                 }.buttonStyle(.plain).accessibilityIdentifier("marker-itinerary-\(itinerary.day.id)")
                             }
                         }
                     }
-                    if let day = store.day {
-                        if day.markerIds.contains(current.id) {
-                            Label("在今日行程中", systemImage: "checkmark").font(.subheadline)
-                                .foregroundStyle(Theme.accent).frame(maxWidth: .infinity, minHeight: 32)
-                                .accessibilityIdentifier("marker-in-current-day")
-                        } else {
-                            Button {
-                                if store.addMarkerInBackground(current, to: day) { onClose() }
-                            } label: {
-                                Label("加入今日行程", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 32)
-                            }.buttonStyle(.borderedProminent).disabled(store.saving)
-                                .accessibilityIdentifier("add-marker-to-current-day")
-                        }
-                    }
+                    actionBar
                     if hasNote {
+                        Text("笔记").font(.headline)
                         HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight)
                             .frame(height: noteHeight).accessibilityIdentifier("marker-note")
                     }
@@ -119,24 +139,56 @@ struct MarkerDetailView: View {
             }
             .clipped()
             .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: current.id)
-            .navigationTitle("地点").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button { onClose() } label: { Image(systemName: "xmark") }
-                            .accessibilityLabel("关闭")
-                            .accessibilityIdentifier("close-marker-detail")
+            .accessibilityIdentifier("marker-detail-content")
+            .ignoresSafeArea(.container, edges: .top)
+    }
+
+    private var actionBar: some View {
+
+                VStack(alignment: .leading, spacing: 10) {
+                    if let searchPlace, !store.isPlaceAdded(searchPlace) {
+                        JourneyActionGroup(compact: true) {
+                            Button { store.prepareSearchPlaceAddition(searchPlace) } label: {
+                                Label(store.addPlaceDay != nil ? "加入当天" : store.addPlaceTripID != nil ? "加入旅行" : "保存地点", systemImage: "plus")
+                            }.disabled(store.saving).accessibilityIdentifier("search-detail-add")
+                        }
+                    } else if searchPlace == nil, let day = targetDay, !day.markerIds.contains(current.id) {
+                        JourneyActionGroup(compact: true) {
+                            Button {
+                                if store.addMarkerInBackground(current, to: day) { onClose() }
+                            } label: { Label("加入今日", systemImage: "plus") }
+                                .disabled(store.saving).accessibilityIdentifier("add-marker-to-current-day")
+                        }
                     }
-                    ToolbarItem(placement: .confirmationAction) { Button { editing = true } label: { Image(systemName: "square.and.pencil") }
-                        .accessibilityLabel("编辑") }
+                    JourneyActionGroup(compact: true) {
+                        Button(action: navigate) { Label("导航", systemImage: "location").font(.caption.weight(.semibold)) }
+                            .accessibilityIdentifier("marker-navigate").disabled(!current.coordinates.isValid)
+                        Button { editing = true } label: { Label("编辑", systemImage: "square.and.pencil").font(.caption.weight(.semibold)) }
+                            .accessibilityIdentifier("edit-marker-detail")
+                        if let day = targetDay, day.markerIds.contains(current.id) {
+                            Button {
+                                removalTarget = (day, current.id); removingFromDay = true
+                            } label: { Label("从今日移除", systemImage: "calendar.badge.minus").font(.caption.weight(.semibold)) }
+                                .disabled(store.saving).accessibilityIdentifier("remove-marker-from-current-day")
+                        }
+                        if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+                        Button(role: .destructive) { deleting = true } label: {
+                            Label("删除", systemImage: "trash").font(.caption.weight(.semibold)).foregroundStyle(.red)
+                        }.accessibilityLabel("删除地点").accessibilityIdentifier("marker-delete")
+                    }
+                }.padding(.top, 4).padding(.bottom, 6)
                 }
-                .sheet(isPresented: $editing) { MarkerEditorView(store: store, initial: MarkerDraft(marker: current)) }
-                .alert("删除地点？", isPresented: $deleting) {
-                    Button("取消", role: .cancel) {}
-                    Button("删除", role: .destructive) { if store.deleteMarker(current) { dismiss() } }
-                } message: { Text("会从所有每日行程和路线中移除这个地点。") }
-        }.onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
-            .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
-            .modifier(MarkerDetailPresentation(compactDetails: compactDetails, compactHeight: compactHeight, restingFraction: detailLayout.restingFraction))
+
+    private func navigate() {
+        if store.settings.navigationMapApp == .amap, let url = MarkerPresentation.amapNavigationURL(for: current) {
+            UIApplication.shared.open(url, options: [:]) { opened in
+                Task { @MainActor in navigationUnavailable = !opened }
+            }
+        } else if store.settings.navigationMapApp == .google, let url = MarkerPresentation.googleNavigationURL(for: current) {
+            UIApplication.shared.open(url)
+        } else {
+            Task { await MarkerPresentation.openAppleMaps(for: current, selectedItem: store.appleMapItem(for: current)) }
+        }
     }
 
 }
@@ -150,6 +202,7 @@ struct MarkerEditorView: View {
     let initial: MarkerDraft
     var onSaved: () -> Void = {}
     var embedded = false
+    var onClosed: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @State private var draft: MarkerDraft
     @StateObject private var rich = RichEditorController()
@@ -157,74 +210,81 @@ struct MarkerEditorView: View {
     @State private var uploading = false
     @State private var uploadedPreview: UIImage?
     @State private var localError: String?
-    @State private var latitude = ""
-    @State private var longitude = ""
     @State private var noteEditorPresented = false
     @State private var confirmDiscard = false
-    init(store: AppStore, initial: MarkerDraft, embedded: Bool = false, onSaved: @escaping () -> Void = {}) {
-        self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; _draft = State(initialValue: initial)
+    @State private var iconPickerVisible = false
+    @FocusState private var fieldsFocused: Bool
+    init(store: AppStore, initial: MarkerDraft, embedded: Bool = false, onSaved: @escaping () -> Void = {}, onClosed: @escaping () -> Void = {}) {
+        self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; self.onClosed = onClosed; _draft = State(initialValue: initial)
     }
     private var editorFields: some View {
         Group {
             HStack(spacing: 12) {
-                Menu {
-                    ForEach(MarkerIcon.allCases) { icon in
-                        Button {
-                            var transaction = Transaction(); transaction.disablesAnimations = true
-                            withTransaction(transaction) {
-                                draft.icon = icon
-                                if store.draft?.id == initial.id { store.draft?.icon = icon }
-                            }
-                        } label: { Label(icon.label, systemImage: icon.symbol) }
-                            .accessibilityIdentifier("marker-icon-option-\(icon.rawValue)")
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: draft.icon.symbol).font(.system(size: 20))
-                        Image(systemName: "chevron.down").font(.caption2)
-                    }.frame(width: 44, height: 32)
-                }.buttonStyle(.borderless).accessibilityLabel("地点类型：\(draft.icon.label)")
+                Button { fieldsFocused = false; iconPickerVisible = true } label: {
+                    HStack(spacing: 5) {
+                        PlaceIconView(emoji: draft.icon.emoji, size: 28)
+                        Image(systemName: "chevron.down").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    }.frame(minWidth: 44, minHeight: 44)
+                }.buttonStyle(.plain).accessibilityLabel("地点类型：\(draft.icon.label)")
                     .accessibilityIdentifier("marker-icon-picker")
-                TextField("地点名称", text: $draft.title).font(.body)
+                    .popover(isPresented: $iconPickerVisible, arrowEdge: .top) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 12) {
+                            ForEach(MarkerIcon.allCases) { icon in
+                                Button {
+                                    draft.icon = icon; iconPickerVisible = false
+                                    if store.draft?.id == initial.id { store.draft?.icon = icon }
+                                } label: {
+                                    VStack(spacing: 8) {
+                                        PlaceIconView(emoji: icon.emoji, size: 26)
+                                        Text(icon.label).font(.caption2)
+                                    }.foregroundStyle(.primary).frame(maxWidth: .infinity, minHeight: 64)
+                                        .background(draft.icon == icon ? Color(uiColor: .quaternarySystemFill) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 12))
+                                }.buttonStyle(.plain).accessibilityIdentifier("marker-icon-option-\(icon.rawValue)")
+                                    .accessibilityAddTraits(draft.icon == icon ? .isSelected : [])
+                            }
+                        }.padding(12).frame(width: 320)
+                            .presentationBackground(Color(uiColor: .systemBackground))
+                            .presentationCompactAdaptation(.popover)
+                    }
+                TextField("地点名称", text: $draft.title).font(.system(size: 20, weight: .medium))
+                    .focused($fieldsFocused).submitLabel(.done).onSubmit { fieldsFocused = false }
+                    .accessibilityIdentifier("marker-name-field")
             }.transaction { $0.animation = nil }
-            if !draft.address.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("地址")
-                    Text(draft.address).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
             if store.draft?.id == initial.id && store.draft?.resolvingPlace == true {
                 HStack { ProgressView(); Text("获取地点信息…").foregroundStyle(.secondary) }
             }
             if store.draft?.id == initial.id && store.draft?.placeLookupFailed == true {
                 Text("未获取到地点信息，可手动填写。").font(.footnote).foregroundStyle(.secondary)
             }
-            if initial.marker == nil {
-                DisclosureGroup("标点坐标 · WGS-84") {
-                    TextField("纬度", text: $latitude).keyboardType(.numbersAndPunctuation)
-                    TextField("经度", text: $longitude).keyboardType(.numbersAndPunctuation)
-                }
+        }
+    }
+    private var locationFields: some View {
+        JourneyEditorCard {
+            if !draft.address.isEmpty {
+                Text(draft.address).font(.body).foregroundStyle(.secondary)
             }
+
         }
     }
     private var coverPicker: some View {
         PhotosPicker(selection: $photo, matching: .images) {
             MarkerCoverBanner {
                 if uploading {
-                    HStack { ProgressView(); Text("上传中…") }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("正在保存照片").font(.subheadline).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
                 } else if let uploadedPreview {
                     Image(uiImage: uploadedPreview).resizable().scaledToFill()
                 } else if let url = imageURL(draft.headerImage) {
                     AsyncImage(url: url) { phase in
                         if let image = phase.image { image.resizable().scaledToFill() }
-                        else { Label("更换封面图", systemImage: "photo").frame(maxWidth: .infinity, maxHeight: .infinity) }
+                        else { coverPlaceholder(replacing: true) }
                     }
                 } else {
-                    Label("添加封面图", systemImage: "photo")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(uiColor: .systemBackground))
+                    coverPlaceholder(replacing: false)
                 }
             }.contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -235,61 +295,84 @@ struct MarkerEditorView: View {
             .accessibilityLabel(draft.headerImage.isEmpty && uploadedPreview == nil ? "上传封面图" : "重新上传封面图")
             .accessibilityIdentifier("marker-cover-upload")
     }
-    private var noteToolbar: some View {
-        HStack {
-            Text("地点笔记")
-            Spacer()
-            Button { rich.toggleBold() } label: { Image(systemName: "bold").frame(width: 32, height: 32) }.accessibilityLabel("粗体")
-            Button { rich.toggleItalic() } label: { Image(systemName: "italic").frame(width: 32, height: 32) }.accessibilityLabel("斜体")
-            Button { rich.insertBullet() } label: { Image(systemName: "list.bullet").frame(width: 32, height: 32) }.accessibilityLabel("列表")
-        }.buttonStyle(.borderless).textCase(nil)
+    private func coverPlaceholder(replacing: Bool) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "photo.badge.plus")
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(Color(uiColor: .secondaryLabel).opacity(0.7))
+            VStack(spacing: 5) {
+                Text(replacing ? "更换封面照片" : "选一张封面照片")
+                    .font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                Text("从相册中选择").font(.caption).foregroundStyle(.secondary)
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
     }
-    @ViewBuilder var body: some View {
-        if embedded { editorContent }
-        else { NavigationStack { editorContent }.modifier(IPadMarkerDialogPresentation(allowsBackgroundInteraction: initial.marker == nil)) }
+    var body: some View {
+        Group {
+            if embedded { editorContent }
+            else { NavigationStack { editorContent }.modifier(IPadMarkerDialogPresentation(allowsBackgroundInteraction: initial.marker == nil)) }
+        }.tint(Color(uiColor: .label))
     }
     private var editorContent: some View {
-            GeometryReader { geometry in
-                Form {
-                    Section { editorFields }
-                    Section { coverPicker } header: { Text("封面") }
-                    Section("地点笔记") {
-                        Button { noteEditorPresented = true } label: {
-                            Label(NoteContent.hasContent(draft.html) ? "编辑笔记" : "编写笔记", systemImage: "square.and.pencil")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }.accessibilityIdentifier("marker-note-editor")
-                    }
-                    if let localError { Section { Text(localError).foregroundStyle(.red) } }
-                }.scrollDismissesKeyboard(.interactively)
-            }
-                .navigationTitle(embedded || initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button {
-                            if embedded && hasChanges { confirmDiscard = true }
-                            else { closeEditor() }
-                        } label: { Image(systemName: "xmark") }
-                            .disabled(store.saving || uploading)
-                            .accessibilityLabel("取消")
-                            .accessibilityIdentifier("cancel-marker-editor")
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button {
-                            if initial.marker == nil {
-                                guard let lat = Double(latitude), let lng = Double(longitude) else { localError = "请输入有效经纬度"; return }
-                                draft.coordinates = Coordinate(latitude: lat, longitude: lng)
-                            }
-                            draft.html = rich.exportHTML(original: draft.html)
-                            if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
-                                if store.addSearchPlaceInBackground(place, edited: draft) { onSaved(); closeEditor() }
-                                else { localError = store.addPlaceError ?? store.errorMessage }
-                            } else if store.saveMarkerInBackground(draft) { onSaved(); dismiss() }
-                            else { localError = store.errorMessage }
-                        } label: { Image(systemName: "checkmark") }
-                            .accessibilityLabel("保存")
-                            .disabled(store.saving || uploading || draft.title.isEmpty)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 14) {
+                    JourneyEditorHeading(title: "地点名称")
+                    VStack(alignment: .leading, spacing: 12) { editorFields }
+                        .padding(.horizontal, 20).padding(.vertical, 8)
+                        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
+                }
+                if !draft.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        JourneyEditorHeading(title: "位置")
+                        locationFields
                     }
                 }
+                VStack(alignment: .leading, spacing: 14) {
+                    JourneyEditorHeading(title: "封面")
+                    coverPicker.clipShape(RoundedRectangle(cornerRadius: 20))
+                }
+                VStack(alignment: .leading, spacing: 14) {
+                    JourneyEditorHeading(title: "地点笔记")
+                    Button { fieldsFocused = false; noteEditorPresented = true } label: {
+                        JourneyEditorCard {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(NoteContent.hasContent(draft.html) ? "编辑笔记" : "编写笔记")
+                                        .font(.body.weight(.medium))
+                                    Text(NoteContent.hasContent(draft.html) ? "继续整理这个地点的记录" : "记录预约、攻略和旅行见闻")
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
+                            }
+                        }.foregroundStyle(.primary)
+                    }.buttonStyle(.plain).accessibilityIdentifier("marker-note-editor")
+                }
+                if let localError { Text(localError).foregroundStyle(.red).font(.footnote) }
+            }.padding(.horizontal, 20).padding(.vertical, 24)
+                .frame(maxWidth: 560).frame(maxWidth: .infinity)
+        }
+        .accessibilityIdentifier("marker-editor-scroll")
+        .scrollDismissesKeyboard(.interactively)
+        .background(Color(uiColor: .systemGroupedBackground))
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            JourneyEditorSubmit(title: initial.marker == nil ? "添加地点" : "保存地点",
+                enabled: !store.saving && !uploading && !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                identifier: "save-marker-editor", action: save)
+        }
+        .navigationTitle(initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    if embedded && hasChanges { confirmDiscard = true }
+                    else { closeEditor() }
+                } label: { Image(systemName: "chevron.left") }
+                    .disabled(store.saving || uploading).accessibilityLabel("取消")
+                    .accessibilityIdentifier("cancel-marker-editor")
+            }
+        }
         .fullScreenCover(isPresented: $noteEditorPresented) {
             NoteComposerPreview(placeName: draft.title, address: draft.address,
                 initialHTML: draft.html, preview: false,
@@ -308,7 +391,6 @@ struct MarkerEditorView: View {
             }
         }
         .onAppear {
-            latitude = String(draft.coordinates.latitude); longitude = String(draft.coordinates.longitude)
             if let latest = store.draft, latest.id == initial.id {
                 if draft.title.isEmpty { draft.title = latest.title }
                 if draft.address.isEmpty { draft.address = latest.address }
@@ -320,8 +402,6 @@ struct MarkerEditorView: View {
             draft.coordinates = coordinate
             draft.title = latest.title
             draft.address = latest.address
-            latitude = String(coordinate.latitude)
-            longitude = String(coordinate.longitude)
         }
         .onChange(of: store.draft?.title) { _, value in
             guard store.draft?.id == initial.id, draft.title.isEmpty, let value else { return }
@@ -351,12 +431,21 @@ struct MarkerEditorView: View {
             }
         }.interactiveDismissDisabled(store.saving || uploading)
     }
+    private func save() {
+        fieldsFocused = false
+        draft.html = rich.exportHTML(original: draft.html)
+        if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
+            if store.addSearchPlaceInBackground(place, edited: draft) { onSaved(); closeEditor() }
+            else { localError = store.addPlaceError ?? store.errorMessage }
+        } else if store.saveMarkerInBackground(draft) { onSaved(); if embedded { closeEditor() } else { dismiss() } }
+        else { localError = store.errorMessage }
+    }
     private var hasChanges: Bool {
         draft.title != initial.title || draft.icon != initial.icon || draft.headerImage != initial.headerImage || draft.html != initial.html
-            || rich.changed || latitude != String(initial.coordinates.latitude) || longitude != String(initial.coordinates.longitude)
+            || rich.changed || draft.coordinates != initial.coordinates
     }
     private func closeEditor() {
-        if embedded { store.draft = nil; store.editingSearchPlaceID = nil }
+        if embedded { store.draft = nil; store.editingSearchPlaceID = nil; onClosed() }
         else { dismiss() }
     }
 }
@@ -383,26 +472,27 @@ private struct IPadMarkerDialogPresentation: ViewModifier {
 }
 
 private struct MarkerDetailPresentation: ViewModifier {
-    let compactDetails: Bool
-    let compactHeight: CGFloat
-    let restingFraction: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let edgeAttached: Bool
+    var embedded = false
+    let onClose: () -> Void
+    @State private var detent: PresentationDetent = .medium
     @ViewBuilder func body(content: Content) -> some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
+        if embedded { content.background(Color(uiColor: .systemBackground)) }
+        else if UIDevice.current.userInterfaceIdiom == .pad {
             content.modifier(IPadMarkerDialogPresentation(allowsBackgroundInteraction: true))
-        } else {
-            content.background {
-                MarkerSheetResize(compact: compactDetails, height: compactHeight, fraction: restingFraction, reduceMotion: reduceMotion)
-                    .allowsHitTesting(false)
-            }
+        } else if edgeAttached { content.background(Color(uiColor: .systemBackground)) }
+        else {
+            content.presentationDetents([.height(80), .medium, .large], selection: $detent)
                 .presentationBackgroundInteraction(.enabled)
+                .presentationBackground(Color(uiColor: .systemBackground))
                 .presentationDragIndicator(.visible)
+                .onChange(of: detent) { _, value in if value == .height(80) { onClose() } }
         }
     }
 }
 
 /// The cover always fills the available width; source images are cropped, never stretched.
-private struct MarkerCoverBanner<Content: View>: View {
+struct MarkerCoverBanner<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         Color.clear
@@ -417,69 +507,6 @@ private struct MarkerCoverBanner<Content: View>: View {
             .clipped()
     }
 }
-
-/// Keep one stable resting detent and animate its resolver changes with UIKit.
-private struct MarkerSheetResize: UIViewRepresentable {
-    let compact: Bool
-    let height: CGFloat
-    let fraction: CGFloat
-    let reduceMotion: Bool
-    func makeUIView(context: Context) -> Probe { Probe() }
-    func updateUIView(_ view: Probe, context: Context) {
-        view.compact = compact; view.height = height; view.fraction = fraction; view.reduceMotion = reduceMotion
-        view.setNeedsLayout()
-    }
-    final class Probe: UIView {
-        var compact = false
-        var height: CGFloat = 0
-        var fraction: CGFloat = 0.55
-        private var resolvedCompact = false
-        private var resolvedHeight: CGFloat = 0
-        private var resolvedFraction: CGFloat = 0.55
-        var reduceMotion = false
-        private var previous: String?
-        private weak var configuredSheet: UISheetPresentationController?
-        private let resting = UISheetPresentationController.Detent.Identifier("marker-resting")
-        override func didMoveToWindow() { super.didMoveToWindow(); setNeedsLayout() }
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            var responder: UIResponder? = self
-            var sheet: UISheetPresentationController?
-            while let next = responder?.next {
-                responder = next
-                if let controller = next as? UIViewController,
-                   let value = controller.presentationController as? UISheetPresentationController,
-                   value.presentedViewController === controller {
-                    sheet = value; break
-                }
-            }
-            guard window != nil, let sheet else { return }
-            let key = "\(compact):\(height):\(fraction)"
-            guard configuredSheet !== sheet || previous != key else { return }
-            let first = configuredSheet !== sheet
-            configuredSheet = sheet; previous = key
-            let updateResolver = {
-                self.resolvedCompact = self.compact
-                self.resolvedHeight = self.height
-                self.resolvedFraction = self.fraction
-            }
-            if first {
-                updateResolver()
-                sheet.detents = [.custom(identifier: resting) { [weak self] context in
-                    guard let self else { return nil }
-                    return self.resolvedCompact ? min(self.resolvedHeight, context.maximumDetentValue) : context.maximumDetentValue * self.resolvedFraction
-                }, .large()]
-                sheet.selectedDetentIdentifier = resting
-                sheet.largestUndimmedDetentIdentifier = resting
-            } else {
-                let changes = { updateResolver(); sheet.invalidateDetents() }
-                if reduceMotion { changes() }
-                else { sheet.animateChanges(changes) }
-            }
-        }
-    }
-}
-
 
 /// Native note composer. Sample content is only enabled by the debug preview entry.
 struct NoteComposerPreview: View {

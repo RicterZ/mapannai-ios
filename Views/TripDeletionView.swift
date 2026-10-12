@@ -5,7 +5,7 @@ struct TripDeletionView: View {
     let trip: Trip
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        DeletionConfirmationView(store: store, title: "删除旅行", message: "“\(trip.name)”及其每日行程将被删除。", kind: "trip") { includeMarkers in
+        DeletionConfirmationView(store: store, title: "删除旅途", message: "“\(trip.name)”及其每日行程将被删除。", kind: "trip") { includeMarkers in
             store.deleteItinerary(tripID: trip.id, deleteExclusiveMarkers: includeMarkers, animated: !reduceMotion)
         }
     }

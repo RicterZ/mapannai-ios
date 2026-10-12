@@ -58,3 +58,10 @@ struct JourneyPlaceGroupHeading: View {
         .listRowSeparator(.hidden)
     }
 }
+
+extension ToolbarContent {
+    @ToolbarContentBuilder var journeyBareBackground: some ToolbarContent {
+        if #available(iOS 26.0, *) { sharedBackgroundVisibility(.hidden) }
+        else { self }
+    }
+}

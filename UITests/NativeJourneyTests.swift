@@ -37,6 +37,8 @@ final class NativeJourneyTests: XCTestCase {
         let isolated = app.buttons["day-marker-preview-cafe"]
         if !isolated.waitForExistence(timeout: 3) { app.swipeUp() }
         XCTAssertTrue(isolated.waitForExistence(timeout: 5))
+        isolated.press(forDuration: 0.7)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         let route = app.buttons["route-0-marker-demo-1"]
         if !route.isHittable { app.swipeDown() }
         isolated.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
@@ -231,7 +233,7 @@ final class NativeJourneyTests: XCTestCase {
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
         XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
         app.buttons["close-marker-detail"].tap()
-        XCTAssertTrue(app.navigationBars["我的旅途"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["archive-page-title"].waitForExistence(timeout: 5))
         XCTAssertTrue(row.exists)
     }
 
@@ -288,25 +290,18 @@ final class NativeJourneyTests: XCTestCase {
         shot.lifetime = .keepAlways; add(shot)
     }
 
-    @MainActor func testPlaceMenuAndRouteMenuStaySeparateAndEditorIsStandalone() throws {
+    @MainActor func testPlaceAndRouteLongPressEditWithoutLeavingDay() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let row = app.buttons["route-0-marker-demo-1"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.press(forDuration: 0.7)
-        XCTAssertTrue(app.buttons["从当天移除"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["删除路线"].exists)
-        app.buttons["编辑路线"].tap()
-        XCTAssertTrue(app.navigationBars["编辑路线"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["route-save"].exists)
-        app.buttons["取消"].tap()
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["save-chain-editor"].exists)
+        app.buttons["day-edit-done"].tap()
         app.buttons["route-view-0"].press(forDuration: 0.7)
-        XCTAssertTrue(app.buttons["删除路线"].waitForExistence(timeout: 5))
-        app.buttons["编辑路线"].tap()
-        XCTAssertTrue(app.navigationBars["编辑路线"].waitForExistence(timeout: 5))
-        app.buttons["保存"].tap()
-        XCTAssertTrue(app.buttons["itinerary-search"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.navigationBars["编辑路线"].exists)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
+        XCTAssertTrue(row.exists)
+        app.buttons["day-edit-done"].tap()
         row.tap()
         XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
     }

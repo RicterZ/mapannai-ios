@@ -13,7 +13,7 @@ final class TripDeletionTests: XCTestCase {
         let row = trip.exists ? trip : app.buttons["journey-trip-1"]
         if !row.isHittable { app.collectionViews.firstMatch.swipeUp() }
         row.press(forDuration: 1)
-        app.buttons["删除旅行"].tap()
+        app.buttons["删除旅途"].tap()
         let option = app.staticTexts["delete-trip-markers"]
         XCTAssertTrue(option.waitForExistence(timeout: 5))
         let rowChoice = app.cells.containing(.staticText, identifier: "delete-trip-markers").firstMatch

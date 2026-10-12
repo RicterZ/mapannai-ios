@@ -24,12 +24,35 @@ final class SearchSelectionTests: XCTestCase {
         store.clearSearch()
         XCTAssertTrue(store.searchResults.isEmpty); XCTAssertNil(store.selectedSearchPlaceID)
     }
+    @MainActor func testNearbySavedPlacesUseThirtyKilometreRadiusAndClearRestoresThem() async throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        store.bounds = SearchBounds(west: 121.4, south: 31.18, east: 121.48, north: 31.24)
+        let far = Marker(id: "far", coordinates: Coordinate(latitude: 32.5, longitude: 121.44),
+                         content: MarkerContent(id: "far", title: "远方", iconType: .location, markdownContent: ""))
+        store.markers.append(far)
+        let day = try XCTUnwrap(store.day)
+        store.beginAddingPlace(to: day)
+        XCTAssertEqual(store.searchResults.count, 5)
+        XCTAssertTrue(store.searchResults.allSatisfy { $0.markerId != "far" })
+        let first = try XCTUnwrap(store.searchResults.first)
+        store.choose(first, fromMap: true)
+        XCTAssertEqual(store.searchDetailPlace?.id, first.id)
+        XCTAssertNil(store.draft)
+        store.searchDetailPlace = nil
+        store.searchText = "静安"
+        await store.search()
+        XCTAssertEqual(store.searchResults.count, 1)
+        store.clearSearch()
+        XCTAssertEqual(store.searchResults.count, 5)
+        XCTAssertEqual(store.addPlaceDay?.id, day.id)
+    }
     @MainActor func testDemoSearchShowsAllMatchingReadOnlyPlaces() async {
         let store = AppStore(settings: Settings(), demo: true)
+        let cameraID = store.camera?.id
         store.searchText = "武康"
         await store.search()
         XCTAssertEqual(store.searchResults.map(\.name), ["武康大楼", "武康庭"])
-        XCTAssertEqual(store.camera?.points.count, 2)
+        XCTAssertEqual(store.camera?.id, cameraID)
         XCTAssertEqual(store.searchText, "武康")
     }
     @MainActor func testDayAddSearchSharesMapResultsAndKeepsTargetDay() async throws {
@@ -44,6 +67,7 @@ final class SearchSelectionTests: XCTestCase {
         XCTAssertNil(store.draft)
         XCTAssertEqual(store.selectedSearchPlace?.name, "静安寺")
         let camera = store.camera?.id
+        XCTAssertFalse(store.isPlaceAdded(result))
         store.choose(result, fromMap: true)
         XCTAssertEqual(store.camera?.id, camera)
         XCTAssertNil(store.draft)
@@ -51,6 +75,10 @@ final class SearchSelectionTests: XCTestCase {
         XCTAssertNil(store.draft)
         XCTAssertEqual(store.addPlaceDay?.id, day.id)
         XCTAssertEqual(store.searchText, "静安")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(store.searchDetailPlace?.id, result.id)
+        XCTAssertFalse(store.isPlaceAdded(result))
+        XCTAssertEqual(store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id })?.markerIds, day.markerIds)
         store.endAddingPlace()
         XCTAssertNil(store.addPlaceDay); XCTAssertNil(store.draft)
         XCTAssertTrue(store.searchResults.isEmpty)
@@ -77,18 +105,19 @@ final class SearchSelectionTests: XCTestCase {
         store.beginAddingPlace(to: target)
         let place = Place(id: "new-poi", name: "新地点", address: "地址", coordinates: Coordinate(latitude: 30, longitude: 120))
         store.searchText = "新地点"; store.searchResults = [place]
-        let targetPath = ("/api/" + AppStore.dayPath(target) + "/markers").removingPercentEncoding!
+        let targetPath = ("/api/" + AppStore.dayPath(target)).removingPercentEncoding!
         var creates = 0, joins = 0
         MockURLProtocol.handler = { request in
-            XCTAssertEqual(request.httpMethod, "POST")
             if request.url!.path == "/api/markers" {
+                XCTAssertEqual(request.httpMethod, "POST")
                 creates += 1
                 let marker = Marker(id: "new-id", coordinates: place.coordinates, content: MarkerContent(id: "new-id", title: place.name, markdownContent: ""))
                 return (200, try JSONEncoder().encode(marker))
             }
             XCTAssertEqual(request.url!.path, targetPath)
             joins += 1
-            return joins == 1 ? (500, Data("{}".utf8)) : (200, Data("{}".utf8))
+            XCTAssertEqual(request.httpMethod, "PUT")
+            return joins == 1 ? (500, Data("{}".utf8)) : (200, try JSONEncoder().encode(target.addingToDefaultRoute(["new-id"])))
         }
         let first = await store.addSearchPlace(place, using: client)
         XCTAssertFalse(first); XCTAssertNotNil(store.addPlaceError)
@@ -102,7 +131,7 @@ final class SearchSelectionTests: XCTestCase {
         let third = await store.addSearchPlace(place, using: client)
         XCTAssertTrue(third); XCTAssertEqual(joins, 2)
     }
-    @MainActor func testContinuousAddReusesSavedPlaceAndPreservesChainsAndSearch() async throws {
+    @MainActor func testContinuousAddReusesSavedPlaceAndAppendsDefaultRouteKeepingSearch() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
         let client = APIClient(baseURL: "https://add-flow.invalid", token: "", session: session)
@@ -121,7 +150,12 @@ final class SearchSelectionTests: XCTestCase {
                 return (200, try JSONEncoder().encode(marker))
             }
             joins += 1
-            return (200, Data("{}".utf8))
+            XCTAssertEqual(request.httpMethod, "PUT")
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            var confirmed = target
+            confirmed.markerIds = body["markerIds"] as! [String]
+            confirmed.chains = body["chains"] as! [[String]]
+            return (200, try JSONEncoder().encode(confirmed))
         }
         let first = await store.addSearchPlace(savedPlace, using: client)
         let second = await store.addSearchPlace(newPlace, using: client)
@@ -129,7 +163,7 @@ final class SearchSelectionTests: XCTestCase {
         XCTAssertEqual(creates, 1); XCTAssertEqual(joins, 2)
         XCTAssertTrue(store.isPlaceAdded(savedPlace)); XCTAssertTrue(store.isPlaceAdded(newPlace))
         XCTAssertEqual(store.searchResults, [savedPlace, newPlace]); XCTAssertEqual(store.searchText, "地点")
-        XCTAssertEqual(store.day?.chains, target.chains)
+        XCTAssertEqual(store.day?.chains, [target.chains[0] + [existing.id, "another-id"]])
         XCTAssertEqual(store.day?.markerIds.count, target.markerIds.count + 2)
         XCTAssertNotNil(store.addPlaceDay)
     }
