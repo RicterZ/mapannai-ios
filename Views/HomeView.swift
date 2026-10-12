@@ -11,6 +11,8 @@ struct HomeView: View {
     @State private var aiSettingsPresented = false
     @State private var showSettings = false
     @State private var noteComposerPreview = false
+    @State private var mapEntered = ProcessInfo.processInfo.arguments.contains("--demo") && !ProcessInfo.processInfo.arguments.contains("--archive-preview")
+    @State private var archivePath: [JourneyDestination] = []
     @State private var creatingTrip = false
     @State private var editingTrip: Trip?
     @State private var editingDayTitle = false
@@ -34,6 +36,20 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        NavigationStack(path: $archivePath) {
+            JourneyArchiveView(store: store, path: $archivePath, mapVisible: mapEntered, onOpenSettings: { showSettings = true }) { trip, day in
+                store.select(trip: trip, day: day)
+                setJourneyDetent(.half)
+                mapEntered = true
+            }
+            .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner) }
+            .fullScreenCover(isPresented: $mapEntered) {
+                mapWorkspace.toolbar(.hidden, for: .navigationBar)
+            }
+        }.tint(Color(uiColor: .label))
+    }
+
+    private var mapWorkspace: some View {
         GeometryReader { geometry in
             let sidebar = horizontalSizeClass == .regular && geometry.size.width >= 700
             Group {
@@ -316,7 +332,7 @@ struct HomeView: View {
     }
     private func journeyNavigation(sidebar: Bool) -> some View {
         NavigationStack(path: $journeyPath) {
-            journeyPage(nil, sidebar: sidebar)
+            journeyPage(store.trip.map { .trip($0.id) }, sidebar: sidebar)
                 .navigationDestination(for: JourneyDestination.self) { destination in
                     journeyPage(destination, sidebar: sidebar)
                 }
@@ -348,7 +364,9 @@ struct HomeView: View {
                     if let trip = store.trips.first(where: { $0.id == tripID }) {
                         store.select(trip: trip, day: trip.days.first { $0.id == dayID }, focus: path.count > previousPath.count)
                     }
-                case nil: store.select(trip: nil, focus: false)
+                case nil:
+                    store.select(trip: nil, focus: false)
+                    mapEntered = false
                 }
             }
     }
@@ -411,7 +429,7 @@ struct HomeView: View {
             } else if let trip = page.trip {
                 JourneyDaysContents(store: store, trip: trip)
             } else {
-                JourneyOverviewContents(store: store, settingsContent: { journeySettingsRow })
+                Color.clear
             }
         }.listStyle(.insetGrouped).buttonStyle(.automatic)
             .allowsHitTesting(sidebar || sheetDetent != .compact)
@@ -485,20 +503,19 @@ struct HomeView: View {
     private func overviewToggleButton(sidebar: Bool) -> some View {
         let isCollapsed = !sidebar && sheetDetent == .compact
         return Button {
-            if isCollapsed { creatingTrip = true }
+            if isCollapsed { mapEntered = false }
             else {
                 withAnimation(AppMotion.presentation(reduceMotion: reduceMotion)) {
                     if sidebar { expanded = false } else { sheetDetent = .compact }
                 }
             }
         } label: {
-            toolbarActionIcon("plus")
-                .rotationEffect(.degrees(isCollapsed ? 0 : 45))
+            toolbarActionIcon(isCollapsed ? "rectangle.stack" : "xmark")
                 .animation(AppMotion.disclosure(reduceMotion: reduceMotion), value: isCollapsed)
                 .frame(width: 30, height: 30)
         }.modifier(JourneyCircleButtonStyle())
             .frame(width: 44, height: 44).contentShape(Rectangle())
-            .accessibilityLabel(isCollapsed ? "添加旅途" : "收起旅途")
+            .accessibilityLabel(isCollapsed ? "我的旅途" : "收起旅途")
             .accessibilityIdentifier(isCollapsed ? "compact-create-journey" : "close-journey")
     }
 
@@ -588,6 +605,7 @@ struct HomeView: View {
             VStack(spacing: 0) {
                 compactDateNavigation
                 Text(store.trip?.name ?? "我的旅途")
+
                     .font(store.trip == nil ? .title3.weight(.semibold) : .subheadline.weight(.semibold))
                     .lineLimit(1).minimumScaleFactor(store.trip == nil ? 1 : 0.75)
                     .fixedSize(horizontal: false, vertical: true)
@@ -697,13 +715,6 @@ struct HomeView: View {
         let parts = date.split(separator: "-")
         guard parts.count == 3, let month = Int(parts[1]), let day = Int(parts[2]) else { return date }
         return "\(month)月\(day)日"
-    }
-    private var journeySettingsRow: some View {
-        Button { showSettings = true } label: {
-            Label("设置", systemImage: "gearshape")
-                .fullRowActionLabel()
-        }.buttonStyle(.plain).foregroundStyle(Theme.accent)
-            .accessibilityIdentifier("itinerary-settings-bottom")
     }
     // Native toolbars provide their own padding and touch targets.
     private func toolbarActionIcon(_ symbol: String) -> some View {

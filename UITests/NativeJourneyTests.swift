@@ -2,12 +2,31 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
-    @MainActor func testDroppedNumeralChangesBeforeDelayedDistance() {
+    @MainActor func testJourneyDayOverviewAndReturn() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
+        let back = app.buttons["journey-back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10)); back.tap()
+        let first = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["梧桐街区漫步"].exists)
+        XCTAssertTrue(app.buttons["journey-day-day-2"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Trip day overview"; shot.lifetime = .keepAlways; add(shot)
+        first.tap()
+        XCTAssertTrue(app.buttons["route-0-marker-demo-0"].waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testVisibleDayDropChangesNumeralBeforeDelayedDistance() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--trip-places-preview", "--delayed-route-build-preview", "--delayed-route-distance-preview"]
         app.launch()
         let source = app.buttons["trip-unscheduled-preview-cafe"]
         XCTAssertTrue(source.waitForExistence(timeout: 10))
+        // The day summaries occupy more space; expose both drag endpoints first.
+        app.buttons["Sheet Grabber"].swipeUp()
+        XCTAssertTrue(source.isHittable)
         let target = app.buttons["journey-day-day-1"]
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).press(
             forDuration: 1.5, thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)),

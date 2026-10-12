@@ -6,6 +6,8 @@ Put the places you want to visit on a map, then take your day-by-day travel plan
 
 MapAnNai iOS is the native iPhone and iPad client for MapAnNai Plus. Save restaurants, hotels, and sights, add photos and notes, and arrange visits by trip and day. The client and web app share the places and trips stored on your server, so you can plan on your computer and keep viewing or editing on your phone.
 
+The app opens on My Trips, a collection of overlapping trip cards. Tap a card to open its full-page itinerary, browse each day, or switch to the map. Close the trip to return to the cards.
+
 ## Features
 
 - **Save places and travel notes**: Search saved place titles together with map POIs, tap a map POI, or long-press the map to add a place. Matching saved places appear first, show their place icon and a saved label, and can be reused in itineraries. Keep travel tips, booking details, and memories with each place.

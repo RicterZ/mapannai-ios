@@ -71,7 +71,7 @@ struct AIPlannerView: View {
                         .accessibilityIdentifier("ai-configuration-prompt")
                     } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 8) {
                         if !planner.ready {
                             Text(planner.storageError ?? "正在读取会话…").foregroundStyle(.secondary)
                             if planner.storageError != nil {
@@ -89,6 +89,10 @@ struct AIPlannerView: View {
                         if let error = planner.storageError { Text(error).foregroundStyle(.secondary).font(.footnote) }
                         Color.clear.frame(height: 1).id("ai-bottom")
                     }.padding(.horizontal, 16).padding(.vertical, 12)
+                    // Scroll after Markdown and the final reply replacement have been laid out.
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { _ in
+                        proxy.scrollTo("ai-bottom", anchor: .bottom)
+                    }
                 }
                 .defaultScrollAnchor(.bottom)
                 .scrollClipDisabled()
@@ -98,7 +102,7 @@ struct AIPlannerView: View {
                 .onChange(of: planner.activeID) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
                 .onChange(of: planner.ready) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
                 .onChange(of: planner.conversation?.messages.count) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
-                .onChange(of: planner.partial) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
+                .onChange(of: planner.busy) { _, _ in proxy.scrollTo("ai-bottom", anchor: .bottom) }
                 .onChange(of: inputFocused) { _, focused in if focused { proxy.scrollTo("ai-bottom", anchor: .bottom) } }
                     }
                 }
@@ -181,6 +185,13 @@ struct AIPlannerView: View {
             } message: { Text("只删除本设备聊天记录，保留已保存的地点和行程。") }
         }
         .accessibilityIdentifier("ai-planner-panel")
+        #if DEBUG
+        .task {
+            if store.demo && ProcessInfo.processInfo.arguments.contains("--ai-stream-preview") {
+                await planner.previewStreamingReply()
+            }
+        }
+        #endif
         }
     }
 }

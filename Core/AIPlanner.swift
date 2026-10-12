@@ -307,6 +307,24 @@ actor AIHistoryRepository {
             queueRefresh(store: store, ids: []) // Includes partial writes and unexpected disconnects.
         }
     }
+    #if DEBUG
+    func previewStreamingReply() async {
+        guard conversation != nil, !busy else { return }
+        busy = true; status = "正在回复…"
+        defer { busy = false }
+        for index in 1...24 {
+            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+            partial += "第\(index)段：沿着路线游览附近的地点，途中留出休息时间。\n\n"
+        }
+        partial += "流式末尾：所有建议已生成。"
+        do { try await Task.sleep(for: .seconds(2)) } catch { return }
+        if let index = conversations.firstIndex(where: { $0.id == activeID }) {
+            conversations[index].messages.append(AIMessage(role: "assistant", content: partial + "\n\n完成末尾：回复已保存。"))
+        }
+        partial = ""
+    }
+    #endif
+
     private func beginBackgroundExecution() {
         endBackgroundExecution()
         let revision = generation
