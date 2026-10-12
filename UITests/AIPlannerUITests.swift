@@ -22,7 +22,7 @@ final class AIPlannerUITests: XCTestCase {
         day.tap()
         XCTAssertTrue(app.buttons["archive-day-map"].waitForExistence(timeout: 5))
         app.buttons["archive-day-map"].tap()
-        XCTAssertTrue(app.buttons["open-ai-planner"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["open-ai-planner"].exists)
         // Map back traverses day → trip → the full-page trip detail.
         let back = app.buttons["journey-back"]
         XCTAssertTrue(back.waitForExistence(timeout: 5)); back.tap(); back.tap()
@@ -77,7 +77,8 @@ final class AIPlannerUITests: XCTestCase {
         }
     }
 
-    @MainActor func testLongStreamingReplyStaysAtBottomAfterCompletion() {
+    @MainActor func testLongStreamingReplyStaysAtBottomAfterCompletion() throws {
+        try XCTSkipIf(true, "AI 入口暂时撤下，等待重新设计后恢复交互验收")
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--ai-chat-preview", "--ai-stream-preview"]
         app.launch()
@@ -94,7 +95,8 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertGreaterThan(completed.frame.maxY, composer.frame.minY - 80)
     }
 
-    @MainActor func testChatOpensAtBottomAndComposerDoesNotOverlapMessages() {
+    @MainActor func testChatOpensAtBottomAndComposerDoesNotOverlapMessages() throws {
+        try XCTSkipIf(true, "AI 入口暂时撤下，等待重新设计后恢复交互验收")
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--ai-chat-preview"]; app.launch()
         XCTAssertTrue(app.buttons["open-ai-planner"].waitForExistence(timeout: 10))
         app.buttons["open-ai-planner"].tap()
@@ -126,7 +128,8 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertTrue(lastReply.isHittable)
     }
 
-    @MainActor func testCloseButtonAndConversationMenuPlacement() {
+    @MainActor func testCloseButtonAndConversationMenuPlacement() throws {
+        try XCTSkipIf(true, "AI 入口暂时撤下，等待重新设计后恢复交互验收")
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let entry = app.buttons["open-ai-planner"]
         XCTAssertTrue(entry.waitForExistence(timeout: 10))
@@ -142,6 +145,7 @@ final class AIPlannerUITests: XCTestCase {
     }
 
     @MainActor func testPadEntryToggleAndSettingsGuidance() throws {
+        try XCTSkipIf(true, "AI 入口暂时撤下，等待重新设计后恢复交互验收")
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "iPad sidebar")
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -167,6 +171,7 @@ final class AIPlannerUITests: XCTestCase {
         XCTAssertFalse(app.textFields["ai-message-input"].exists)
     }
     @MainActor func testSwipeClosesAssistantAndRestoresJourney() throws {
+        try XCTSkipIf(true, "AI 入口暂时撤下，等待重新设计后恢复交互验收")
         try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone, "Phone system sheet")
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         XCTAssertTrue(app.buttons["open-ai-planner"].waitForExistence(timeout: 10))

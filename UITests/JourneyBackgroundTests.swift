@@ -24,7 +24,7 @@ final class JourneyBackgroundTests: XCTestCase {
         XCTAssertTrue(settings.isHittable)
         capture("Overview grouped background and bottom settings")
         settings.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         app.buttons["close-settings"].tap()
         let trip = app.buttons["journey-demo-trip"]
         if !trip.isHittable { list.swipeDown() }
@@ -61,7 +61,7 @@ final class JourneyBackgroundTests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         capture("Native sidebar overview with settings spacing")
         settings.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         app.buttons["close-settings"].tap()
         app.buttons["journey-demo-trip"].tap()
         app.buttons["journey-day-day-1"].tap()

@@ -22,7 +22,7 @@ final class AddMapPlaceTests: XCTestCase {
         let settings = app.buttons["itinerary-settings-bottom"]
         for _ in 0..<3 where !settings.isHittable { list.swipeUp() }
         XCTAssertTrue(settings.isHittable); settings.tap()
-        XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         app.buttons["close-settings"].tap()
         for _ in 0..<3 where !addPlace.isHittable { list.swipeDown() }
         addPlace.tap()

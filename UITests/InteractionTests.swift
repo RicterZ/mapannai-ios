@@ -6,7 +6,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         XCTAssertTrue(app.buttons["trip-breadcrumb"].waitForExistence(timeout: 10))
         app.buttons["连接设置"].tap()
-        XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.secureTextFields["API token（可留空）"].exists)
         XCTAssertFalse(app.secureTextFields["高德 iOS Key"].exists)
         app.buttons["close-settings"].tap()
@@ -147,7 +147,7 @@ final class IPadLayoutTests: XCTestCase {
         reopen.tap()
         XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
         app.buttons["连接设置"].tap()
-        XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.secureTextFields["高德 iOS Key"].exists)
         app.buttons["close-settings"].tap()
         XCUIDevice.shared.orientation = .portrait
@@ -283,7 +283,7 @@ final class MapSetupTests: XCTestCase {
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "Map setup connection"; screenshot.lifetime = .keepAlways; add(screenshot)
         connect.tap()
-        XCTAssertTrue(app.navigationBars["连接设置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
     }
 }
 

@@ -14,13 +14,11 @@ The app opens on My Trips, a collection of overlapping trip cards. Tap a card to
 - **Plan each day**: Create a trip, keep places in its unscheduled list, and drag them into a day when ready. Add places to its daily itinerary. Add or remove days, shift your travel dates, and reuse places you have already saved. When deleting a trip or day, optionally remove its exclusive places while keeping shared places.
 - **Arrange visits your way**: Create multiple routes within a day and change the visit order to organize different activities. Add transport between places, including line or service numbers, departure times, planned durations, and notes. Tap the time at the top right of a place to arrange its visit. Reordering within a route preserves visit times; transport reappears when its original departure and arrival become adjacent in the same direction again.
 - **See the whole plan on a map**: View all places, a trip overview, or daily routes. Colors distinguish days; tap a place or route to see its itinerary. In a day view, small, evenly spaced static arrows show the direction between adjacent places, consistently across System Maps, AMap, and Google Maps.
-- **View routes and open directions**: Route planning follows each segment’s transport arrangement; the server chooses a mode when none is set. Unsupported routes appear as dashed curves. When you are ready to go, open a place in Apple Maps, AMap, or Google Maps for navigation. Choose your preferred app in Settings → Open Map. Saved official POIs retain their platform identity when available, so System Maps and Google Maps can open the matching place; places without an identity still open by coordinates.
+- **View routes and open directions**: Route planning follows each segment’s transport arrangement; the server chooses a mode when none is set. Unsupported routes appear as dashed curves. When you are ready to go, open a place in Apple Maps, AMap, or Google Maps for navigation. Choose your preferred app in Settings → Map and Routes → Navigation Map. Saved official POIs retain their platform identity when available, so System Maps and Google Maps can open the matching place; places without an identity still open by coordinates.
 - **Use it on your phone or tablet**: Switch trip dates from the collapsed Liquid Glass itinerary capsule on iOS 26 and later (with a frosted material on earlier systems), pull it up for details, or view the map and itinerary side by side on iPad to compare places and organize your plans.
 - **Share travel data with the web app**: Connect to your own MapAnNai Plus server and continue editing the same trip on the web, iPhone, or iPad.
 
-Use the chat icon at the top right of the map to plan with the AI assistant. Configure your model API in Settings first. Settings also lets you hide the chat icon (off by default). Replies can continue briefly in the background; interrupted replies retain the text already received and are never automatically resent. Assistant replies support Markdown tables; swipe wide tables horizontally to read all columns.
-
-The default background is System Maps (Apple MapKit). Choose System Maps, AMap, or Google Maps in Settings → Map Background. Google Maps is also available in builds configured with a Google Maps SDK key; otherwise it quietly uses System Maps. This changes the in-app map; search and route planning continue to use your connected server.
+The default background is System Maps (Apple MapKit). Choose System Maps, AMap, or Google Maps in Settings → Map and Routes → Map Background. Google Maps is also available in builds configured with a Google Maps SDK key; otherwise it quietly uses System Maps. This changes the in-app map; search and route planning continue to use your connected server.
 
 ## Plan your first trip
 
@@ -32,7 +30,6 @@ The default background is System Maps (Apple MapKit). Choose System Maps, AMap, 
 With route planning enabled, each planned segment's distance appears between its places. Map lines simplify small loops and short backtracks to emphasize visit order; distances retain the original planned values. Opposite-direction overlapping legs are slightly separated near street-level zoom.
 
 Need a server? Follow the [MapAnNai Plus deployment guide](https://github.com/RicterZ/mapannai-plus#deploy-your-own-server), then enter its address and API token, if required, in the client. Searching, saving changes, and route planning require a network connection.
-
 
 On launch, allow location access to center the map on your nearest saved place. If location is unavailable, the app keeps its date-based starting view.
 

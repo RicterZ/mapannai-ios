@@ -183,7 +183,7 @@ actor AIHistoryRepository {
 
 @MainActor final class AIPlannerStore: ObservableObject {
     // The settings preference controls entry visibility independently of conversations.
-    static let entryEnabled = true
+    static let entryEnabled = false
     @Published var presented = false
     @Published var configuration = AIConfiguration()
     @Published var conversations: [AIConversation] = []
