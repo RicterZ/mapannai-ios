@@ -43,8 +43,10 @@ struct TripDestinationPicker: View {
                         }
                         Divider()
                     }
-                    HStack(spacing: 12) {
+                    HStack(spacing: TripEditorLayout.fieldSpacing) {
                         Image(systemName: "magnifyingglass").font(.system(size: 22)).accessibilityHidden(true)
+                            .frame(width: TripEditorLayout.iconWidth)
+                            .frame(width: TripEditorLayout.leadingWidth, alignment: .leading)
                         TextField(selection.isEmpty ? "搜索城市或省份" : "添加另一处目的地", text: $query)
                             .font(.system(size: 19, weight: .medium))
                             .focused($focused).submitLabel(.search)
@@ -78,9 +80,8 @@ struct TripDestinationPicker: View {
                     }
                 }
             }
-            .padding(.horizontal, 20).padding(.vertical, compact ? 12 : 16)
+            .padding(.vertical, compact ? 12 : 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
         }
         .onChange(of: focused) { _, value in if value { onSearchFocus() } }
         .onChange(of: query) { _, value in if value.count > 200 { query = String(value.prefix(200)) } }

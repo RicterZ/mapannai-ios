@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum TripEditorLayout {
+    static let leadingWidth: CGFloat = 60
+    static let iconWidth: CGFloat = 32
+    static let fieldSpacing: CGFloat = 12
+}
+
 struct TripCreationView: View {
     @ObservedObject var store: AppStore
     var trip: Trip? = nil
@@ -41,7 +47,7 @@ struct TripCreationView: View {
     private var canCreate: Bool {
         (trip != nil || (!destinations.isEmpty && destinations.count <= 20 && destinations.allSatisfy(\.isValid))) && range.dayCount >= minimumDays && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && range.isValid && !store.saving && !submitted
     }
-    private var pageColor: Color { Color(uiColor: .systemGroupedBackground) }
+    private var pageColor: Color { Color(uiColor: .systemBackground) }
 
     var body: some View {
         GeometryReader { geometry in
@@ -124,15 +130,17 @@ struct TripCreationView: View {
     private var identity: some View {
         VStack(alignment: .leading, spacing: 14) {
             if !compact { heading("旅途名称") }
-            HStack(spacing: 16) {
+            HStack(spacing: TripEditorLayout.fieldSpacing) {
                 Button {
                     nameFocused = false
                     iconPickerVisible = true
                 } label: {
                     HStack(spacing: 5) {
                         PlaceIconView(emoji: emoji, size: calendarVisible ? 26 : 32)
+                            .frame(width: TripEditorLayout.iconWidth)
                         Image(systemName: "chevron.down").font(.system(size: 10)).foregroundStyle(.tertiary)
-                    }.frame(minWidth: 44, minHeight: 44)
+                    }.frame(width: TripEditorLayout.leadingWidth, height: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("旅行图标：\(emoji)")
                     .accessibilityIdentifier("trip-icon-picker")
                     .popover(isPresented: $iconPickerVisible, arrowEdge: .top) {
@@ -164,8 +172,8 @@ struct TripCreationView: View {
                     .focused($nameFocused).submitLabel(.done).onSubmit { nameFocused = false }
                     .accessibilityIdentifier("trip-name-field")
             }
-            .padding(.horizontal, 20).padding(.vertical, 8)
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
+            .padding(.vertical, 8)
+            Divider()
         }
     }
 
@@ -178,13 +186,15 @@ struct TripCreationView: View {
                     range.choosingEnd = false
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { calendarVisible.toggle() }
                 } label: {
-                    HStack(spacing: 13) {
+                    HStack(spacing: TripEditorLayout.fieldSpacing) {
                         Image(systemName: "calendar").font(.system(size: 23, weight: .regular))
+                            .frame(width: TripEditorLayout.iconWidth)
+                            .frame(width: TripEditorLayout.leadingWidth, alignment: .leading)
                         Text(rangeLabel).font(.system(size: inputSize - 1, weight: .semibold)).multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Image(systemName: "chevron.right").font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.tertiary).rotationEffect(.degrees(calendarVisible ? 90 : 0))
-                    }.padding(.horizontal, 22).padding(.vertical, 20)
+                    }.padding(.vertical, 20)
                         .frame(maxWidth: .infinity).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("旅行日期")
                     .accessibilityValue(rangeLabel).accessibilityIdentifier("trip-date-range")
@@ -194,7 +204,7 @@ struct TripCreationView: View {
                     }
                 }
             }
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
+            .overlay(alignment: .bottom) { Divider() }
             Text("\(range.start.formatted(.dateTime.year().locale(Locale(identifier: "zh_CN")))) · 共 \(range.dayCount) 天")
                 .font(.footnote).foregroundStyle(.secondary).padding(.top, -6)
                 .accessibilityIdentifier("trip-date-summary")
