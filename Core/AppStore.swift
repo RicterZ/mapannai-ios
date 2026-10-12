@@ -11,6 +11,15 @@ struct TripSaveDraft: Identifiable {
     var destinations: [TripDestination] = []
 }
 
+struct DayEditorDraft: Identifiable {
+    var id = UUID()
+    let tripID: String
+    let day: TripDay?
+    let date: String
+    var title: String
+    var markerIDs: [String]
+}
+
 @MainActor final class AppStore: ObservableObject {
     private var appleMapItems: [String: (coordinate: Coordinate, references: PlaceReferences?, item: MKMapItem)] = [:]
     func appleMapItem(for marker: Marker) -> MKMapItem? {
@@ -54,6 +63,8 @@ struct TripSaveDraft: Identifiable {
     var mapHighlightedMarkerID: String? { selectedMarker?.id ?? (dayMapBrowsing ? dayMapFocusID : nil) }
     @Published var selectedMarker: Marker?
     @Published var tripSaveRecovery: TripSaveDraft?
+    @Published var dayEditorDraft: DayEditorDraft?
+    private var pendingCreatedDays: [UUID: TripDay] = [:]
     @Published private(set) var canResumeFailedSave = false
     private var failedSaveAction: (() -> Void)?
     private var pendingCreatedMarkers: [UUID: Marker] = [:]
@@ -152,6 +163,7 @@ struct TripSaveDraft: Identifiable {
         loading = false; refreshing = false; saving = false
         failedSaveAction = nil; canResumeFailedSave = false; tripSaveRecovery = nil
         pendingCreatedMarkers = [:]; pendingCreatedTrips = [:]
+        dayEditorDraft = nil; pendingCreatedDays = [:]
         endAddingPlace()
         endDayMapBrowsing()
         tripID = nil; dayID = nil; selectedMarker = nil; selectedSearchPlaceID = nil; addPlaceTripID = nil; addPlaceDay = nil; searchResults = []; markers = []; trips = []
@@ -756,6 +768,111 @@ struct TripSaveDraft: Identifiable {
         }
         return true
     }
+    func tripPlaces(_ trip: Trip) -> [Marker] {
+        let ids = (trip.markerIds ?? []) + trip.days.sorted { $0.date < $1.date }
+            .flatMap { $0.chains.flatMap { $0 } + $0.markerIds }
+        let lookup = Dictionary(markers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        return ids.compactMap { seen.insert($0).inserted ? lookup[$0] : nil }
+    }
+
+    func beginDayEditor(trip: Trip, day: TripDay? = nil) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let last = max(trip.endDate, trip.days.map(\.date).max() ?? trip.endDate)
+        let date = day?.date ?? calendar.date(byAdding: .day, value: 1, to: .fromDay(last))!.dayString
+        dayEditorDraft = DayEditorDraft(tripID: trip.id, day: day, date: date,
+            title: day?.title ?? "", markerIDs: day?.markerIds ?? [])
+    }
+
+    @discardableResult
+    func submitDayEditor(_ value: DayEditorDraft, using suppliedClient: APIClient? = nil) -> Bool {
+        guard let ti = trips.firstIndex(where: { $0.id == value.tripID }) else { return false }
+        let previous = trips[ti]
+        // Existing references can outlive the loaded marker snapshot; validate only additions.
+        let existingIDs = Set(value.day?.markerIds ?? [])
+        let allowed = Set(tripPlaces(previous).map(\.id)).union(existingIDs)
+        guard Set(value.markerIDs).isSubset(of: allowed) else {
+            errorMessage = "地点已变化，请重新选择。"; return false
+        }
+        if let day = value.day, previous.days.first(where: { $0.id == day.id }) != day {
+            errorMessage = "当天行程已更新，请重新打开编辑。"; return false
+        }
+        let createdBefore = pendingCreatedDays[value.id]
+        if value.day == nil && createdBefore == nil && previous.days.contains(where: { $0.date == value.date }) {
+            errorMessage = "该日期已存在，请重新添加。"; return false
+        }
+        guard TripDateRange(savedStart: .fromDay(previous.startDate), savedEnd: .fromDay(max(previous.endDate, value.date))).isValid else {
+            errorMessage = "一次最多安排 367 天"; return false
+        }
+        let selected = value.markerIDs.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        var updated = value.day ?? createdBefore ?? TripDay(id: "pending-day-" + value.id.uuidString,
+            tripId: value.tripID, date: value.date, markerIds: [], chains: [])
+        if value.day != nil {
+            for id in updated.markerIds where !selected.contains(id) { updated = updated.removing(id) }
+            updated = updated.addingToDefaultRoute(selected)
+        } else { updated.markerIds = selected }
+        updated.title = value.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let write: RouteOrderWrite?
+        do { write = try value.day.map { try RouteOrderWrite(previous: $0, updated: updated) } }
+        catch { report(error); return false }
+        guard reserveEditorSave() else { return false }
+        let revision = connectionRevision, client = suppliedClient ?? api
+        let pendingID = updated.id
+        withAnimation(AppMotion.listMutation(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
+            trips[ti].days.removeAll { $0.id == pendingID }
+            trips[ti].days.append(updated)
+            trips[ti].days.sort { $0.date < $1.date }
+            trips[ti].endDate = max(previous.endDate, value.date)
+        }
+        dayEditorDraft = nil
+        rebuildRoutes(preservingPlannedGeometry: true)
+        Task {
+            var confirmedCreated = createdBefore
+            let ok = await perform(reserved: true, expectedRevision: revision) { _ in
+                let path = "trips/\(APIClient.id(value.tripID))"
+                if let write {
+                    let titleOnly = value.day?.markerIds == updated.markerIds && value.day?.chains == updated.chains
+                    let confirmed: TripDay = try await client.request(write.path, method: write.method,
+                        body: titleOnly ? ["title": updated.title ?? ""] : write.body)
+                    guard revision == self.connectionRevision else { throw CancellationError() }
+                    self.acceptRouteSchedule(confirmed, revision: revision)
+                } else {
+                    let body: [String: Any] = ["date": value.date, "title": updated.title ?? "", "markerIds": selected]
+                    let saved: TripDay
+                    if let existing = confirmedCreated {
+                        saved = try await client.request(path + "/days/" + APIClient.id(existing.id), method: "PUT", body: body)
+                    } else {
+                        saved = try await client.request(path + "/days", method: "POST", body: body)
+                    }
+                    guard revision == self.connectionRevision else { throw CancellationError() }
+                    confirmedCreated = saved
+                    self.pendingCreatedDays[value.id] = saved
+                    if let index = self.trips.firstIndex(where: { $0.id == value.tripID }) {
+                        self.trips[index].days.removeAll { $0.id == pendingID || $0.id == saved.id }
+                        self.trips[index].days.append(saved)
+                    }
+                    try await client.mutate(path, method: "PUT", body: ["endDate": max(previous.endDate, value.date)])
+                }
+            }
+            guard revision == connectionRevision else { return }
+            if ok { pendingCreatedDays[value.id] = nil }
+            else {
+                if let index = trips.firstIndex(where: { $0.id == value.tripID }) {
+                    trips[index] = previous
+                    // A successful POST cannot be rolled back locally as if it never happened.
+                    if let created = confirmedCreated {
+                        trips[index].days.removeAll { $0.id == created.id }
+                        trips[index].days.append(created)
+                    }
+                }
+                retainFailedSave { [weak self] in self?.dayEditorDraft = value }
+            }
+            rebuildRoutes(preservingPlannedGeometry: true)
+        }
+        return true
+    }
+
     @discardableResult
     func saveDayInBackground(_ day: TripDay, animated: Bool = true, using suppliedClient: APIClient? = nil) -> Bool {
         guard let previous = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return false }
@@ -1431,6 +1548,12 @@ struct TripSaveDraft: Identifiable {
         }
         #endif
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--day-chain-layout-preview") {
+            markers[0].content.title = "武康大楼与衡复历史文化风貌区的老建筑和街巷漫步路线起点"
+            markers[0].content.headerImage = "http://localhost:8766/tokyo.jpg"
+            markers[3].content.title = "静安寺与南京西路历史街区的最后一站和返程集合地点"
+            trips[0].days[0].routeChains?[0].legs[0].note = String(repeating: "陕西南路站上车，往虹桥火车站方向；提前确认站台，保管好随身行李。", count: 8)
+        }
         if ProcessInfo.processInfo.arguments.contains("--journey-card-style-preview") {
             // Read-only fixture; photos come from the developer's local preview server.
             markers[0].content.headerImage = "http://localhost:8766/tokyo.jpg"

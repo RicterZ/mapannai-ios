@@ -19,6 +19,7 @@ struct MarkerDetailView: View {
     @State private var removalTarget: (day: TripDay, markerID: String)?
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var noteHeight: CGFloat = 1
+    @ScaledMetric(relativeTo: .title3) private var identityIconSize: CGFloat = 48
     private var current: Marker {
         (!embedded ? store.selectedMarker : nil) ?? store.markers.first(where: { $0.id == marker.id }) ?? marker
     }
@@ -73,27 +74,21 @@ struct MarkerDetailView: View {
     private var detailScroll: some View {
             ZStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack(alignment: .top, spacing: 16) {
-                        Text(current.title).font(.title.bold()).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 10) {
+                        PlaceIconView(emoji: current.icon.emoji, size: identityIconSize)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(current.title).font(.title3.weight(.semibold)).foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let address = current.content.address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(address).font(.subheadline).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
                         Button { onClose() } label: {
                             Image(systemName: "xmark").font(.system(size: 20, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle())
                         }.buttonStyle(.plain).foregroundStyle(.primary)
                             .accessibilityLabel("关闭地点详情").accessibilityIdentifier(embedded ? "search-detail-back" : "close-marker-detail")
-                    }
-                    HStack(spacing: 8) {
-                        Text(current.icon.label).font(.caption.weight(.medium))
-                            .foregroundStyle(current.icon.themeColor)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(current.icon.themeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-                        if let day = targetDay, day.markerIds.contains(current.id) {
-                            Label("在今日行程中", systemImage: "checkmark").font(.caption).foregroundStyle(.secondary)
-                                .accessibilityIdentifier("marker-in-current-day")
-                        }
-                    }
-                    if let address = current.content.address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(address).font(.subheadline).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if let image = current.content.headerImage, let url = imageURL(image) {
                         MarkerCoverBanner {
@@ -101,7 +96,7 @@ struct MarkerDetailView: View {
                                 if let image = phase.image { image.resizable().scaledToFill() }
                                 else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
                             }
-                        }.clipShape(RoundedRectangle(cornerRadius: 20))
+                        }.clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     if !itineraries.isEmpty {
                         VStack(spacing: 0) {
@@ -113,12 +108,20 @@ struct MarkerDetailView: View {
                                     onClose()
                                 } label: {
                                     HStack(spacing: 8) {
-                                        Text(itinerary.trip.name).lineLimit(1)
-                                        Text("第\(itinerary.dayNumber)天").font(.caption).foregroundStyle(.secondary).fixedSize()
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(itinerary.trip.name).lineLimit(1)
+                                            Text("第\(itinerary.dayNumber)天 · " + itinerary.day.date.replacingOccurrences(of: "-", with: "/"))
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        if targetDay?.id == itinerary.day.id && targetDay?.tripId == itinerary.trip.id {
+                                            Image(systemName: "checkmark").font(.caption.weight(.semibold))
+                                                .accessibilityLabel("当前行程日")
+                                                .accessibilityIdentifier("marker-in-current-day")
+                                        }
                                         Spacer(minLength: 0)
                                         Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
                                     }.font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
                                         .contentShape(Rectangle())
                                 }.buttonStyle(.plain).accessibilityIdentifier("marker-itinerary-\(itinerary.day.id)")
                             }
@@ -126,19 +129,18 @@ struct MarkerDetailView: View {
                     }
                     actionBar
                     if hasNote {
-                        Text("笔记").font(.headline)
+                        Divider().padding(.vertical, 4)
+                        JourneyEditorHeading(title: "笔记")
                         HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight)
                             .frame(height: noteHeight).accessibilityIdentifier("marker-note")
                     }
-                }.padding(20)
+                }.padding(24)
             }
             .id(current.id)
-            .transition(reduceMotion ? .identity : .asymmetric(
-                insertion: .move(edge: .trailing).combined(with: .opacity),
-                removal: .move(edge: .leading).combined(with: .opacity)))
+            .transition(reduceMotion ? .identity : .opacity)
             }
             .clipped()
-            .animation(AppMotion.presentation(reduceMotion: reduceMotion), value: current.id)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: current.id)
             .accessibilityIdentifier("marker-detail-content")
             .ignoresSafeArea(.container, edges: .top)
     }
@@ -149,14 +151,14 @@ struct MarkerDetailView: View {
                     if let searchPlace, !store.isPlaceAdded(searchPlace) {
                         JourneyActionGroup(compact: true) {
                             Button { store.prepareSearchPlaceAddition(searchPlace) } label: {
-                                Label(store.addPlaceDay != nil ? "加入当天" : store.addPlaceTripID != nil ? "加入旅行" : "保存地点", systemImage: "plus")
+                                Label(targetDay.map(addDayLabel) ?? (store.addPlaceTripID != nil ? "加入旅行" : "保存地点"), systemImage: "plus")
                             }.disabled(store.saving).accessibilityIdentifier("search-detail-add")
                         }
                     } else if searchPlace == nil, let day = targetDay, !day.markerIds.contains(current.id) {
                         JourneyActionGroup(compact: true) {
                             Button {
                                 if store.addMarkerInBackground(current, to: day) { onClose() }
-                            } label: { Label("加入今日", systemImage: "plus") }
+                            } label: { Label(addDayLabel(day), systemImage: "plus") }
                                 .disabled(store.saving).accessibilityIdentifier("add-marker-to-current-day")
                         }
                     }
@@ -178,6 +180,14 @@ struct MarkerDetailView: View {
                     }
                 }.padding(.top, 4).padding(.bottom, 6)
                 }
+
+    private func addDayLabel(_ day: TripDay) -> String {
+        let days = store.trips.first(where: { $0.id == day.tripId })?.days.sorted {
+            $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date
+        } ?? []
+        let number = (days.firstIndex(where: { $0.id == day.id }) ?? 0) + 1
+        return "加入第\(number)天 · " + day.date.replacingOccurrences(of: "-", with: "/")
+    }
 
     private func navigate() {
         if store.settings.navigationMapApp == .amap, let url = MarkerPresentation.amapNavigationURL(for: current) {
@@ -260,12 +270,8 @@ struct MarkerEditorView: View {
         }
     }
     private var locationFields: some View {
-        JourneyEditorCard {
-            if !draft.address.isEmpty {
-                Text(draft.address).font(.body).foregroundStyle(.secondary)
-            }
-
-        }
+        Text(draft.address).font(.body).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
     private var coverPicker: some View {
         PhotosPicker(selection: $photo, matching: .images) {
@@ -320,8 +326,8 @@ struct MarkerEditorView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     JourneyEditorHeading(title: "地点名称")
                     VStack(alignment: .leading, spacing: 12) { editorFields }
-                        .padding(.horizontal, 20).padding(.vertical, 8)
-                        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
+                        .padding(.vertical, 8)
+                    Divider()
                 }
                 if !draft.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
@@ -331,12 +337,12 @@ struct MarkerEditorView: View {
                 }
                 VStack(alignment: .leading, spacing: 14) {
                     JourneyEditorHeading(title: "封面")
-                    coverPicker.clipShape(RoundedRectangle(cornerRadius: 20))
+                    coverPicker.clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 VStack(alignment: .leading, spacing: 14) {
                     JourneyEditorHeading(title: "地点笔记")
                     Button { fieldsFocused = false; noteEditorPresented = true } label: {
-                        JourneyEditorCard {
+                        VStack(alignment: .leading, spacing: 14) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(NoteContent.hasContent(draft.html) ? "编辑笔记" : "编写笔记")
@@ -347,7 +353,7 @@ struct MarkerEditorView: View {
                                 Spacer(minLength: 8)
                                 Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
                             }
-                        }.foregroundStyle(.primary)
+                        }.padding(.vertical, 8).contentShape(Rectangle()).foregroundStyle(.primary)
                     }.buttonStyle(.plain).accessibilityIdentifier("marker-note-editor")
                 }
                 if let localError { Text(localError).foregroundStyle(.red).font(.footnote) }
@@ -356,11 +362,11 @@ struct MarkerEditorView: View {
         }
         .accessibilityIdentifier("marker-editor-scroll")
         .scrollDismissesKeyboard(.interactively)
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(Color(uiColor: .systemBackground))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             JourneyEditorSubmit(title: initial.marker == nil ? "添加地点" : "保存地点",
                 enabled: !store.saving && !uploading && !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                identifier: "save-marker-editor", action: save)
+                identifier: "save-marker-editor", background: Color(uiColor: .systemBackground), action: save)
         }
         .navigationTitle(initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -368,7 +374,7 @@ struct MarkerEditorView: View {
                 Button {
                     if embedded && hasChanges { confirmDiscard = true }
                     else { closeEditor() }
-                } label: { Image(systemName: "chevron.left") }
+                } label: { Image(systemName: embedded ? "chevron.left" : "xmark") }
                     .disabled(store.saving || uploading).accessibilityLabel("取消")
                     .accessibilityIdentifier("cancel-marker-editor")
             }
@@ -531,7 +537,7 @@ struct NoteComposerPreview: View {
             VStack(spacing: 0) {
                 RichEditor(controller: editor, initialHTML: preview ? sampleHTML : initialHTML)
                     .accessibilityIdentifier("note-composer-text")
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 14)
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
                         ForEach(Array(photos.enumerated()), id: \.offset) { index, image in
@@ -553,7 +559,7 @@ struct NoteComposerPreview: View {
                             Image(systemName: "plus").font(.system(size: 28, weight: .light))
                                 .foregroundStyle(.secondary).frame(width: 92, height: 92)
                                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-                                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(uiColor: .separator), style: StrokeStyle(lineWidth: 1, dash: [4])))
+
                         }.disabled(photos.count >= 9 || loadingPhotos).accessibilityLabel("添加图片，可多选")
                     }.padding(.horizontal, 16).padding(.vertical, 12)
                 }.scrollIndicators(.hidden)
@@ -566,8 +572,7 @@ struct NoteComposerPreview: View {
                             .frame(width: 14, height: 19)
                     }
                         .font(.subheadline).foregroundStyle(.secondary)
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Color(uiColor: .secondarySystemBackground), in: CompactCapsuleShape())
+                        .padding(.vertical, 7)
                         .accessibilityLabel("当前地点：\(placeName)，\(address)")
                     Spacer()
                 }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)

@@ -69,7 +69,7 @@ struct DayMapDateStrip: View {
                             }.foregroundStyle(date.id == day.id ? .primary : .secondary)
                                 .frame(height: 44)
                                 .overlay(alignment: .bottom) {
-                                    if date.id == day.id { Capsule().fill(Color.accentColor).frame(width: 18, height: 3) }
+                                    if date.id == day.id { Capsule().fill(Color.primary).frame(width: 18, height: 3) }
                                 }
                         }.id(date.id).accessibilityIdentifier(identifierPrefix + date.id)
                     }
@@ -91,7 +91,7 @@ struct DayMapJourneyView: View {
     private var stops: [DayMapStop] { store.day.map { DayMapJourney.stops(day: $0, markers: store.markers) } ?? [] }
     var body: some View {
         VStack(spacing: 6) {
-            Capsule().fill(Color(uiColor: .tertiaryLabel)).frame(width: 32, height: 4).opacity(showsGrabber ? 1 : 0).padding(.top, 4)
+            if showsGrabber { Capsule().fill(Color(uiColor: .tertiaryLabel)).frame(width: 32, height: 4).padding(.top, 4) }
             HStack(spacing: 4) {
                 if let trip = store.trip, let day = store.day {
                     DayMapDateStrip(store: store, trip: trip, day: day)
@@ -103,14 +103,14 @@ struct DayMapJourneyView: View {
             }.foregroundStyle(.primary).buttonStyle(.plain).padding(.horizontal, 20)
             if let day = store.day, !stops.isEmpty {
                 GeometryReader { geometry in
-                    let cardWidth = min(300, max(210, geometry.size.width * 0.60))
+                    let cardWidth = min(210, max(164, geometry.size.width * 0.49))
                     ScrollView(.horizontal) {
                         LazyHStack(spacing: 0) {
                             ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
                                 HStack(spacing: 0) {
-                                    placeCard(stop, number: index + 1).frame(width: index == stops.count - 1 ? max(cardWidth, geometry.size.width - 40) : cardWidth)
+                                    placeCard(stop).frame(width: index == stops.count - 1 ? max(cardWidth, geometry.size.width - 40) : cardWidth)
                                     if index + 1 < stops.count {
-                                        connection(after: stop, next: stops[index + 1], day: day).frame(width: 64)
+                                        connection(after: stop, next: stops[index + 1], day: day).frame(width: 104)
                                     }
                                 }.id(stop.id)
                             }
@@ -119,7 +119,12 @@ struct DayMapJourneyView: View {
                     }.contentMargins(.leading, 20, for: .scrollContent)
                         .scrollIndicators(.hidden).scrollTargetBehavior(.viewAligned)
                         .scrollPosition(id: $scrolledID, anchor: .leading)
-                        .mask { HStack(spacing: 0) { Color.black; LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 30) } }
+                        .mask {
+                            HStack(spacing: 0) {
+                                Color.black
+                                LinearGradient(colors: scrolledID == stops.last?.id ? [.black, .black] : [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 24)
+                            }
+                        }
                         .accessibilityIdentifier("day-map-chain")
                         .onChange(of: scrolledID) { _, id in
                             guard ready, let stop = stops.first(where: { $0.id == id }) else { return }
@@ -133,57 +138,62 @@ struct DayMapJourneyView: View {
                             guard let stop = stops.first(where: { $0.marker.id == id }), scrolledID != stop.id else { return }
                             withAnimation(reduceMotion ? nil : .smooth(duration: 0.28)) { scrolledID = stop.id }
                         }
-                }.frame(height: 86)
+                }.frame(height: 66)
             } else {
-                Text("这一天还没有地点").foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 86)
+                Text("这一天还没有地点").foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 66)
             }
-        }.padding(.bottom, 10)
+        }.padding(.top, showsGrabber ? 0 : 14).padding(.bottom, 10)
             .frame(height: DayMapPresentation.contentHeight, alignment: .top)
             .background(Color(uiColor: .systemBackground))
             .clipShape(UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28))
             .accessibilityElement(children: .contain).accessibilityIdentifier("day-map-journey")
     }
-    private func placeCard(_ stop: DayMapStop, number: Int) -> some View {
+    private func placeCard(_ stop: DayMapStop) -> some View {
         Button {
             store.openDayMapPlaceDetails(stop.marker.id)
         } label: {
-            HStack(spacing: 12) {
-                DayPlaceArtwork(marker: stop.marker)
-                    .frame(width: 60, height: 60).clipShape(RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(stop.marker.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary)
-                        .lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
-                    InlinePlaceAddress(icon: stop.marker.icon, address: stop.marker.content.address ?? "")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let summary = stop.visit?.summary, !summary.isEmpty {
-                        Text(summary).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 8) {
+                PlaceIconView(emoji: stop.marker.icon.emoji, size: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(stop.marker.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    if let address = stop.marker.content.address, !address.isEmpty {
+                        Text(address).font(.caption2).foregroundStyle(.secondary)
                     }
-                }
-            }.padding(12).frame(maxWidth: .infinity, minHeight: 84, maxHeight: 84)
-                .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 18))
-                .contentShape(RoundedRectangle(cornerRadius: 16))
+                    if let visit = stop.visit, !visit.summary.isEmpty {
+                        Text([visit.startTime, visit.durationMinutes.map { "停留" + RouteScheduleText.duration($0) }]
+                            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                }.lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(.horizontal, 10).frame(maxWidth: .infinity).frame(height: 66)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Color(uiColor: .separator).opacity(0.25), lineWidth: 0.5) }
+                .contentShape(RoundedRectangle(cornerRadius: 12))
         }.buttonStyle(.plain).accessibilityIdentifier("day-map-stop-" + stop.marker.id)
     }
     @ViewBuilder private func connection(after stop: DayMapStop, next: DayMapStop, day: TripDay) -> some View {
         if stop.routeIndex != nil, stop.routeIndex == next.routeIndex, next.position == stop.position + 1 {
             VStack(spacing: 6) {
-                if let distance = DayMapJourney.distance(after: stop, next: next, day: day, routes: store.displayRoutes) {
-                    Text(distance).font(.system(size: 10)).foregroundStyle(.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.8)
-                }
-                JourneyLinkArrow().stroke(Color(uiColor: .tertiaryLabel), style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
-                    .frame(width: 40, height: 8)
                 if let leg = stop.leg {
-                    Text(leg.mode.label).font(.system(size: 10)).foregroundStyle(.secondary)
-                    if !leg.summary.isEmpty {
-                        Text(leg.summary).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: 3) {
+                        TransportArtwork(mode: leg.mode, size: 13)
+                        Text(leg.serviceNumber.flatMap { $0.isEmpty ? nil : $0 } ?? leg.mode.label)
+                            .font(.caption2)
                     }
                 }
-            }.padding(.horizontal, 3).accessibilityElement(children: .combine)
+                JourneyLinkArrow().stroke(Color(uiColor: .tertiaryLabel), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                    .frame(height: 7)
+                if let leg = stop.leg, !leg.summary.isEmpty {
+                    Text(leg.summary).font(.caption2).monospacedDigit()
+                } else if let distance = DayMapJourney.distance(after: stop, next: next, day: day, routes: store.displayRoutes) {
+                    Text(distance).font(.caption2)
+                }
+            }.lineLimit(1).truncationMode(.tail).foregroundStyle(.secondary)
+                .padding(.horizontal, 6).accessibilityElement(children: .combine)
         } else {
             VStack(spacing: 6) {
                 Rectangle().fill(Color(uiColor: .separator)).frame(width: 1, height: 24)
-                Text(next.routeIndex.map { "路线 \($0 + 1)" } ?? "未安排").font(.caption2).foregroundStyle(.secondary)
+                Text(next.routeIndex.map { "路线 \($0 + 1)" } ?? "未安排").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
         }
     }
@@ -195,44 +205,5 @@ private struct JourneyLinkArrow: Shape {
             path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
             path.move(to: CGPoint(x: rect.maxX - 4, y: rect.midY - 3)); path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY)); path.addLine(to: CGPoint(x: rect.maxX - 4, y: rect.midY + 3))
         }
-    }
-}
-
-/// An inline attachment lets line two return to the paragraph's leading edge.
-private struct InlinePlaceAddress: UIViewRepresentable {
-    let icon: MarkerIcon
-    let address: String
-    func makeUIView(context: Context) -> UILabel {
-        let label = UILabel()
-        label.numberOfLines = 2
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return label
-    }
-    func updateUIView(_ label: UILabel, context: Context) {
-        let font = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: .systemFont(ofSize: 10))
-        let tagFont = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: .systemFont(ofSize: 10, weight: .medium))
-        let color = UIColor(icon.themeColor).resolvedColor(with: label.traitCollection)
-        let attributes: [NSAttributedString.Key: Any] = [.font: tagFont, .foregroundColor: color]
-        let text = icon.label as NSString
-        let textSize = text.size(withAttributes: attributes)
-        let size = CGSize(width: ceil(textSize.width) + 12, height: ceil(tagFont.lineHeight) + 4)
-        let badge = UIGraphicsImageRenderer(size: size).image { _ in
-            color.withAlphaComponent(0.12).setFill()
-            UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 5).fill()
-            text.draw(at: CGPoint(x: 6, y: 2), withAttributes: attributes)
-        }
-        let attachment = NSTextAttachment()
-        attachment.image = badge
-        attachment.bounds = CGRect(x: 0, y: (font.capHeight - size.height) / 2, width: size.width, height: size.height)
-        let value = NSMutableAttributedString(attachment: attachment)
-        value.append(NSAttributedString(string: " " + address.trimmingCharacters(in: .whitespacesAndNewlines),
-            attributes: [.font: font, .foregroundColor: UIColor.secondaryLabel]))
-        label.attributedText = value
-        label.accessibilityLabel = icon.label + " " + address
-    }
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
-        guard let width = proposal.width else { return nil }
-        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
     }
 }

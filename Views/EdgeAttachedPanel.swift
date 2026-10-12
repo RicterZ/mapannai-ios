@@ -117,6 +117,11 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             if let host {
                 if value.presented {
                     host.rootView = value.content
+                    let topInset = value.detent == .compact ? 0 : value.topContentInset
+                    if host.additionalSafeAreaInsets.top != topInset {
+                        host.additionalSafeAreaInsets.top = topInset
+                        panel?.containerView?.setNeedsLayout()
+                    }
                     if host.view.backgroundColor != value.backgroundColor {
                         UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.22) {
                             host.view.backgroundColor = self.value.backgroundColor
@@ -186,11 +191,17 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
         override var frameOfPresentedViewInContainerView: CGRect {
             guard let containerView else { return .zero }
             let bounds = containerView.bounds
-            let available = bounds.height - keyboardHeight
+            // Keep the panel behind the keyboard's rounded/translucent edges.
+            // SwiftUI's keyboard safe area handles content avoidance inside it.
+            let available = bounds.height
             let maximum = max(80, available - containerView.safeAreaInsets.top - (coordinator?.value.fullTopInset ?? 8))
             let height: CGFloat
             if keyboardHeight > 0 { height = maximum }
-            else if let dragHeight { height = min(maximum, max(40, dragHeight)) }
+            else if let dragHeight {
+                let minimum = coordinator?.value.compactHeight == nil && coordinator?.value.canDismiss == false
+                    ? min(maximum, bounds.height * 0.5) : 40
+                height = min(maximum, max(minimum, dragHeight))
+            }
             else {
                 switch detent {
                 case .compact: height = coordinator?.value.compactHeight ?? 80
@@ -237,26 +248,17 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             if abs(height - reportedHeight) > 0.5 {
                 reportedHeight = height
                 let callback = coordinator?.value.onHeightChange
-                let dragging = dragHeight != nil
                 DispatchQueue.main.async {
-                    if !dragging && !UIAccessibility.isReduceMotionEnabled {
-                        withAnimation(.spring(duration: 0.42, bounce: 0.08)) { callback?(height) }
-                    } else {
-                        var transaction = Transaction(); transaction.disablesAnimations = true
-                        withTransaction(transaction) { callback?(height) }
-                    }
+                    var transaction = Transaction(); transaction.disablesAnimations = true
+                    withTransaction(transaction) { callback?(height) }
                 }
             }
             dimming.frame = containerView?.bounds ?? .zero
             grabberArea.frame = CGRect(x: 0, y: 0, width: presentedView?.bounds.width ?? 0, height: min(24, coordinator?.value.topContentInset ?? 24))
             grabberArea.viewWithTag(1)?.center.x = grabberArea.bounds.midX
-            let floating = detent == .compact && (coordinator?.value.backgroundColor.cgColor.alpha ?? 1) == 0
-            grabberArea.isHidden = floating
-            if floating, let presentedView {
-                let mask = CAShapeLayer()
-                mask.path = UIBezierPath(roundedRect: CGRect(x: 16, y: 12, width: max(0, presentedView.bounds.width - 32), height: 48), cornerRadius: 24).cgPath
-                presentedView.layer.mask = mask
-            } else { presentedView?.layer.mask = nil }
+            grabberArea.isHidden = false
+            grabberArea.accessibilityIdentifier = "edge-panel-grabber"
+            presentedView?.layer.mask = nil
             presentedView?.bringSubviewToFront(grabberArea)
         }
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
@@ -291,7 +293,7 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             containerView.setNeedsLayout()
             if animated && !UIAccessibility.isReduceMotionEnabled {
                 coordinator?.value.onMotionChange(true)
-                UIView.animate(withDuration: max(0.38, duration), delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: min(8, max(0, velocity)), options: [.beginFromCurrentState, .allowUserInteraction], animations: {
+                UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: 1, initialSpringVelocity: min(8, max(0, velocity)), options: [.beginFromCurrentState, .allowUserInteraction], animations: {
                     containerView.layoutIfNeeded()
                 }, completion: { [weak self] finished in
                     if finished { self?.coordinator?.value.onMotionChange(false) }

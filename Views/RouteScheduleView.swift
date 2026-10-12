@@ -167,61 +167,75 @@ struct RouteScheduleEditor: View {
     }
 }
 
+struct TransportArtwork: View {
+    let mode: TransportMode
+    var size: CGFloat = 21
+    private var emoji: String? {
+        switch mode {
+        case .train: "🚞"
+        case .subway: "🚉"
+        case .driving, .taxi: "🚗"
+        case .flight: "✈️"
+        case .ferry: "🚢"
+        case .cycling: "🚲"
+        default: nil
+        }
+    }
+    var body: some View {
+        if let emoji { PlaceIconView(emoji: emoji, size: size) }
+        else { Image(systemName: mode.symbol).font(.system(size: size * 0.8)).frame(width: size, height: size).accessibilityHidden(true) }
+    }
+}
+
+struct ItineraryNote: View {
+    let text: String
+    @State private var expanded = false
+    @State private var fullHeight: CGFloat = 0
+    @State private var collapsedHeight: CGFloat = 0
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(text).font(.footnote).foregroundStyle(.secondary).lineLimit(expanded ? nil : 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                        .hidden().accessibilityHidden(true)
+                }
+                .background {
+                    Text(text).font(.footnote).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { collapsedHeight = $0 }
+                        .hidden().accessibilityHidden(true)
+                }
+            if fullHeight > collapsedHeight + 1 {
+                Button(expanded ? "收起备注" : "展开备注") { expanded.toggle() }
+                    .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
+            }
+        }.onChange(of: text) { _, _ in expanded = false }
+    }
+}
+
 struct RouteTransportRow: View {
     let leg: ChainLeg?
     let distance: String?
     let tint: Color
     let action: () -> Void
-    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 5) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) {
-                        transportLabel.fixedSize(horizontal: true, vertical: false)
-                        Spacer(minLength: 4)
-                        timing.fixedSize()
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .top) {
-                            transportLabel
-                            Spacer(minLength: 4)
-                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                        }
-                        timing.padding(.leading, 22)
-                    }
-                }
-                if let note = leg?.note, !note.isEmpty {
-                    Text(note).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                        .padding(.leading, 22).monospacedDigit()
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                if let leg { TransportArtwork(mode: leg.mode) }
+                else { Image(systemName: "arrow.down").foregroundStyle(.secondary) }
+                Text([leg?.mode.label ?? "无交通安排", leg?.serviceNumber].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.footnote.weight(.semibold)).foregroundStyle(.primary)
             }
-            .font(.caption).foregroundStyle(.secondary)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("编辑交通安排")
-            .padding(.leading, 34)
-    }
-    private var transportLabel: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: leg?.mode.symbol ?? "arrow.down").frame(width: 16).foregroundStyle(tint)
-            Text(leg?.mode.label ?? "无交通安排").foregroundStyle(leg == nil ? Color.secondary : tint)
-            if let service = leg?.serviceNumber, !service.isEmpty {
-                Text(service).font(.caption2.weight(.medium)).foregroundStyle(tint)
-                    .padding(.horizontal, 5).padding(.vertical, 3)
-                    .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
-            }
-            if let distance {
-                Text("·").foregroundStyle(.tertiary)
-                Text(distance).monospacedDigit().foregroundStyle(.secondary)
-            }
-        }
-    }
-    @ViewBuilder private var timing: some View {
-        if let summary = leg?.summary, !summary.isEmpty {
-            Text(summary).font(.caption2).monospacedDigit()
-        }
+            let metadata = [leg?.startTime.map { $0 + " 出发" }, leg?.durationMinutes.map { "计划 " + RouteScheduleText.duration($0) }, distance]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary).monospacedDigit() }
+            if let note = leg?.note, !note.isEmpty { ItineraryNote(text: note) }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle()).accessibilityElement(children: .contain)
+            .onLongPressGesture(minimumDuration: 0.5, perform: action)
+            .accessibilityAction(named: "编辑交通安排", action)
+            .padding(.leading, 33).padding(.top, 4).padding(.bottom, 12)
     }
 }

@@ -1,6 +1,96 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testDayThemeMenuAndCancel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview"]
+        app.launch()
+        let cover = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(cover.waitForExistence(timeout: 5)); cover.tap()
+        let first = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5)); sleep(1)
+        first.swipeRight()
+        app.buttons["编辑"].tap()
+        XCTAssertTrue(app.navigationBars["编辑"].waitForExistence(timeout: 3))
+        attach(app, "Day editor from right swipe")
+        app.buttons["取消"].tap()
+        first.press(forDuration: 1)
+        app.buttons["编辑"].tap()
+        XCTAssertTrue(app.navigationBars["编辑"].waitForExistence(timeout: 3))
+        app.buttons["取消"].tap()
+        let add = app.buttons["journey-add-day"]
+        for _ in 0..<6 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        XCTAssertTrue(app.navigationBars["添加一天"].waitForExistence(timeout: 3))
+        let place = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'day-editor-place-'")).firstMatch
+        XCTAssertTrue(place.exists)
+        XCTAssertEqual(place.value as? String, "未选")
+        place.tap()
+        XCTAssertEqual(place.value as? String, "已选")
+        attach(app, "Add day optional theme and trip places")
+        app.buttons["取消"].tap()
+    }
+
+    @MainActor func testChapterDeletionDesign() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview"]
+        app.launch()
+        app.buttons["archive-trip-demo-trip"].tap()
+        let menu = app.buttons["journey-day-menu-day-1"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5)); sleep(1); menu.tap()
+        app.buttons["删除"].tap()
+        let choice = app.buttons["delete-day-markers"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 3))
+        XCTAssertEqual(choice.value as? String, "未选")
+        choice.tap()
+        XCTAssertEqual(choice.value as? String, "已选")
+        attach(app, "Chapter deletion confirmation")
+        app.buttons["取消"].tap()
+        XCTAssertTrue(menu.exists)
+    }
+
+    @MainActor func testDayEditorErrorUsesChapterPanelAndPreservesDraft() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]
+        app.launch(); app.buttons["archive-trip-demo-trip"].tap()
+        let menu = app.buttons["journey-day-menu-day-1"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5)); sleep(1); menu.tap()
+        app.buttons["编辑"].tap()
+        let submit = app.buttons["day-editor-submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 5)); submit.tap()
+        XCTAssertTrue(app.buttons["知道了"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.alerts.count, 0)
+        app.buttons["知道了"].tap()
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        app.buttons["取消"].tap()
+    }
+
+    @MainActor func testContinuousDayChapters() {
+        for large in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--demo", "--archive-preview", "--transport-schedule-preview", "--journey-card-style-preview"]
+            if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+            app.launch()
+            let cover = app.buttons["archive-trip-demo-trip"]
+            XCTAssertTrue(cover.waitForExistence(timeout: 5))
+            cover.tap()
+            let first = app.buttons["journey-day-day-1"]
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            XCTAssertTrue(first.label.contains("第1天"))
+            XCTAssertTrue(first.label.contains("09:30 首站"))
+            XCTAssertFalse(first.label.contains("地铁"))
+            sleep(2)
+            attach(app, large ? "Chapters large type" : "Chapters first day")
+            let second = app.buttons["journey-day-day-2"]
+            for _ in 0..<6 where !second.isHittable { app.swipeUp() }
+            XCTAssertTrue(second.isHittable)
+            XCTAssertTrue(second.label.contains("第2天"))
+            attach(app, large ? "Untitled chapter large type" : "Untitled chapter")
+            second.tap()
+            XCTAssertTrue(app.buttons["day-detail-date-day-1"].waitForExistence(timeout: 5))
+            app.terminate()
+        }
+    }
+
     @MainActor func testDayCardsAndPhotoArchive() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--transport-schedule-preview", "--journey-card-style-preview"]
@@ -15,16 +105,18 @@ final class JourneyCardStyleUITests: XCTestCase {
         let first = app.buttons["journey-day-day-1"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertTrue(first.label.contains("09:30 首站"))
-        XCTAssertTrue(first.label.contains("地铁"))
+        XCTAssertFalse(first.label.contains("地铁"))
+        XCTAssertTrue(first.label.contains("第1天"))
         sleep(1)
         attach(app, "Native day cards with photos")
         first.swipeUp()
         attach(app, "Native day cards no theme and empty day")
-        XCTAssertTrue(app.buttons["journey-edit-trip"].exists)
+        for _ in 0..<5 where !app.buttons["journey-edit-trip"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["journey-edit-trip"].isHittable)
         app.buttons["journey-edit-trip"].tap()
         XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 3))
         app.buttons["取消"].tap()
-        first.swipeDown()
+        for _ in 0..<5 where !first.isHittable { app.swipeDown() }
         first.tap()
         sleep(1)
         app.swipeUp()
@@ -37,10 +129,10 @@ final class JourneyCardStyleUITests: XCTestCase {
         app.buttons["archive-detail-close"].tap()
         XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
         XCTAssertEqual(card.frame.minY, initialY, accuracy: 2)
-        app.swipeUp()
         let settings = app.buttons["archive-settings"]
+        if !settings.isHittable { app.swipeDown() }
         XCTAssertTrue(settings.isHittable)
-        attach(app, "Native archive settings capsule")
+        attach(app, "Archive title settings button")
         settings.tap()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 3))
     }
@@ -54,14 +146,14 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
         let schedule = app.buttons["route-0-schedule-demo-0"]
         XCTAssertTrue(schedule.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["map-day-trip-title"].exists)
+        XCTAssertTrue(app.buttons["day-detail-date-day-1"].exists)
         attach(app, "Day detail scheduled")
         XCTAssertTrue(app.staticTexts["沿街散步，看看老建筑。"].exists)
         schedule.tap()
         XCTAssertTrue(app.textFields["schedule-duration"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields["schedule-duration"].value as? String, "60")
         app.buttons["取消"].tap()
-        app.buttons["route-0-transport-0"].tap()
+        app.otherElements["route-0-transport-0"].firstMatch.press(forDuration: 1)
         XCTAssertTrue(app.textFields["schedule-service"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields["schedule-service"].value as? String, "10号线")
         app.buttons["取消"].tap()
@@ -82,7 +174,7 @@ final class JourneyCardStyleUITests: XCTestCase {
             let day = app.buttons["journey-day-day-1"]
             XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
             XCTAssertTrue(app.buttons["route-0-marker-demo-0"].waitForExistence(timeout: 5))
-            XCTAssertFalse(app.buttons["route-0-transport-0"].exists)
+            XCTAssertFalse(app.otherElements["route-0-transport-0"].firstMatch.exists)
             attach(app, large ? "Day detail accessibility type" : "Day detail legacy distance")
             app.terminate()
         }
@@ -104,7 +196,7 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         XCTAssertFalse(note.exists)
         XCTAssertFalse(app.buttons["route-0-schedule-demo-0"].exists)
-        XCTAssertFalse(app.buttons["route-0-transport-0"].exists)
+        XCTAssertFalse(app.otherElements["route-0-transport-0"].firstMatch.exists)
         XCTAssertLessThanOrEqual(app.buttons["day-selection-move"].frame.height, 48)
         XCTAssertLessThanOrEqual(app.buttons["route-0-marker-demo-0"].frame.height, 60)
         attach(app, "Day detail compact selection layout")
@@ -121,7 +213,7 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertTrue(day.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.9))
         day.tap()
-        XCTAssertTrue(app.staticTexts["map-day-trip-title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["day-detail-date-day-1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["route-0-marker-demo-2"].exists)
         XCTAssertFalse(app.staticTexts["未安排"].exists)
         XCTAssertFalse(app.buttons["day-marker-deleted-marker"].exists)

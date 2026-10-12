@@ -23,6 +23,26 @@ final class AIPlannerUITests: XCTestCase {
         shot.name = "Top card and archive divider"; shot.lifetime = .keepAlways; add(shot)
     }
 
+    @MainActor func testTripDetailScrollsBehindIndependentCloseButton() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--scroll-demo", "--archive-preview"]
+        app.launch()
+        let trip = app.buttons["archive-trip-scroll-trip-9"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
+        let close = app.buttons["archive-detail-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let initial = close.frame
+        let list = app.collectionViews.firstMatch
+        list.swipeUp()
+        XCTAssertTrue(close.isHittable)
+        XCTAssertEqual(close.frame.minY, initial.minY, accuracy: 1)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "旅途详情 · 独立圆形关闭按钮与顶部滚动"; shot.lifetime = .keepAlways; add(shot)
+        close.tap()
+        XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
+    }
+
     @MainActor func testPastTripReturnWithTopCardKeepsArchiveGeometry() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--scroll-demo", "--archive-preview"]

@@ -5,12 +5,15 @@ import ImageIO
 struct JourneyDaySummary {
     let theme: String?
     let places: String
+    let routePreviews: [[String]]
+    let unplannedPlaces: [String]
     let timing: String?
     let transport: String?
     let count: Int
     let coverURL: URL?
+    let coverTitle: String?
 
-    init(day: TripDay, index: Int, markers: [Marker]) {
+    init(day: TripDay, index: Int, markers: [Marker], excludingPhotos: Set<URL> = []) {
         let lookup = Dictionary(markers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let title = day.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         theme = title.isEmpty || title.replacingOccurrences(of: " ", with: "") == "第\(index + 1)天" || title == day.date ? nil : title
@@ -18,6 +21,8 @@ struct JourneyDaySummary {
         let routes = day.chains.filter { !$0.isEmpty }
         let routed = Set(routes.flatMap { $0 })
         let extra = day.markerIds.filter { !routed.contains($0) && lookup[$0] != nil }
+        routePreviews = routes.map { $0.compactMap { lookup[$0]?.title } }.filter { !$0.isEmpty }
+        unplannedPlaces = extra.compactMap { lookup[$0]?.title }
         if routes.isEmpty {
             places = day.markerIds.compactMap { lookup[$0]?.title }.joined(separator: " · ")
         } else {
@@ -42,7 +47,23 @@ struct JourneyDaySummary {
             }
         }
         transport = modes.isEmpty ? nil : modes.prefix(2).map(\.label).joined(separator: "·") + (modes.count > 2 ? "等\(modes.count)种交通" : "")
-        coverURL = Self.cover(ids: routes.flatMap { $0 } + day.markerIds, markers: lookup)
+        let coverMarker = (routes.flatMap { $0 } + day.markerIds).lazy.compactMap { lookup[$0] }
+            .first { marker in
+                guard let url = marker.content.headerImage.flatMap(imageURL) else { return false }
+                return !excludingPhotos.contains(url)
+            }
+        coverURL = coverMarker?.content.headerImage.flatMap(imageURL)
+        coverTitle = coverMarker?.title
+    }
+
+    // Assign in display order, not image-load or scroll order.
+    static func chapters(days: [TripDay], markers: [Marker], excludingPhotos: Set<URL> = []) -> [JourneyDaySummary] {
+        var used = excludingPhotos
+        return days.enumerated().map { index, day in
+            let summary = JourneyDaySummary(day: day, index: index, markers: markers, excludingPhotos: used)
+            if let url = summary.coverURL { used.insert(url) }
+            return summary
+        }
     }
 
     static func cover(trip: Trip, markers: [Marker]) -> URL? {
@@ -89,54 +110,56 @@ actor JourneyPhotoCache {
 struct JourneyDayCardContent: View {
     let day: TripDay
     let index: Int
-    let markers: [Marker]
+    let summary: JourneyDaySummary
     var loadPhotos = true
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var photo: UIImage?
     @State private var loadedURL: URL?
 
     var body: some View {
-        let summary = JourneyDaySummary(day: day, index: index, markers: markers)
-        VStack(alignment: .leading, spacing: 14) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline) { dayTitle; Spacer(minLength: 12); date }
-                VStack(alignment: .leading, spacing: 5) { dayTitle; date }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { dayTitle; dateRule; date }
+                    VStack(alignment: .leading, spacing: 6) { dayTitle; date }
+                }
+                Spacer(minLength: 8)
+                Color.clear.frame(width: 44, height: 34).accessibilityHidden(true)
+            }
+            if let theme = summary.theme {
+                Text(theme).font(.title2.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if summary.coverURL != nil {
+                VStack(alignment: .trailing, spacing: 6) {
+                    Color.clear.aspectRatio(2.2, contentMode: .fit)
+                        .overlay {
+                            if let photo, loadedURL == summary.coverURL {
+                                GeometryReader { geometry in
+                                    Image(uiImage: photo).resizable().scaledToFill()
+                                        .frame(width: geometry.size.width, height: geometry.size.height)
+                                        .clipped()
+                                }
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .accessibilityHidden(true)
+                    Text(summary.coverTitle ?? "").font(.caption2).foregroundStyle(.secondary)
+                        .opacity(photo != nil && loadedURL == summary.coverURL ? 1 : 0)
+                }
             }
             if summary.count == 0 {
                 Text("还没有安排地点").font(.subheadline).foregroundStyle(.secondary)
             } else {
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        if let theme = summary.theme {
-                            Text(theme).font(.headline).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                        }
-                        if summary.theme == nil {
-                            untitledPlaces
-                        } else if !summary.places.isEmpty {
-                            Text(summary.places)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    if let photo, loadedURL == summary.coverURL, !typeSize.isAccessibilitySize {
-                        Image(uiImage: photo).resizable().scaledToFill().frame(width: summary.theme == nil ? 60 : 72, height: summary.theme == nil ? 60 : 76)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .accessibilityHidden(true)
-                    }
-                }
-                .frame(minHeight: summary.coverURL != nil && !typeSize.isAccessibilitySize ? (summary.theme == nil ? 60 : 76) : nil, alignment: .top)
+                JourneyRoutePreview(summary: summary)
             }
-            Rectangle().fill(.quaternary).frame(height: 0.5).accessibilityHidden(true)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { timing(summary); Spacer(minLength: 4); transport(summary); count(summary) }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack { timing(summary); Spacer(minLength: 4); count(summary) }
-                    transport(summary)
-                }
-            }.font(.caption).foregroundStyle(.secondary)
+            Text("\(summary.count) 个地点" + (summary.timing.map { " · " + $0 } ?? ""))
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(.primary).padding(.top, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .foregroundStyle(.primary)
+        .accessibilityElement(children: .combine)
         .task(id: loadPhotos ? summary.coverURL : nil) {
             guard loadPhotos, let url = summary.coverURL else { return }
             let image = await JourneyPhotoCache.shared.image(for: url)
@@ -145,39 +168,26 @@ struct JourneyDayCardContent: View {
             withTransaction(transaction) { photo = image; loadedURL = url }
         }
     }
-    private var untitledPlaces: some View {
-        let route = day.chains.first { !$0.isEmpty }
-        let ids = route ?? day.markerIds
-        return ViewThatFits(in: .horizontal) {
-            placePreview(ids: ids, limit: 3, ordered: route != nil, wholeNames: true)
-            placePreview(ids: ids, limit: 2, ordered: route != nil, wholeNames: true)
-            placePreview(ids: ids, limit: 1, ordered: route != nil, wholeNames: false)
-        }
+    private var dayTitle: some View {
+        Text(String(format: "%02d", index + 1))
+            .font(.largeTitle.weight(.regular)).monospacedDigit()
+            .accessibilityLabel("第\(index + 1)天")
     }
-    private func placePreview(ids: [String], limit: Int, ordered: Bool, wholeNames: Bool) -> some View {
-        let shown = Array(ids.prefix(limit))
-        let remaining = Set(day.markerIds).subtracting(shown).count
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                ForEach(Array(shown.enumerated()), id: \.offset) { position, id in
-                    if position > 0 {
-                        if ordered { Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.tertiary) }
-                        else { Text("·").foregroundStyle(.tertiary) }
-                    }
-                    Text(markers.first { $0.id == id }?.title ?? "未载入地点")
-                        .lineLimit(1).fixedSize(horizontal: wholeNames, vertical: false)
-                }
-            }.font(.subheadline).foregroundStyle(Color(uiColor: .label).opacity(0.8))
-            if remaining > 0 {
-                Text("另有 \(remaining) 个地点").font(.caption).foregroundStyle(.secondary)
-            }
-        }
+    private var dateRule: some View {
+        Rectangle().fill(.tertiary).frame(width: 20, height: 0.5).accessibilityHidden(true)
     }
-    private var dayTitle: some View { Text("第\(index + 1)天").font(.headline) }
     private var date: some View {
-        Text(Self.dateFormatter.string(from: Date.fromDay(day.date)))
-            .font(.caption).foregroundStyle(.secondary).fixedSize()
+        Text(Self.chapterDateFormatter.string(from: Date.fromDay(day.date)))
+            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
+    private static let chapterDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "M月d日 · EEE"
+        return formatter
+    }()
     static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
@@ -186,16 +196,54 @@ struct JourneyDayCardContent: View {
         formatter.dateFormat = "MM/dd·EEE"
         return formatter
     }()
-    @ViewBuilder private func timing(_ summary: JourneyDaySummary) -> some View {
-        if let timing = summary.timing {
-            HStack(spacing: 4) {
-                Image(systemName: "clock").accessibilityHidden(true)
-                Text(timing)
-            }.fixedSize(horizontal: true, vertical: false)
+}
+
+/// A preview, not a second full itinerary: keep separate routes and unordered members distinct.
+private struct JourneyRoutePreview: View {
+    let summary: JourneyDaySummary
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(Array(summary.routePreviews.prefix(2).enumerated()), id: \.offset) { routeIndex, names in
+                VStack(alignment: .leading, spacing: 0) {
+                    if summary.routePreviews.count > 1 {
+                        Text("路线 \(routeIndex + 1)").font(.caption).foregroundStyle(.secondary).padding(.bottom, 8)
+                    }
+                    let shown = Array(names.prefix(3))
+                    ForEach(Array(shown.enumerated()), id: \.offset) { index, name in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(spacing: 0) {
+                                Circle().strokeBorder(Color(uiColor: .secondaryLabel), lineWidth: 1)
+                                    .frame(width: 6, height: 6).padding(.top, 7)
+                                Rectangle().fill(Color(uiColor: .separator)).frame(width: 1)
+                                    .opacity(index < shown.count - 1 || names.count > shown.count ? 1 : 0)
+                            }.frame(width: 10).accessibilityHidden(true)
+                            Text(name).font(.subheadline).foregroundStyle(.primary)
+                                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, index < shown.count - 1 || names.count > shown.count ? 12 : 0)
+                        }.fixedSize(horizontal: false, vertical: true)
+                    }
+                    if names.count > shown.count {
+                        Text("还有 \(names.count - shown.count) 站")
+                            .font(.caption).foregroundStyle(.secondary).padding(.leading, 22)
+                    }
+                }
+            }
+            if summary.routePreviews.count > 2 {
+                Text("还有 \(summary.routePreviews.count - 2) 条路线").font(.caption).foregroundStyle(.secondary)
+            }
+            if !summary.unplannedPlaces.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("未编排 · \(summary.unplannedPlaces.count) 个地点")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if summary.routePreviews.isEmpty {
+                        Text(summary.unplannedPlaces.joined(separator: " · "))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                            .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                    }
+                }.padding(.top, summary.routePreviews.isEmpty ? 0 : 2)
+            }
         }
     }
-    @ViewBuilder private func transport(_ summary: JourneyDaySummary) -> some View {
-        if let transport = summary.transport { Text(transport).fixedSize(horizontal: true, vertical: false) }
-    }
-    private func count(_ summary: JourneyDaySummary) -> some View { Text("\(summary.count) 个地点").fixedSize() }
 }

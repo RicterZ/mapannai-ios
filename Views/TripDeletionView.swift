@@ -33,56 +33,52 @@ private struct DeletionConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var deleteExclusiveMarkers = false
     @State private var deleting = false
-    @ScaledMetric(relativeTo: .title2) private var titleHeight = 26
 
     var body: some View {
-            VStack(spacing: 8) {
-                Text(title).font(.title2.bold()).frame(height: titleHeight)
-                VStack(spacing: 0) {
-                Text(message)
-                    .font(.body).foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                List(selection: Binding<Set<String>>(
-                    get: { deleteExclusiveMarkers ? ["places"] : [] },
-                    set: { deleteExclusiveMarkers = $0.contains("places") }
-                )) {
-                    Text("同时删除行程内所有标记").font(.body)
-                        .foregroundStyle(.secondary)
-                        .tag("places")
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 0))
-                        .accessibilityIdentifier("delete-\(kind)-markers")
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "trash").font(.subheadline)
+                        Text("移除行程").font(.caption)
+                    }.foregroundStyle(.secondary)
+                    Text(title).font(.title2.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(message).font(.body).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .environment(\.editMode, .constant(.active))
-                .listStyle(.plain)
-                .scrollDisabled(true)
-                .scrollContentBackground(.hidden)
-                .frame(height: 44)
-                }
-                .offset(y: 3)
+                Divider()
+                Button { deleteExclusiveMarkers.toggle() } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: deleteExclusiveMarkers ? "checkmark.circle.fill" : "circle")
+                            .font(.title3).foregroundStyle(deleteExclusiveMarkers ? Color.primary : Color.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("同时删除独占地点").font(.body).foregroundStyle(.primary)
+                            Text("其他行程仍在使用的地点会保留。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }.frame(minHeight: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                    .accessibilityValue(deleteExclusiveMarkers ? "已选" : "未选")
+                    .accessibilityIdentifier("delete-\(kind)-markers")
                 HStack(spacing: 12) {
                     Button { dismiss() } label: {
-                        Text("取消").foregroundStyle(Color(uiColor: .systemBlue))
-                            .frame(maxWidth: .infinity)
-                    }.buttonStyle(.bordered).tint(Color(uiColor: .systemGray))
+                        Text("取消").font(.body.weight(.medium)).frame(maxWidth: .infinity, minHeight: 52)
+                            .foregroundStyle(.primary)
+                            .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                    }.buttonStyle(.plain)
                     Button(role: .destructive) {
                         deleting = true
                         let includeMarkers = deleteExclusiveMarkers
                         dismiss()
                         action(includeMarkers)
                     } label: {
-                        Text(title).frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered).tint(.red)
-                    .accessibilityIdentifier("confirm-delete-\(kind)")
+                        Text(title).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
+                            .foregroundStyle(.white).background(Color.red, in: Capsule())
+                    }.buttonStyle(.plain).accessibilityIdentifier("confirm-delete-\(kind)")
                 }
-                .controlSize(.large)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 16)
+            .padding(24)
             .disabled(deleting || store.saving)
             .fixedSize(horizontal: false, vertical: true)
             .background {
@@ -102,7 +98,71 @@ private struct DeletionConfirmationView: View {
                 }
             }
         .presentationDetents([.height(max(160, contentHeight - bottomSafeArea))])
+        .presentationBackground(Color(uiColor: .systemBackground))
         .presentationDragIndicator(.hidden)
         .interactiveDismissDisabled(deleting)
+    }
+}
+
+extension View {
+    func journeyError(store: AppStore, enabled: Bool = true) -> some View {
+        modifier(JourneyErrorPresentation(store: store, enabled: enabled))
+    }
+}
+
+private struct JourneyErrorPresentation: ViewModifier {
+    @ObservedObject var store: AppStore
+    let enabled: Bool
+    @State private var resumeAfterDismiss = false
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: Binding(get: { enabled && store.errorMessage != nil },
+            set: { if !$0 && enabled { store.errorMessage = nil } }), onDismiss: {
+                if resumeAfterDismiss { resumeAfterDismiss = false; store.resumeFailedSave() }
+            }) {
+                JourneyErrorPanel(message: store.errorMessage ?? "", canResume: store.canResumeFailedSave) {
+                    resumeAfterDismiss = $0
+                    store.errorMessage = nil
+                }
+            }
+    }
+}
+
+private struct JourneyErrorPanel: View {
+    let message: String
+    let canResume: Bool
+    let close: (Bool) -> Void
+    @State private var height: CGFloat = 280
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            contents
+            ScrollView { contents }
+        }
+        .presentationDetents([.height(height)])
+        .presentationBackground(Color(uiColor: .systemBackground))
+        .presentationDragIndicator(.hidden)
+    }
+    private var contents: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Image(systemName: "exclamationmark.circle").font(.title2).foregroundStyle(.secondary)
+            Text("未能完成操作").font(.title2.weight(.semibold))
+            Text(message).font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 12) {
+                Button { close(false) } label: {
+                    Text("知道了").frame(maxWidth: .infinity, minHeight: 52)
+                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                }.buttonStyle(.plain)
+                if canResume {
+                    Button { close(true) } label: {
+                        Text("继续编辑").frame(maxWidth: .infinity, minHeight: 52)
+                            .foregroundStyle(Color(uiColor: .systemBackground))
+                            .background(Color(uiColor: .label), in: Capsule())
+                    }.buttonStyle(.plain)
+                }
+            }.font(.body.weight(.medium))
+        }.padding(24).accessibilityIdentifier("journey-error-panel")
+            .background(GeometryReader { proxy in
+                Color.clear.onAppear { height = proxy.size.height }
+                    .onChange(of: proxy.size.height) { _, value in height = value }
+            })
     }
 }

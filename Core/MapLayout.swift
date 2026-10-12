@@ -30,4 +30,4 @@ enum ItineraryDetent: Equatable {
 }
 
 // Content height excludes the system bottom safe area.
-enum DayMapPresentation { static let contentHeight: Double = 160 }
+enum DayMapPresentation { static let contentHeight: Double = 140 }

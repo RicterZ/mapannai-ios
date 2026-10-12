@@ -3,7 +3,7 @@ import XCTest
 final class SettingsAboutTests: XCTestCase {
     @MainActor func testMapEntryHasNoAssistantAndSettingsKeepMapControls() {
         let map = XCUIApplication(); map.launchArguments = ["--demo"]; map.launch()
-        XCTAssertTrue(map.buttons["journey-back"].waitForExistence(timeout: 10))
+        XCTAssertTrue(map.buttons["day-search-add-place"].waitForExistence(timeout: 10))
         XCTAssertFalse(map.buttons["open-ai-planner"].exists)
         map.terminate()
         let app = openSettings()
@@ -47,7 +47,7 @@ final class SettingsAboutTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
         let settings = app.buttons["archive-settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
-        if !settings.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        if !settings.isHittable { app.scrollViews.firstMatch.swipeDown() }
         XCTAssertTrue(settings.isHittable); settings.tap()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         return app

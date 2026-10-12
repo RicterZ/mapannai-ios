@@ -10,8 +10,8 @@ final class RouteScheduleUITests: XCTestCase {
         let day = app.buttons["journey-day-day-1"]
         XCTAssertTrue(day.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
-        let leg = app.buttons["route-0-transport-0"]
-        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.tap()
+        let leg = app.otherElements["route-0-transport-0"].firstMatch
+        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.press(forDuration: 1)
         let service = app.textFields["schedule-service"]
         XCTAssertTrue(service.waitForExistence(timeout: 5))
         XCTAssertEqual(service.value as? String, "10号线")
@@ -28,7 +28,7 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["schedule-clear"].isHittable)
         capture(app, "交通安排 · 时间备注与操作")
         app.buttons["schedule-cancel"].tap()
-        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.tap()
+        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.press(forDuration: 1)
         XCTAssertTrue(service.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["schedule-mode-subway"].isSelected, "取消不能保存交通方式修改")
         XCTAssertEqual(service.value as? String, "10号线")
@@ -60,7 +60,7 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertTrue(b.waitForExistence(timeout: 5))
         b.press(forDuration: 0.7)
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["10号线"].exists)
+        XCTAssertTrue(app.staticTexts["地铁 · 10号线"].exists)
         let initialLayout = expectation(description: "Initial sheet layout settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { initialLayout.fulfill() }
         wait(for: [initialLayout], timeout: 2)
@@ -70,7 +70,7 @@ final class RouteScheduleUITests: XCTestCase {
         wait(for: [updatedOrdinal], timeout: 2)
         XCTAssertEqual(b.value as? String, "3")
         XCTAssertEqual(c.value as? String, "2")
-        XCTAssertFalse(app.staticTexts["10号线"].exists)
+        XCTAssertFalse(app.staticTexts["地铁 · 10号线"].exists)
         XCTAssertEqual(app.staticTexts["route-drag-diagnostics"].value as? String, "0", "Geometry changes must not update the List during native insertion animation")
         XCTAssertTrue((app.buttons["route-0-schedule-demo-1"].value as? String)?.contains("10:45") == true)
         let disconnected = XCTAttachment(screenshot: app.screenshot())
@@ -81,7 +81,7 @@ final class RouteScheduleUITests: XCTestCase {
         wait(for: [restoredOrdinal], timeout: 2)
         XCTAssertEqual(b.value as? String, "2")
         XCTAssertEqual(c.value as? String, "3")
-        XCTAssertTrue(app.staticTexts["10号线"].exists)
+        XCTAssertTrue(app.staticTexts["地铁 · 10号线"].exists)
         XCTAssertEqual(app.buttons.matching(identifier: "route-0-marker-demo-1").count, 1)
         XCTAssertEqual(a.value as? String, "1")
         XCTAssertEqual(app.staticTexts["route-drag-diagnostics"].value as? String, "0")

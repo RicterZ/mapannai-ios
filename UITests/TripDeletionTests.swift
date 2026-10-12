@@ -14,12 +14,12 @@ final class TripDeletionTests: XCTestCase {
         if !row.isHittable { app.collectionViews.firstMatch.swipeUp() }
         row.press(forDuration: 1)
         app.buttons["删除旅途"].tap()
-        let option = app.staticTexts["delete-trip-markers"]
+        let option = app.buttons["delete-trip-markers"]
         XCTAssertTrue(option.waitForExistence(timeout: 5))
-        let rowChoice = app.cells.containing(.staticText, identifier: "delete-trip-markers").firstMatch
-        XCTAssertFalse(rowChoice.isSelected)
+        let rowChoice = option
+        XCTAssertEqual(rowChoice.value as? String, "未选")
         rowChoice.tap()
-        expectation(for: NSPredicate(format: "selected == true"), evaluatedWith: rowChoice)
+        expectation(for: NSPredicate(format: "value == %@", "已选"), evaluatedWith: rowChoice)
         waitForExpectations(timeout: 3)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "Native trip deletion checkmark"

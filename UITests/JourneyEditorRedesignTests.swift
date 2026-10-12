@@ -13,6 +13,135 @@ final class JourneyEditorRedesignTests: XCTestCase {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = name; shot.lifetime = .keepAlways; add(shot)
     }
+    @MainActor func testApprovedDayItineraryThreeHeights() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--transport-schedule-preview", "--inline-address-preview", "--day-detail-style-preview", "--day-detail-long-preview", "--day-chain-layout-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 8)); trip.tap()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+        XCTAssertTrue(app.buttons["day-detail-date-day-1"].waitForExistence(timeout: 5))
+        capture("Approved day detail full height")
+        let address = app.staticTexts["route-0-address-demo-0"]
+        XCTAssertTrue(address.exists)
+        address.press(forDuration: 1)
+        XCTAssertEqual(address.value as? String, "已复制完整地址")
+        let transport = app.otherElements["route-0-transport-0"].firstMatch
+        let expand = transport.buttons["展开备注"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 3))
+        expand.tap()
+        XCTAssertTrue(transport.buttons["收起备注"].waitForExistence(timeout: 3))
+        transport.buttons["收起备注"].tap()
+        if transport.exists { transport.press(forDuration: 1) }
+        else { app.staticTexts["地铁 · 10号线"].press(forDuration: 1) }
+        XCTAssertTrue(app.textFields["schedule-service"].waitForExistence(timeout: 3))
+        app.buttons["schedule-cancel"].tap()
+        let handle = app.buttons["面板高度"]
+        handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)))
+        capture("Approved day detail half height")
+        handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+        let chain = app.scrollViews["day-map-chain"]
+        XCTAssertTrue(chain.waitForExistence(timeout: 5))
+        let first = app.buttons["day-map-stop-demo-0"]
+        XCTAssertLessThanOrEqual(first.frame.height, 68)
+        XCTAssertLessThan(first.frame.width, app.frame.width * 0.6)
+        XCTAssertLessThanOrEqual(first.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "武康大楼")).firstMatch.frame.height, 22)
+        capture("Approved compact single-line cards")
+        chain.swipeLeft(); chain.swipeLeft(); chain.swipeLeft()
+        let last = app.buttons["day-map-stop-demo-3"]
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(last.frame.width, app.frame.width - 60)
+        XCTAssertLessThanOrEqual(last.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "静安寺")).firstMatch.frame.height, 22)
+        capture("Approved compact last stop full width")
+    }
+
+    @MainActor func testArchiveCloseKeepsHeaderPositionAndHidesCloseButton() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
+        let heading = app.staticTexts["archive-page-title"]
+        let card = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let y = heading.frame.minY
+        let cardY = card.frame.minY
+        for _ in 0..<2 {
+            card.tap()
+            let close = app.buttons["archive-detail-close"]
+            XCTAssertTrue(close.waitForExistence(timeout: 5))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.7))
+            close.tap()
+            XCTAssertTrue(close.waitForNonExistence(timeout: 2))
+            XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
+            XCTAssertEqual(heading.frame.minY, y, accuracy: 1)
+            XCTAssertEqual(card.frame.minY, cardY, accuracy: 1)
+        }
+    }
+
+    @MainActor func testArchiveHeaderSettingsAndFloatingCreate() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
+        let heading = app.staticTexts["archive-page-title"]
+        let settings = app.buttons["archive-settings"]
+        let create = app.buttons["archive-create"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertEqual(settings.frame.midY, heading.frame.midY, accuracy: 3)
+        XCTAssertGreaterThan(settings.frame.minX, heading.frame.maxX)
+        XCTAssertGreaterThan(create.frame.minY, app.frame.height * 0.75)
+        settings.tap()
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+        app.terminate(); app.launch()
+        XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
+        XCTAssertTrue(app.textFields["trip-name-field"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testSearchPanelBackgroundContinuesBehindKeyboard() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--paged-search-demo"]; app.launch()
+        let add = app.buttons["day-search-add-place"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        if !add.isHittable { app.swipeUp() }
+        add.tap()
+        let search = app.searchFields["map-place-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        let panel = app.otherElements["edge-attached-panel"].firstMatch
+        let originalTop = panel.frame.minY
+        search.tap(); search.typeText("coffee")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.isHittable)
+        XCTAssertGreaterThanOrEqual(panel.frame.maxY, app.frame.maxY - 1)
+        XCTAssertLessThan(panel.frame.minY, originalTop)
+        capture("Search background extends behind keyboard")
+        search.typeText("\n")
+        let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.keyboards.firstMatch)
+        wait(for: [dismissed], timeout: 5)
+        XCTAssertEqual(panel.frame.minY, originalTop, accuracy: 3)
+    }
+
+    @MainActor func testCompactSearchRetainsFullHeightAndGrabber() {
+        let app = XCUIApplication(); app.launchArguments = ["--demo", "--paged-search-demo"]; app.launch()
+        let add = app.buttons["day-search-add-place"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        if !add.isHittable { app.swipeUp() }
+        add.tap()
+        let search = app.searchFields["map-place-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap(); search.typeText("coffee\n")
+        sleep(1)
+        let grabber = app.buttons["edge-panel-grabber"].firstMatch
+        XCTAssertTrue(grabber.waitForExistence(timeout: 5))
+        let start = grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+        sleep(1)
+        XCTAssertGreaterThan(search.frame.minY, app.frame.height * 0.75)
+        XCTAssertGreaterThanOrEqual(search.frame.height, 34)
+        XCTAssertTrue(search.isHittable)
+        XCTAssertTrue(grabber.isHittable)
+        XCTAssertEqual(search.value as? String, "coffee")
+        capture("Compact search full height and visible grabber")
+        grabber.tap()
+        sleep(1)
+        XCTAssertLessThan(search.frame.minY, app.frame.height * 0.75)
+    }
+
     @MainActor func testInlineArchiveTitleAndStableYearCardsReturnToSamePosition() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -61,12 +190,15 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertTrue(remove.isHittable)
         let itinerary = app.buttons["marker-itinerary-day-1"]
         XCTAssertGreaterThan(navigate.frame.minY, itinerary.frame.maxY)
-        capture("地点详情 · 操作位于所属行程下方")
+        XCTAssertTrue(itinerary.label.contains("2026/10/01"))
+        XCTAssertFalse(app.staticTexts["在今日行程中"].exists)
+        XCTAssertFalse(app.buttons["add-marker-to-current-day"].exists)
+        capture("地点详情 · 日期归属与当前日勾选")
         remove.tap()
         XCTAssertTrue(app.alerts["从今日行程移除？"].waitForExistence(timeout: 5))
         capture("从今日移除 · 保留收藏和其他日期")
         app.alerts.buttons["取消"].tap()
-        XCTAssertTrue(app.otherElements["marker-in-current-day"].exists || app.staticTexts["marker-in-current-day"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["marker-in-current-day"].exists)
         XCTAssertTrue(remove.exists)
         app.buttons["close-marker-detail"].tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -381,7 +513,18 @@ final class JourneyEditorRedesignTests: XCTestCase {
         let result = app.buttons["add-place-result-paged-0"]
         XCTAssertTrue(result.waitForExistence(timeout: 5)); result.tap()
         let back = app.buttons["search-detail-back"]
-        XCTAssertTrue(back.waitForExistence(timeout: 8)); back.tap()
+        XCTAssertTrue(back.waitForExistence(timeout: 8))
+        let panel = app.otherElements["edge-attached-panel"].firstMatch
+        let originalTop = panel.frame.minY
+        let handle = app.buttons["edge-panel-grabber"].firstMatch
+        handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.97)))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        XCTAssertEqual(panel.frame.minY, originalTop, accuracy: 3)
+        XCTAssertTrue(back.isHittable)
+        XCTAssertTrue(app.buttons["search-detail-add"].isHittable)
+        capture("Search place detail stops at half height")
+        back.tap()
         XCTAssertTrue(search.waitForExistence(timeout: 8))
         XCTAssertEqual(search.value as? String, "咖啡")
         app.buttons["close-place-picker"].tap()
@@ -425,7 +568,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
         let day = app.buttons["journey-day-day-1"]
         XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
-        XCTAssertTrue(app.staticTexts["map-day-trip-title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["day-detail-date-day-1"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["archive-day-map"].exists)
         let initialHandle = app.buttons["面板高度"]
         initialHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1,
@@ -456,11 +599,11 @@ final class JourneyEditorRedesignTests: XCTestCase {
         app.buttons["day-map-date-day-1"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.40)))
         XCTAssertTrue(app.otherElements["phone-itinerary-panel"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["day-detail-date-day-1"].exists)
-        XCTAssertTrue(app.staticTexts["map-day-trip-title"].isHittable)
-        XCTAssertGreaterThan(app.staticTexts["map-day-trip-title"].frame.height, 15)
-        let titleTop = app.staticTexts["map-day-trip-title"].frame.minY
+        XCTAssertTrue(app.buttons["day-detail-date-day-1"].isHittable)
+        XCTAssertGreaterThan(app.buttons["day-detail-date-day-1"].frame.height, 15)
+        let titleTop = app.buttons["day-detail-date-day-1"].frame.minY
         let panelTop = app.otherElements["edge-attached-panel"].firstMatch.frame.minY
-        XCTAssertLessThanOrEqual(titleTop - panelTop, 20)
+        XCTAssertLessThanOrEqual(titleTop - panelTop, 28)
         XCTAssertFalse(app.buttons["map-day-close"].exists)
         XCTAssertFalse(app.buttons["map-day-map"].exists)
         let panel = app.otherElements["edge-attached-panel"].firstMatch

@@ -8,14 +8,6 @@ struct JourneyEditorHeading: View {
             .foregroundStyle(Color(uiColor: .label)).accessibilityAddTraits(.isHeader)
     }
 }
-struct JourneyEditorCard<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) { content }
-            .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
-    }
-}
 struct JourneyEditorSubmit: View {
     let title: String
     let enabled: Bool

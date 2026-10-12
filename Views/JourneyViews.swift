@@ -22,6 +22,10 @@ struct JourneyDaysContents: View {
     @State private var editing = false
     @State private var deletion: TripDay?
     var body: some View {
+        let days = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
+        let cover = archiveColorIndex == nil ? nil : JourneyDaySummary.cover(trip: trip, markers: store.markers)
+        let summaries = JourneyDaySummary.chapters(days: days, markers: store.markers,
+            excludingPhotos: Set([cover].compactMap { $0 }))
         List {
             if let archiveColorIndex {
                 Section {
@@ -46,30 +50,41 @@ struct JourneyDaysContents: View {
             }
             Group {
 
-            ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, day in
+            ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
                 Section {
+                ZStack(alignment: .topTrailing) {
                 Button {
                     if let onSelectDay { onSelectDay(day) }
                     else { store.select(trip: trip, day: day); store.beginDayMapBrowsing() }
                 } label: {
-                    dayRow(day, index: index)
+                    dayRow(day, index: index, summary: summaries[index])
                         .contentShape(Rectangle())
                         .background(GeometryReader { geometry in
                             Color.clear.preference(key: NativeDayFrames.self, value: [day.id: geometry.frame(in: .global)])
                         })
-                }.buttonStyle(.automatic).accessibilityIdentifier("journey-day-\(day.id)")
-                    .listRowBackground(Color(uiColor: .systemBackground)
-                        .overlay(Color(uiColor: .tertiarySystemFill).opacity(targetedDayID == day.id ? 1 : 0)))
+                }.buttonStyle(.plain).disabled(day.id.hasPrefix("pending-day-"))
+                    .accessibilityIdentifier("journey-day-\(day.id)")
+                    .contextMenu { dayActions(day) }
+                Menu { dayActions(day) } label: {
+                    Image(systemName: "ellipsis").font(.body.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("第\(index + 1)天的操作")
+                .accessibilityIdentifier("journey-day-menu-\(day.id)")
+                }
+
+                    .listRowInsets(EdgeInsets(top: 16, leading: 4, bottom: 16, trailing: 4))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color(uiColor: .tertiarySystemFill).opacity(targetedDayID == day.id ? 1 : 0))
                     .animation(reduceMotion ? nil : .default, value: targetedDayID == day.id)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button { deletion = day } label: { Image(systemName: "trash") }
-                            .accessibilityLabel("删除")
-                            .buttonStyle(.automatic).tint(.red).disabled(trip.days.count <= 1 || store.saving)
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button { store.beginDayEditor(trip: trip, day: day) } label: { Image(systemName: "pencil") }
+                            .accessibilityLabel("编辑").tint(.blue).disabled(store.saving)
                     }
-                    .contextMenu {
-                        DestructiveMenuButton(title: "删除日期", systemImage: "trash") { deletion = day }
-                            .disabled(trip.days.count <= 1 || store.saving)
-                    }
+
+
                 }
             }
             if !unscheduledPlaces.isEmpty {
@@ -106,13 +121,7 @@ struct JourneyDaysContents: View {
                             Label("添加地点", systemImage: "plus")
                         }.accessibilityIdentifier("trip-add-place")
                     }
-                    Button { Task {
-                        let next = Calendar(identifier: .gregorian).date(byAdding: .day, value: 1, to: .fromDay(trip.endDate))!.dayString
-                        _ = await store.perform { client in
-                            try await client.mutate("trips/\(APIClient.id(trip.id))/days", method: "POST", body: ["date": next])
-                            try await client.mutate("trips/\(APIClient.id(trip.id))", method: "PUT", body: ["endDate": next])
-                        }
-                    }} label: { Label("添加一天", systemImage: "plus") }
+                    Button { store.beginDayEditor(trip: trip) } label: { Label("添加一天", systemImage: "plus") }
                         .disabled(store.saving)
                         .accessibilityIdentifier("journey-add-day")
                     Button { editing = true } label: {
@@ -125,7 +134,9 @@ struct JourneyDaysContents: View {
             }
         }
             .onPreferenceChange(ArchiveHeaderFrame.self) { if !$0.isEmpty { onArchiveHeaderFrame($0) } }
-            .listSectionSpacing(12)
+            .scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemBackground))
+            .listSectionSpacing(8)
             .onPreferenceChange(NativeDayFrames.self) { nativeDayFrames = $0 }
             .sensoryFeedback(.selection, trigger: targetedDayID) { _, newValue in newValue != nil }
             .background(NativePlaceListDrop(frames: nativeDayFrames, prefix: "trip-place/" + trip.id + "/", onTarget: { targetedDayID = $0 }) { id, dayID in
@@ -134,10 +145,22 @@ struct JourneyDaysContents: View {
                 }
             })
             .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
+            .sheet(item: Binding(get: { archiveColorIndex != nil && store.dayEditorDraft?.tripID == trip.id ? store.dayEditorDraft : nil },
+                set: { if $0 == nil, archiveColorIndex != nil, store.dayEditorDraft?.tripID == trip.id { store.dayEditorDraft = nil } })) { draft in
+                JourneyDayEditor(store: store, draft: draft)
+            }
             .sheet(item: $deletion) { day in
                 DayDeletionView(store: store, day: day)
             }
     }
+    @ViewBuilder private func dayActions(_ day: TripDay) -> some View {
+        Button("编辑", systemImage: "pencil") {
+            store.beginDayEditor(trip: trip, day: day)
+        }.disabled(store.saving)
+        DestructiveMenuButton(title: "删除", systemImage: "trash") { deletion = day }
+            .disabled(trip.days.count <= 1 || store.saving)
+    }
+
     /// The day membership endpoint atomically removes the trip-only membership.
     private func assignPreviewPlaces(_ payloads: [String], to day: TripDay) -> Bool {
         let prefix = "trip-place/" + trip.id + "/"
@@ -163,8 +186,8 @@ struct JourneyDaysContents: View {
         return true
     }
 
-    private func dayRow(_ day: TripDay, index: Int) -> some View {
-        JourneyDayCardContent(day: day, index: index, markers: store.markers,
+    private func dayRow(_ day: TripDay, index: Int, summary: JourneyDaySummary) -> some View {
+        JourneyDayCardContent(day: day, index: index, summary: summary,
             loadPhotos: archiveColorIndex == nil || archiveHeaderVisible)
             .contentShape(Rectangle())
     }
@@ -242,6 +265,7 @@ struct JourneyArchiveView: View {
                             .listStyle(.insetGrouped)
                             .contentMargins(.top, 16, for: .scrollContent)
                             .scrollClipDisabled()
+                            .modifier(ArchiveDetailScrollEdges())
                             .scrollContentBackground(.hidden)
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
                             .opacity(detailVisible ? 1 : 0)
@@ -275,24 +299,42 @@ struct JourneyArchiveView: View {
                 Rectangle().ignoresSafeArea(.container)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if openedID == nil {
+                Button { creating = true } label: {
+                    Image(systemName: "plus").font(.system(size: 23, weight: .regular))
+                        .frame(width: 52, height: 52)
+                        .background(.regularMaterial, in: Circle())
+                        .overlay { Circle().strokeBorder(Color(uiColor: .separator).opacity(0.15), lineWidth: 0.5) }
+                        .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
+                        .contentShape(Circle())
+                }.buttonStyle(.plain).accessibilityLabel("创建旅行").accessibilityIdentifier("archive-create")
+                    .padding(.trailing, 24).padding(.bottom, 16)
+            }
+        }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Visibility.hidden, for: .navigationBar)
         .tint(Color(uiColor: .label))
         .toolbar {
-            if openedTrip != nil {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(action: close) { Image(systemName: "xmark").foregroundStyle(Color(uiColor: .label)) }
-                        .accessibilityLabel("关闭旅途详情").accessibilityIdentifier("archive-detail-close").buttonStyle(.plain)
-                }.journeyBareBackground
-            } else {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { creating = true } label: { Image(systemName: "plus").foregroundStyle(Color(uiColor: .label)) }
-                        .buttonBorderShape(.circle)
-                        .accessibilityLabel("创建旅行").accessibilityIdentifier("archive-create")
-                }
-            }
+            ToolbarItem(placement: .topBarLeading) {
+                Group {
+                    if openedID != nil && !closing {
+                        Button(action: close) {
+                            Image(systemName: "xmark").font(.system(size: 20, weight: .regular))
+                                .foregroundStyle(Color(uiColor: .label))
+                                .frame(width: 44, height: 44)
+                                .background(.regularMaterial, in: Circle())
+                                .contentShape(Circle())
+                        }.accessibilityLabel("关闭旅途详情")
+                            .accessibilityIdentifier("archive-detail-close").buttonStyle(.plain)
+                    } else {
+                        // Preserve navigation geometry without leaving a hidden UIKit button.
+                        Color.clear.frame(width: 44, height: 44).allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }.transaction { $0.animation = nil }
+            }.journeyBareBackground
         }
         .task(id: openedID == nil ? photoURLs : []) {
             guard openedID == nil else { return }
@@ -335,18 +377,25 @@ struct JourneyArchiveView: View {
         .fullScreenCover(item: Binding(get: { !mapVisible && store.tripSaveRecovery?.trip == nil ? store.tripSaveRecovery : nil }, set: { if !mapVisible { store.tripSaveRecovery = $0 } })) { draft in
             TripCreationView(store: store, initial: draft)
         }
-        .alert("操作失败", isPresented: Binding(get: { !mapVisible && store.errorMessage != nil }, set: { if !$0 && !mapVisible { store.errorMessage = nil } })) {
-            if store.canResumeFailedSave { Button("继续编辑") { store.resumeFailedSave() } }
-            Button("知道了", role: .cancel) { store.errorMessage = nil }
-        } message: { Text(store.errorMessage ?? "") }
+        .journeyError(store: store, enabled: !mapVisible && store.dayEditorDraft == nil)
     }
 
     private func archive(height: CGFloat) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("我的旅途").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                        .accessibilityIdentifier("archive-page-title")
+                    HStack {
+                        Text("我的旅途").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                            .accessibilityIdentifier("archive-page-title")
+                        Spacer()
+                        Button(action: onOpenSettings) {
+                            Image(systemName: "gearshape").font(.system(size: 20))
+                                .frame(width: 44, height: 44)
+                                .background(.regularMaterial, in: Circle())
+                                .contentShape(Circle())
+                        }.buttonStyle(.plain).accessibilityLabel("设置")
+                            .accessibilityIdentifier("archive-settings")
+                    }
                     Text("旅の目的地は、まだ見ぬ地平線の向こうに")
                         .font(.caption).foregroundStyle(.secondary)
                 }.opacity(detailVisible ? 0 : 1)
@@ -361,7 +410,9 @@ struct JourneyArchiveView: View {
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
                         if let group = yearGroups[index] {
                             JourneyArchiveYearCard(year: group.year, count: group.count)
-                                .frame(height: typeSize.isAccessibilitySize ? 204 : 82, alignment: .top)
+                                .frame(height: 204)
+                                .modifier(ArchiveStoragePerspective(enabled: !typeSize.isAccessibilitySize))
+                                .frame(height: typeSize.isAccessibilitySize ? 204 : 96, alignment: .top)
                                 .background(GeometryReader { proxy in
                                     Color.clear.preference(key: ArchiveDividerFrames.self,
                                         value: [index: proxy.frame(in: .named("journey-archive"))])
@@ -374,7 +425,8 @@ struct JourneyArchiveView: View {
                         Button { open(trip, index: index) } label: {
                             JourneyArchiveCard(trip: trip, colorIndex: index, photo: coverPhoto(trip))
                                 .frame(height: 204)
-                                .frame(height: compact ? 82 : 204, alignment: .top)
+                                .modifier(ArchiveStoragePerspective(enabled: !isTop && !typeSize.isAccessibilitySize))
+                                .frame(height: compact ? 96 : 204, alignment: .top)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -395,10 +447,6 @@ struct JourneyArchiveView: View {
                 VStack(spacing: 24) {
                     Text("\(trips.count) 次旅途").font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
-                    Button(action: onOpenSettings) {
-                        Label("设置", systemImage: "gearshape")
-                    }.buttonStyle(JourneyActionStyle())
-                        .accessibilityIdentifier("archive-settings")
                     if !independent.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("未加入行程").font(.headline)
@@ -410,7 +458,7 @@ struct JourneyArchiveView: View {
                         }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
                     }
                 }.opacity(detailVisible ? 0 : 1)
-            }.padding(.horizontal, 16).padding(.vertical, 20).frame(maxWidth: 640).frame(maxWidth: .infinity)
+            }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 84).frame(maxWidth: 640).frame(maxWidth: .infinity)
         }.scrollDisabled(openedID != nil)
             .refreshable { await store.refresh(force: true) }
             .accessibilityIdentifier("archive-trip-list")
@@ -535,6 +583,26 @@ private struct ArchiveCardFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private enum ArchiveStorage {
+    static let angle = -24.0 * Double.pi / 180
+    static func transform(enabled: Bool) -> CATransform3D {
+        guard enabled else { return CATransform3DIdentity }
+        var transform = CATransform3DIdentity
+        transform.m34 = -1 / 1000
+        return CATransform3DRotate(transform, angle, 1, 0, 0)
+    }
+}
+
+private struct ArchiveStoragePerspective: GeometryEffect {
+    let enabled: Bool
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let toOrigin = CATransform3DMakeTranslation(-size.width / 2, -size.height / 2, 0)
+        let rotation = CATransform3DConcat(toOrigin, ArchiveStorage.transform(enabled: enabled))
+        return ProjectionTransform(CATransform3DConcat(rotation,
+            CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)))
     }
 }
 
@@ -665,6 +733,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                 view.frame.origin.y -= topBoundary
                 upperStack.addSubview(view)
             } else { container.addSubview(view) }
+            view.layer.transform = ArchiveStorage.transform(enabled: !card.isTop && !typeSize.isAccessibilitySize)
             context.coordinator.views[card.id] = view
             if card.id != selectedID, let cg = image.cgImage {
                 let input = CIImage(cgImage: cg)
@@ -694,6 +763,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                     view.frame.origin.y -= topBoundary
                     upperStack.addSubview(view)
                 } else { container.addSubview(view) }
+                view.layer.transform = ArchiveStorage.transform(enabled: !typeSize.isAccessibilitySize)
                 context.coordinator.dividerViews[divider.index] = view
             }
         }
@@ -707,32 +777,47 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             selected.isHidden = handedOff
             return
         }
-        let currentFrame = selected.isHidden ? destination : (selected.layer.presentation()?.frame ?? selected.frame)
+        let currentLayer = selected.layer.presentation()
+        let currentBounds = currentLayer?.bounds ?? selected.bounds
+        let currentPosition = currentLayer?.position ?? selected.layer.position
+        let currentTransform = currentLayer?.transform ?? selected.layer.transform
         coordinator.animator?.stopAnimation(true)
-        selected.frame = currentFrame
+        if selected.isHidden {
+            selected.layer.transform = CATransform3DIdentity
+            selected.frame = destination
+        } else {
+            selected.bounds = currentBounds
+            selected.layer.position = currentPosition
+            selected.layer.transform = currentTransform
+        }
         selected.isHidden = false
         if reduceMotion && expanded {
+            selected.layer.transform = CATransform3DIdentity
             selected.frame = destination
             selected.alpha = 0
         }
         coordinator.expanded = expanded
         let upperBottom = cards.filter { $0.index < index }.map { $0.frame.minY + 204 }.max() ?? 0
         let lowerTop = cards.filter { $0.index > index }.map { $0.frame.minY }.min() ?? height
-        let animator = UIViewPropertyAnimator(duration: reduceMotion ? 0.15 : 0.48,
+        let animator = UIViewPropertyAnimator(duration: reduceMotion ? 0.15 : 0.32,
             timingParameters: UISpringTimingParameters(dampingRatio: 1))
         animator.addAnimations {
             for card in cards {
                 guard let cardView = coordinator.views[card.id] else { continue }
                 if card.id == selectedID {
                     if !reduceMotion {
-                        cardView.frame = expanded ? destination : CGRect(x: card.frame.minX,
+                        let target = expanded ? destination : CGRect(x: card.frame.minX,
                             y: card.frame.minY, width: card.frame.width, height: 204)
+                        cardView.bounds = CGRect(origin: .zero, size: target.size)
+                        cardView.center = CGPoint(x: target.midX, y: target.midY)
+                        cardView.layer.transform = ArchiveStorage.transform(enabled: !expanded && !card.isTop && !typeSize.isAccessibilitySize)
                     }
                     cardView.alpha = reduceMotion && !expanded ? 0 : 1
                 } else {
                     let offset = card.index < index ? -max(0, upperBottom) - 24 : max(0, height - lowerTop) + 24
-                    cardView.transform = CGAffineTransform(translationX: 0,
-                        y: expanded && !reduceMotion && !card.isTop ? offset : 0)
+                    cardView.layer.transform = CATransform3DConcat(
+                        ArchiveStorage.transform(enabled: !card.isTop && !typeSize.isAccessibilitySize),
+                        CATransform3DMakeTranslation(0, expanded && !reduceMotion && !card.isTop ? offset : 0, 0))
                     cardView.alpha = expanded ? 0 : 1
                     coordinator.blurs[card.id]?.alpha = expanded && !reduceMotion ? 1 : 0
                 }
@@ -740,8 +825,9 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             for divider in dividers {
                 guard let dividerView = coordinator.dividerViews[divider.index] else { continue }
                 let offset = divider.index <= index ? -max(0, upperBottom) - 24 : max(0, height - lowerTop) + 24
-                dividerView.transform = CGAffineTransform(translationX: 0,
-                    y: expanded && !reduceMotion ? offset : 0)
+                dividerView.layer.transform = CATransform3DConcat(
+                    ArchiveStorage.transform(enabled: !typeSize.isAccessibilitySize),
+                    CATransform3DMakeTranslation(0, expanded && !reduceMotion ? offset : 0, 0))
                 dividerView.alpha = expanded ? 0 : 1
             }
         }
@@ -808,5 +894,82 @@ enum JourneyArchiveOrdering {
     }
     private static func newestFirst(_ a: Trip, _ b: Trip) -> Bool {
         a.startDate == b.startDate ? a.id < b.id : a.startDate > b.startDate
+    }
+}
+
+private struct ArchiveDetailScrollEdges: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectHidden(true, for: .top)
+        } else { content }
+    }
+}
+
+struct JourneyDayEditor: View {
+    @ObservedObject var store: AppStore
+    @State var draft: DayEditorDraft
+    @Environment(\.dismiss) private var dismiss
+    private var trip: Trip? { store.trips.first { $0.id == draft.tripID } }
+    private var places: [Marker] { trip.map { store.tripPlaces($0) } ?? [] }
+    private var dayNumber: Int {
+        guard let trip else { return 1 }
+        return draft.day.flatMap { day in trip.days.sorted { $0.date < $1.date }.firstIndex { $0.id == day.id }.map { $0 + 1 } } ?? (trip.days.count + 1)
+    }
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    HStack(spacing: 12) {
+                        Text(String(format: "%02d", dayNumber)).font(.largeTitle).monospacedDigit()
+                        Rectangle().fill(.tertiary).frame(width: 20, height: 0.5)
+                        Text(draft.date).font(.subheadline).foregroundStyle(.secondary)
+                    }.accessibilityElement(children: .combine)
+                    VStack(alignment: .leading, spacing: 12) {
+                        JourneyEditorHeading(title: "当日主题")
+                        TextField("给这一天起个名字（可留空）", text: $draft.title, axis: .vertical)
+                            .font(.title3).lineLimit(1...3).accessibilityIdentifier("day-editor-title")
+                        Divider()
+                    }
+                    VStack(alignment: .leading, spacing: 14) {
+                        JourneyEditorHeading(title: "旅途中的地点")
+                        Text(places.isEmpty ? "本次旅途还没有地点，可先添加这一天。" : "从本次旅途已有地点中选择，也可以暂不选择。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        ForEach(places) { marker in
+                            Button {
+                                if draft.markerIDs.contains(marker.id) { draft.markerIDs.removeAll { $0 == marker.id } }
+                                else { draft.markerIDs.append(marker.id) }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: draft.markerIDs.contains(marker.id) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(draft.markerIDs.contains(marker.id) ? Color.primary : Color.secondary)
+                                    Text(marker.title).foregroundStyle(.primary)
+                                    Spacer(minLength: 0)
+                                }.frame(minHeight: 44).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                                .accessibilityValue(draft.markerIDs.contains(marker.id) ? "已选" : "未选")
+                                .accessibilityIdentifier("day-editor-place-\(marker.id)")
+                            Divider()
+                        }
+                    }
+                }.padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Color(uiColor: .systemBackground))
+            .navigationTitle(draft.day == nil ? "添加一天" : "编辑")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("取消")
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                JourneyEditorSubmit(title: draft.day == nil ? "添加一天" : "保存当天", enabled: !store.saving,
+                    identifier: "day-editor-submit", background: Color(uiColor: .systemBackground)) {
+                    if store.submitDayEditor(draft) { dismiss() }
+                }
+            }
+        }
+        .journeyError(store: store)
+        .presentationDetents([.large])
     }
 }

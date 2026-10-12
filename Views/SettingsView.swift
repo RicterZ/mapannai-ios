@@ -32,7 +32,7 @@ struct SettingsView: View {
                 .onChange(of: localError) { _, error in
                     if error != nil { proxy.scrollTo("settings-service", anchor: .top) }
                 }
-                .background(Color(uiColor: .systemGroupedBackground))
+                .background(Color(uiColor: .systemBackground))
                 .navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     PanelCloseToolbarItem(identifier: "close-settings", disabled: checking) { dismiss() }
@@ -184,9 +184,9 @@ struct SettingsView: View {
 
     private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12, content: content)
-            .font(.body).padding(.horizontal, 20).padding(.vertical, 12)
+            .font(.body).padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
+
     }
 
     private func linkRow(_ title: String) -> some View {

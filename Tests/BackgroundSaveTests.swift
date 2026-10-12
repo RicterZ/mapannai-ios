@@ -43,6 +43,139 @@ final class BackgroundSaveTests: XCTestCase {
         for _ in 0..<100 where store.saving { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertFalse(store.saving)
     }
+    @MainActor func testDayCreationIsImmediateAndFailureRestoresTripAndDraft() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips; store.markers = sample.markers
+        let original = store.trips[0]
+        store.beginDayEditor(trip: original)
+        var draft = try XCTUnwrap(store.dayEditorDraft)
+        draft.title = "New day"; draft.markerIDs = [original.days[0].markerIds[0]]
+        DelayedSaveProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            XCTAssertEqual(body["title"] as? String, "New day")
+            XCTAssertEqual(body["markerIds"] as? [String], draft.markerIDs)
+            return (500, Data(#"{"error":"failed"}"#.utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.submitDayEditor(draft, using: client()))
+        XCTAssertNil(store.dayEditorDraft)
+        XCTAssertTrue(store.saving)
+        XCTAssertEqual(store.trips[0].days.count, original.days.count + 1)
+        XCTAssertEqual(store.trips[0].days.last?.title, "New day")
+        XCTAssertFalse(store.submitDayEditor(draft, using: client()))
+        try await settle(store)
+        XCTAssertEqual(store.trips[0], original)
+        store.resumeFailedSave()
+        XCTAssertEqual(store.dayEditorDraft?.markerIDs, draft.markerIDs)
+        XCTAssertEqual(store.dayEditorDraft?.title, draft.title)
+    }
+
+    @MainActor func testPartialDayCreationRetryReusesIDAndAllowsEmptyTitle() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips; store.markers = sample.markers
+        store.beginDayEditor(trip: store.trips[0])
+        let draft = try XCTUnwrap(store.dayEditorDraft)
+        let created = TripDay(id: "server-day", tripId: draft.tripID, date: draft.date, markerIds: [], chains: [])
+        var posts = 0
+        DelayedSaveProtocol.handler = { request in
+            if request.httpMethod == "POST" {
+                posts += 1
+                return (200, try JSONEncoder().encode(created))
+            }
+            return (500, Data(#"{"error":"end date failed"}"#.utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.submitDayEditor(draft, using: client()))
+        try await settle(store)
+        XCTAssertTrue(store.trips[0].days.contains { $0.id == created.id })
+        store.resumeFailedSave()
+        let recovered = try XCTUnwrap(store.dayEditorDraft)
+        DelayedSaveProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PUT")
+            if request.url?.path.hasSuffix("/days/server-day") == true { return (200, try JSONEncoder().encode(created)) }
+            return (200, Data("{}".utf8))
+        }
+        XCTAssertTrue(store.submitDayEditor(recovered, using: client()))
+        try await settle(store)
+        XCTAssertEqual(posts, 1)
+        XCTAssertEqual(store.trips[0].days.filter { $0.id == created.id }.count, 1)
+        XCTAssertEqual(store.trips[0].endDate, draft.date)
+    }
+
+    @MainActor func testDayEditorClearsThemeWithoutDroppingRoutes() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips; store.markers = sample.markers
+        let original = store.trips[0].days[0]
+        store.beginDayEditor(trip: store.trips[0], day: original)
+        var draft = try XCTUnwrap(store.dayEditorDraft)
+        draft.title = "  "
+        DelayedSaveProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PUT")
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            XCTAssertEqual(body["title"] as? String, "")
+            XCTAssertNil(body["chains"])
+            var confirmed = original; confirmed.title = nil
+            return (200, try JSONEncoder().encode(confirmed))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.submitDayEditor(draft, using: client()))
+        XCTAssertEqual(store.trips[0].days.first { $0.id == original.id }?.title, "")
+        try await settle(store)
+        XCTAssertEqual(store.trips[0].days.first { $0.id == original.id }?.chains, original.chains)
+        XCTAssertNil(store.trips[0].days.first { $0.id == original.id }?.title)
+    }
+
+    @MainActor func testTitleEditAllowsExistingUnloadedMarkerReferences() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        store.markers = []
+        let original = store.trips[0].days[0]
+        store.beginDayEditor(trip: store.trips[0], day: original)
+        var draft = try XCTUnwrap(store.dayEditorDraft); draft.title = "New theme"
+        DelayedSaveProtocol.handler = { request in
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            XCTAssertEqual(Set(body.keys), ["title"])
+            var saved = original; saved.title = "New theme"
+            return (200, try JSONEncoder().encode(saved))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.submitDayEditor(draft, using: client()))
+        try await settle(store)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(store.trips[0].days.first { $0.id == original.id }?.markerIds, original.markerIds)
+    }
+
+    @MainActor func testOldDayCreationCannotPublishAfterConnectionChange() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips; store.markers = sample.markers
+        store.beginDayEditor(trip: store.trips[0])
+        let draft = try XCTUnwrap(store.dayEditorDraft)
+        DelayedSaveProtocol.handler = { _ in (500, Data(#"{"error":"old server"}"#.utf8)) }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.submitDayEditor(draft, using: client()))
+        try await Task.sleep(for: .milliseconds(30))
+        await store.connect()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertNil(store.dayEditorDraft)
+        XCTAssertFalse(store.canResumeFailedSave)
+        XCTAssertFalse(store.saving)
+        XCTAssertNil(store.errorMessage)
+    }
+
+    @MainActor func testDayEditorRejectsExternalPlacesAndChangedDay() {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips; store.markers = sample.markers
+        store.beginDayEditor(trip: store.trips[0], day: store.trips[0].days[0])
+        var draft = store.dayEditorDraft!
+        draft.markerIDs.append("outside-trip")
+        XCTAssertFalse(store.submitDayEditor(draft, using: client()))
+        draft.markerIDs.removeLast()
+        store.trips[0].days[0].title = "Changed elsewhere"
+        XCTAssertFalse(store.submitDayEditor(draft, using: client()))
+        XCTAssertFalse(store.saving)
+    }
+
     @MainActor func testNewMarkerClosesDraftBeforeResponseAndOpensRealDetailAfterSave() async throws {
         let store = store()
         var draft = MarkerDraft(coordinates: Coordinate(latitude: 31.2, longitude: 121.4))

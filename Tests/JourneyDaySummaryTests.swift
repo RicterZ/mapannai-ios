@@ -12,11 +12,45 @@ final class JourneyDaySummaryTests: XCTestCase {
         let summary = JourneyDaySummary(day: day, index: 0, markers: markers)
         XCTAssertNil(summary.theme)
         XCTAssertEqual(summary.places, "A → B\nC\n另有1个地点")
+        XCTAssertEqual(summary.routePreviews, [["A", "B"], ["C"]])
+        XCTAssertEqual(summary.unplannedPlaces, ["D"])
         XCTAssertEqual(summary.coverURL?.host, "example.invalid")
+        XCTAssertEqual(summary.coverTitle, "B")
         XCTAssertEqual(summary.timing, "0项时间安排"); XCTAssertNil(summary.transport)
         day.chains = []
+        XCTAssertTrue(JourneyDaySummary(day: day, index: 0, markers: markers).routePreviews.isEmpty)
+        XCTAssertEqual(JourneyDaySummary(day: day, index: 0, markers: markers).unplannedPlaces, ["D", "C", "B", "A"])
         XCTAssertEqual(JourneyDaySummary(day: day, index: 0, markers: markers).places, "D · C · B · A")
     }
+    func testChaptersSkipCoverAndPreviouslySelectedPhotos() {
+        var places = markers
+        places[0].content.headerImage = "https://example.invalid/hotel.jpg"
+        places[2].content.headerImage = "https://example.invalid/b.jpg"
+        places[3].content.headerImage = "https://example.invalid/park.jpg"
+        let days = [
+            TripDay(id: "1", tripId: "t", date: "2026-10-01", markerIds: ["a", "b"], chains: [["a", "b"]]),
+            TripDay(id: "2", tripId: "t", date: "2026-10-02", markerIds: ["a", "c", "d"], chains: [["a", "c", "d"]]),
+            TripDay(id: "3", tripId: "t", date: "2026-10-03", markerIds: ["a", "b", "d"], chains: [])
+        ]
+        let excluded: Set<URL> = [URL(string: "https://example.invalid/hotel.jpg")!]
+        let summaries = JourneyDaySummary.chapters(days: days, markers: places, excludingPhotos: excluded)
+        XCTAssertEqual(summaries.map(\.coverTitle), ["B", "D", nil])
+        XCTAssertEqual(summaries.map { $0.coverURL?.lastPathComponent }, ["b.jpg", "park.jpg", nil])
+        XCTAssertEqual(JourneyDaySummary.chapters(days: days, markers: places, excludingPhotos: excluded).map(\.coverURL), summaries.map(\.coverURL))
+        XCTAssertEqual(JourneyDaySummary.chapters(days: days, markers: places).first?.coverTitle, "A")
+    }
+
+    func testMissingThemeAndPhotoRemainAbsent() {
+        var day = TripDay(id: "d", tripId: "t", date: "2026-10-01", title: "  ", markerIds: ["a"], chains: [])
+        let summary = JourneyDaySummary(day: day, index: 0, markers: markers)
+        XCTAssertNil(summary.theme)
+        XCTAssertNil(summary.coverURL)
+        XCTAssertNil(summary.coverTitle)
+        XCTAssertEqual(summary.places, "A")
+        day.title = day.date
+        XCTAssertNil(JourneyDaySummary(day: day, index: 0, markers: markers).theme)
+    }
+
     func testOnlyActiveAdjacentTransportAndActualFirstStopTimeAppear() {
         let stops = [ChainStop(id: "va", markerId: "a"), ChainStop(id: "vb", markerId: "b", startTime: "10:30")]
         var day = TripDay(id: "d", tripId: "t", date: "2026-10-01", markerIds: ["a", "b"], chains: [["a", "b"]],
