@@ -273,14 +273,14 @@ struct DayContentsView: View {
                         .accessibilityValue(collapsedRoutes.contains(index) ? "已收起" : "已展开")
                         .accessibilityIdentifier("route-toggle-\(index)")
                         if !editingPlaces {
-                        Menu {
-                            Button("编辑行程", systemImage: "slider.horizontal.3") { beginPlaceEditing() }
-                            Button("删除路线", systemImage: "trash", role: .destructive) { deletingChain = index }
-                                .disabled(!store.canEditItinerary)
-                        } label: {
-                            Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())
-                        }.buttonStyle(.borderless).foregroundStyle(.secondary)
-                            .accessibilityLabel("路线操作").accessibilityIdentifier("route-actions-\(index)")
+                            Menu {
+                                Button("编辑行程", systemImage: "slider.horizontal.3") { beginPlaceEditing() }
+                                Button("删除路线", systemImage: "trash", role: .destructive) { deletingChain = index }
+                                    .disabled(!store.canEditItinerary)
+                            } label: {
+                                Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())
+                            }.buttonStyle(.borderless).foregroundStyle(.secondary)
+                                .accessibilityLabel("路线操作").accessibilityIdentifier("route-actions-\(index)")
                         }
                         if ProcessInfo.processInfo.arguments.contains("--route-drag-diagnostics"), index == 0 {
                             Text(String(dragDiagnosticUpdates)).font(.caption)

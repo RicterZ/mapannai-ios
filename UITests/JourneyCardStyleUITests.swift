@@ -6,7 +6,8 @@ final class JourneyCardStyleUITests: XCTestCase {
         app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
         let trip = app.buttons["archive-trip-demo-trip"]
-        XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
+        XCTAssertTrue(trip.waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.9)); trip.tap()
         let day = app.buttons["journey-day-day-2"]
         XCTAssertTrue(day.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
@@ -31,7 +32,8 @@ final class JourneyCardStyleUITests: XCTestCase {
         app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
         let trip = app.buttons["archive-trip-demo-trip"]
-        XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
+        XCTAssertTrue(trip.waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.9)); trip.tap()
         let day = app.buttons["journey-day-day-2"]
         XCTAssertTrue(day.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
