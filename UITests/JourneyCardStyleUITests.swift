@@ -68,7 +68,7 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertLessThan(input.frame.maxY, app.keyboards.firstMatch.frame.minY)
         attach(app, "Home keyboard with dismissal and background")
         XCTAssertFalse(app.buttons["archive-keyboard-dismiss"].exists)
-        app.staticTexts["目的地、想做的事，或一个还没成形的想法。"].tap()
+        app.staticTexts["目的地、想做的事，或一个想法。"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertEqual(input.value as? String, "京都")
     }
@@ -81,6 +81,14 @@ final class JourneyCardStyleUITests: XCTestCase {
             XCTAssertTrue(history.waitForExistence(timeout: 5))
             for _ in 0..<4 where !history.isHittable { app.swipeUp() }
             XCTAssertTrue(history.isHittable)
+            XCTAssertTrue(app.textFields["archive-chat-input"].isHittable)
+            let settings = app.buttons["archive-settings"]
+            for _ in 0..<4 where !settings.isHittable { app.swipeUp() }
+            XCTAssertTrue(settings.isHittable)
+            XCTAssertGreaterThanOrEqual(settings.frame.height, 44)
+            app.swipeUp()
+            XCTAssertGreaterThan(settings.frame.midY, app.frame.height * 0.85,
+                "设置应停在底部，不应因尾部空白继续向上滚动")
             attach(app, "Home AI " + variant)
             if variant == "--one-archive-preview" {
                 let input = app.textFields["archive-chat-input"]

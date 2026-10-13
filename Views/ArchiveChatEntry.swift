@@ -10,13 +10,15 @@ struct ArchiveChatEntry: View {
     @State private var resumeAfterHistory = false
     @State private var settingsPresented = false
     @FocusState private var inputFocused: Bool
+    @ScaledMetric(relativeTo: .title2) private var headingSize = 24
+    @ScaledMetric(relativeTo: .body) private var inputHeight = 84
     private var configurationReady: Bool { (try? planner.configuration.validated()) != nil }
     private var input: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("聊聊下一程").font(.title3.weight(.semibold))
+                Text("聊聊下一程").font(.system(size: headingSize, weight: .semibold))
                 Spacer(minLength: 8)
                 Button { inputFocused = false; historyPresented = true } label: {
                     Label("会话记录", systemImage: "clock.arrow.circlepath")
@@ -27,11 +29,11 @@ struct ArchiveChatEntry: View {
                 }.buttonStyle(.plain).padding(.trailing, -10)
                     .accessibilityIdentifier("archive-chat-history")
             }
-            Text("目的地、想做的事，或一个还没成形的想法。")
-                .font(.caption).foregroundStyle(.secondary)
+            Text("目的地、想做的事，或一个想法。")
+                .font(.subheadline).foregroundStyle(.secondary)
             HStack(spacing: 4) {
                 TextField("想去哪儿，或想怎么走？", text: $text)
-                    .font(.subheadline).focused($inputFocused).submitLabel(.send)
+                    .font(.body).focused($inputFocused).submitLabel(.send)
                     .onSubmit(submit).accessibilityIdentifier("archive-chat-input")
                 if !input.isEmpty {
                     Button(action: submit) {
@@ -43,12 +45,13 @@ struct ArchiveChatEntry: View {
                         .accessibilityLabel("发送").accessibilityIdentifier("archive-chat-send")
                 }
             }.padding(.leading, 17).padding(.trailing, input.isEmpty ? 17 : 7)
-                .frame(minHeight: 60)
+                .frame(minHeight: inputHeight)
                 .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 22))
                 .id("archive-chat-input-area")
             if !configurationReady {
                 Button("配置 AI 后开始聊天") { settingsPresented = true }
-                    .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
+                    .font(.subheadline).foregroundStyle(.secondary).buttonStyle(.plain)
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("archive-chat-settings")
             } else if let recent = planner.busy ? planner.conversation : planner.conversations.first {
                 Button {
@@ -62,7 +65,7 @@ struct ArchiveChatEntry: View {
                         Text((planner.busy ? "正在回复 · " : "上次聊到 · ") + recent.title).lineLimit(1)
                         Spacer()
                         Image(systemName: "chevron.right")
-                    }.font(.caption).foregroundStyle(.secondary).frame(minHeight: 44)
+                    }.font(.subheadline).foregroundStyle(.secondary).frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("archive-chat-recent")
             }

@@ -430,12 +430,12 @@ struct JourneyArchiveView: View {
                         Button { creating = true } label: {
                             Label("创建旅途", systemImage: "plus")
                                 .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity, minHeight: 54)
+                                .frame(maxWidth: .infinity, minHeight: 48)
                                 .foregroundStyle(Color(uiColor: .systemBackground))
                                 .background(Color(uiColor: .label), in: Capsule())
-                        }.buttonStyle(.plain).padding(.top, 48)
+                        }.buttonStyle(.plain).padding(.top, 24)
                             .accessibilityIdentifier("empty-archive-create")
-                    }.padding(.top, 28).padding(.horizontal, 8)
+                    }.padding(.horizontal, 8)
                 }
                 VStack(spacing: 0) {
                     let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
@@ -501,13 +501,12 @@ struct JourneyArchiveView: View {
                                 .allowsHitTesting(false).accessibilityHidden(true)
                         }
                     }
-                    .padding(.top, trips.isEmpty ? 16 : trips.count == 1 ? 56 : 20)
+                    .padding(.top, trips.isEmpty ? 4 : trips.count == 1 ? 24 : 20)
                     .opacity(detailVisible ? 0 : 1)
                     .allowsHitTesting(openedID == nil)
                 Spacer(minLength: 0)
                 VStack(spacing: 24) {
-                    if trips.isEmpty { Color.clear.frame(height: 64).accessibilityHidden(true) }
-                    else { Color.clear.frame(height: 40).accessibilityHidden(true) }
+                    Color.clear.frame(height: trips.isEmpty ? 24 : 40).accessibilityHidden(true)
                     if !independent.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("未加入行程").font(.headline)
@@ -529,8 +528,8 @@ struct JourneyArchiveView: View {
                     .animation(reduceMotion ? .linear(duration: 0.15) :
                         .timingCurve(0.16, 0.86, 0.28, 1, duration: detailVisible ? 0.60 : 0.30), value: detailVisible)
             }.background(ArchiveKeyboardDismissal())
-                .frame(minHeight: max(0, height - 104), alignment: .top)
-                .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 84).frame(maxWidth: 640).frame(maxWidth: .infinity)
+                .frame(minHeight: max(0, height - 44), alignment: .top)
+                .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 24).frame(maxWidth: 640).frame(maxWidth: .infinity)
         }.modifier(ArchiveDetailScrollEdges())
             .scrollDismissesKeyboard(.interactively)
             .scrollDisabled(openedID != nil)
@@ -656,9 +655,10 @@ private struct JourneyArchiveYearCard: View {
 }
 
 private struct ArchiveHeading: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 30
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("我的旅途").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+            Text("我的旅途").font(.system(size: titleSize, weight: .bold)).accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("archive-page-title")
             Text("旅の目的地は、まだ見ぬ地平線の向こうに")
                 .font(.caption).foregroundStyle(.secondary)
