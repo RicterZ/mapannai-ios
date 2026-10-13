@@ -63,6 +63,8 @@ final class JourneyEditorRedesignTests: XCTestCase {
         let heading = app.staticTexts["archive-page-title"]
         let card = app.buttons["archive-trip-demo-trip"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["archive-reverse-direction"].exists)
+        XCTAssertFalse(app.buttons["archive-reverse-profile"].exists)
         let y = heading.frame.minY
         let cardY = card.frame.minY
         for _ in 0..<2 {
@@ -142,6 +144,27 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertLessThan(search.frame.minY, app.frame.height * 0.75)
     }
 
+    @MainActor func testTiltedArchiveCardReturnsToItsSlot() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview"]
+        app.launch()
+        let card = app.buttons["archive-trip-year-2025-a"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let original = card.frame
+        let nextCard = app.buttons["archive-trip-year-2025-b"]
+        let nextFrame = nextCard.frame
+        card.tap()
+        let close = app.buttons["archive-detail-close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(card.frame.minY, original.minY, accuracy: 1)
+        XCTAssertEqual(card.frame.height, original.height, accuracy: 1)
+        XCTAssertEqual(nextCard.frame.minY, nextFrame.minY, accuracy: 1)
+        XCTAssertEqual(nextCard.frame.height, nextFrame.height, accuracy: 1)
+    }
+
     @MainActor func testInlineArchiveTitleAndStableYearCardsReturnToSamePosition() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -152,6 +175,8 @@ final class JourneyEditorRedesignTests: XCTestCase {
         let year = app.descendants(matching: .any)["archive-year-2025"].firstMatch
         XCTAssertTrue(year.exists)
         XCTAssertFalse(app.buttons["archive-year-2025"].exists)
+        let topCard = app.buttons["archive-trip-demo-trip"]
+        XCTAssertGreaterThanOrEqual(year.frame.minY - topCard.frame.maxY, 23)
         capture("我的旅途 · 页内标题与年度叠卡")
         let scroll = app.scrollViews["archive-trip-list"]
         scroll.swipeUp()

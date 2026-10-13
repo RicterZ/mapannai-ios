@@ -82,3 +82,58 @@ final class JourneyDaySummaryTests: XCTestCase {
     }
 
 }
+
+final class ArchiveStorageAngleTests: XCTestCase {
+    func testFirstStorageCardAnchorsLinearTiltBelowMidpoint() {
+        for base: CGFloat in [200, 500, 716, 900] {
+            XCTAssertEqual(ArchiveStorage.angle(midY: base, viewportHeight: 800, baseMidY: base), 0)
+        }
+        XCTAssertEqual(ArchiveStorage.angle(midY: 608, viewportHeight: 800, baseMidY: 500), -.pi / 6, accuracy: 0.00001)
+        XCTAssertEqual(ArchiveStorage.angle(midY: 716, viewportHeight: 800, baseMidY: 500), -.pi / 3, accuracy: 0.00001)
+        XCTAssertEqual(ArchiveStorage.angle(midY: 350, viewportHeight: 800, baseMidY: 200), 0)
+        XCTAssertEqual(ArchiveStorage.transform(enabled: true, midY: 500, viewportHeight: 800, baseMidY: 500).m22, 1)
+    }
+
+    func testPackingReservePreservesGapBelowTopCards() {
+        for height: CGFloat in [0, 80, 400, 800, 1200] {
+            for enabled in [false, true] {
+                let reserve = ArchiveStorage.packingReserve(viewportHeight: height, enabled: enabled)
+                for y: CGFloat in [-100, 0, 100, 300, 600, 1000, 1500] {
+                    let offset = ArchiveStorage.packingOffset(midY: y, viewportHeight: height, enabled: enabled)
+                    XCTAssertGreaterThanOrEqual(24 + reserve + offset, 24)
+                }
+            }
+        }
+        XCTAssertEqual(ArchiveStorage.packingReserve(viewportHeight: 800), 48)
+        XCTAssertEqual(ArchiveStorage.packingReserve(viewportHeight: 800, enabled: false), 0)
+    }
+
+    func testPackingTightensUpperCardsWithLinearSpacingGradient() {
+        let positions: [CGFloat] = [0, 100, 200, 300, 400, 500]
+        let offsets = positions.map { ArchiveStorage.packingOffset(midY: $0, viewportHeight: 800) }
+        XCTAssertEqual(offsets, [0, -21, -36, -45, -48, -48])
+        let gaps = zip(positions, offsets).map(+)
+        for index in 0..<4 {
+            XCTAssertEqual(gaps[index + 1] - gaps[index], 79 + CGFloat(index) * 6, accuracy: 0.001)
+        }
+        XCTAssertEqual(ArchiveStorage.packingOffset(midY: -100, viewportHeight: 800), 0)
+        XCTAssertEqual(ArchiveStorage.packingOffset(midY: 900, viewportHeight: 800), -48)
+        XCTAssertEqual(ArchiveStorage.packingOffset(midY: 200, viewportHeight: 800, enabled: false), 0)
+        XCTAssertEqual(ArchiveStorage.packingOffset(midY: 200, viewportHeight: 0), 0)
+        XCTAssertEqual(ArchiveStorage.transform(enabled: true, midY: 200, viewportHeight: 800).m42, -36)
+        XCTAssertEqual(ArchiveStorage.transform(enabled: false, midY: 200, viewportHeight: 800).m42, 0)
+    }
+
+    func testUpperHalfFlatAndLowerHalfLinearClamped() {
+        for y: CGFloat in [-100, 0, 200, 400] {
+            XCTAssertEqual(ArchiveStorage.angle(midY: y, viewportHeight: 800), 0)
+        }
+        for (y, degrees): (CGFloat, Double) in [(479, -15), (558, -30), (637, -45), (716, -60), (800, -60), (1000, -60)] {
+            XCTAssertEqual(ArchiveStorage.angle(midY: y, viewportHeight: 800), degrees * .pi / 180, accuracy: 0.00001)
+        }
+        XCTAssertEqual(ArchiveStorage.angle(midY: 800, viewportHeight: 800, enabled: false), 0)
+        XCTAssertEqual(ArchiveStorage.angle(midY: 800, viewportHeight: 0), 0)
+        XCTAssertEqual(ArchiveStorage.angle(midY: 401, viewportHeight: 800), -60.0 / 316 * .pi / 180, accuracy: 0.00001)
+        XCTAssertTrue(ArchiveStorage.angle(midY: 40, viewportHeight: 80).isFinite)
+    }
+}

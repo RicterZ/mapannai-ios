@@ -1,7 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
-import CoreImage
 
 struct JourneyDaysContents: View {
     @ObservedObject var store: AppStore
@@ -212,6 +211,7 @@ struct JourneyArchiveView: View {
     @State private var openedID: String?
     @State private var openingFrame = CGRect.zero
     @State private var openingIndex = 0
+    @State private var slotViewportHeight: CGFloat?
     @State private var detailVisible = false
     @State private var cardInList = false
     @State private var closing = false
@@ -237,7 +237,13 @@ struct JourneyArchiveView: View {
         JourneyArchiveOrdering.sorted(store.trips, today: Date.now.dayString)
     }
     private var photoURLs: [URL] {
-        trips.compactMap { JourneyDaySummary.cover(trip: $0, markers: store.markers) }
+        var urls: [URL] = []
+        for trip in trips {
+            if let url = JourneyDaySummary.cover(trip: trip, markers: store.markers) { urls.append(url) }
+            let days = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
+            urls.append(contentsOf: JourneyDaySummary.chapters(days: days, markers: store.markers).compactMap(\.coverURL))
+        }
+        return Array(Set(urls))
     }
     private func coverPhoto(_ trip: Trip) -> UIImage? {
         JourneyDaySummary.cover(trip: trip, markers: store.markers).flatMap { photos[$0] }
@@ -249,14 +255,14 @@ struct JourneyArchiveView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                archive(height: geometry.size.height)
+                archive(height: slotViewportHeight ?? geometry.size.height)
                     .allowsHitTesting(openedID == nil)
                     .accessibilityHidden(openedID != nil)
                 if let trip = openedTrip {
                     ZStack(alignment: .topLeading) {
                         JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, archiveColorIndex: openingIndex,
                             archiveHeaderVisible: cardInList,
-                            archivePhoto: transferCards.first { $0.id == trip.id }?.photo,
+                            archivePhoto: coverPhoto(trip) ?? transferCards.first { $0.id == trip.id }?.photo,
                             onArchiveHeaderFrame: {
                                 let origin = geometry.frame(in: .global).origin
                                 headerGeometry.frame = $0.offsetBy(dx: -origin.x, dy: -origin.y)
@@ -268,21 +274,26 @@ struct JourneyArchiveView: View {
                             .modifier(ArchiveDetailScrollEdges())
                             .scrollContentBackground(.hidden)
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
-                            .opacity(detailVisible ? 1 : 0)
-                            .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.22)
-                                .delay(detailVisible && !reduceMotion ? 0.12 : 0), value: detailVisible)
+                            .opacity(cardInList ? 1 : 0)
+                            .transaction { $0.animation = nil; $0.disablesAnimations = true }
                             .allowsHitTesting(cardInList)
                             .zIndex(Double(openingIndex))
                             .task(id: trip.id) { await beginTransition(trip) }
                         if transitionStarted {
                             ArchiveCardTransition(cards: transferCards, dividers: transferDividers, selectedID: trip.id,
-                                destination: destinationFrame, height: geometry.size.height,
+                                destination: destinationFrame, height: slotViewportHeight ?? geometry.size.height,
                                 expanded: detailVisible, handedOff: cardInList, reduceMotion: reduceMotion) {
                                     if detailVisible && !closing {
                                         cardInList = true
                                         store.select(trip: trip, focus: false)
                                     } else if closing {
-                                        openedID = nil
+                                        var transaction = Transaction(); transaction.disablesAnimations = true
+                                        withTransaction(transaction) {
+                                            transitionStarted = false
+                                            openedID = nil
+                                            slotViewportHeight = nil
+                                            closing = false
+                                        }
                                     }
                                 }
                                 .frame(width: geometry.size.width, height: geometry.size.height)
@@ -336,12 +347,11 @@ struct JourneyArchiveView: View {
                 }.transaction { $0.animation = nil }
             }.journeyBareBackground
         }
-        .task(id: openedID == nil ? photoURLs : []) {
-            guard openedID == nil else { return }
+        .task(id: photoURLs) {
             let urls = photoURLs
             for url in urls where photos[url] == nil {
                 let image = await JourneyPhotoCache.shared.image(for: url)
-                guard !Task.isCancelled, openedID == nil else { return }
+                guard !Task.isCancelled else { return }
                 var transaction = Transaction(); transaction.disablesAnimations = true
                 withTransaction(transaction) { photos[url] = image }
             }
@@ -398,7 +408,11 @@ struct JourneyArchiveView: View {
                     }
                     Text("旅の目的地は、まだ見ぬ地平線の向こうに")
                         .font(.caption).foregroundStyle(.secondary)
-                }.opacity(detailVisible ? 0 : 1)
+                }.opacity(reduceMotion && detailVisible ? 0 : 1)
+                    .offset(y: detailVisible && !reduceMotion ? -(height + 204) : 0)
+                    .animation(reduceMotion ? .linear(duration: 0.15) :
+                        .timingCurve(0.16, 0.86, 0.28, 1, duration: 0.30)
+                            .delay(detailVisible ? 0.084 : 0), value: detailVisible)
                 if trips.isEmpty {
                     ContentUnavailableView {
                         Label("还没有旅途", systemImage: "suitcase.rolling")
@@ -408,11 +422,15 @@ struct JourneyArchiveView: View {
                 VStack(spacing: 0) {
                     let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
+                        let storageSlot = max(0, index - topIDs.count) + yearGroups.keys.filter { $0 < index }.count
                         if let group = yearGroups[index] {
                             JourneyArchiveYearCard(year: group.year, count: group.count)
                                 .frame(height: 204)
-                                .modifier(ArchiveStoragePerspective(enabled: !typeSize.isAccessibilitySize))
-                                .frame(height: typeSize.isAccessibilitySize ? 204 : 96, alignment: .top)
+                                .visualEffect { content, proxy in
+                                    content.rotation3DEffect(.radians(ArchiveStorage.angle(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, baseMidY: proxy.frame(in: .named("journey-archive")).midY - CGFloat(storageSlot) * 88, enabled: !typeSize.isAccessibilitySize && !reduceMotion)), axis: (x: 1, y: 0, z: 0), perspective: proxy.size.width / 1000)
+                                        .offset(y: ArchiveStorage.packingOffset(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, enabled: !typeSize.isAccessibilitySize && !reduceMotion))
+                                }
+                                .frame(height: typeSize.isAccessibilitySize ? 204 : 88, alignment: .top)
                                 .background(GeometryReader { proxy in
                                     Color.clear.preference(key: ArchiveDividerFrames.self,
                                         value: [index: proxy.frame(in: .named("journey-archive"))])
@@ -422,11 +440,15 @@ struct JourneyArchiveView: View {
                         }
                         let isTop = topIDs.contains(trip.id)
                         let compact = !isTop && index != trips.count - 1 && !typeSize.isAccessibilitySize
-                        Button { open(trip, index: index) } label: {
+                        let beforeStorage = isTop && index + 1 < trips.count && !topIDs.contains(trips[index + 1].id)
+                        Button { open(trip, index: index, viewportHeight: height) } label: {
                             JourneyArchiveCard(trip: trip, colorIndex: index, photo: coverPhoto(trip))
                                 .frame(height: 204)
-                                .modifier(ArchiveStoragePerspective(enabled: !isTop && !typeSize.isAccessibilitySize))
-                                .frame(height: compact ? 96 : 204, alignment: .top)
+                                .visualEffect { content, proxy in
+                                    content.rotation3DEffect(.radians(ArchiveStorage.angle(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, baseMidY: proxy.frame(in: .named("journey-archive")).midY - CGFloat(storageSlot + (yearGroups[index] == nil ? 0 : 1)) * 88, enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion)), axis: (x: 1, y: 0, z: 0), perspective: proxy.size.width / 1000)
+                                        .offset(y: ArchiveStorage.packingOffset(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion))
+                                }
+                                .frame(height: compact ? 88 : 204, alignment: .top)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -441,7 +463,9 @@ struct JourneyArchiveView: View {
                         }
                         .accessibilityIdentifier("archive-trip-\(trip.id)")
                         .accessibilityHint(isTop ? "置顶旅途，打开旅行详情" : "打开旅行详情")
-                        .padding(.bottom, isTop && index + 1 < trips.count ? 24 : 0)
+                        .padding(.bottom, isTop && index + 1 < trips.count
+                            ? 24 + (beforeStorage ? ArchiveStorage.packingReserve(viewportHeight: height,
+                                enabled: !typeSize.isAccessibilitySize && !reduceMotion) : 0) : 0)
                     }
                 }
                 VStack(spacing: 24) {
@@ -457,16 +481,21 @@ struct JourneyArchiveView: View {
                             }
                         }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
                     }
-                }.opacity(detailVisible ? 0 : 1)
+                }.opacity(reduceMotion && detailVisible ? 0 : 1)
+                    .offset(y: detailVisible && !reduceMotion ? (height + 204) : 0)
+                    .animation(reduceMotion ? .linear(duration: 0.15) :
+                        .timingCurve(0.16, 0.86, 0.28, 1, duration: 0.30)
+                            .delay(detailVisible ? 0.084 : 0), value: detailVisible)
             }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 84).frame(maxWidth: 640).frame(maxWidth: .infinity)
         }.scrollDisabled(openedID != nil)
             .refreshable { await store.refresh(force: true) }
             .accessibilityIdentifier("archive-trip-list")
     }
 
-    private func open(_ trip: Trip, index: Int) {
+    private func open(_ trip: Trip, index: Int, viewportHeight: CGFloat) {
         guard openedID == nil, let frame = cardFrames[trip.id] else { return }
         openingFrame = frame
+        slotViewportHeight = viewportHeight
         let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
         transferCards = trips.enumerated().compactMap { position, value in
             cardFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, frame: $0,
@@ -518,8 +547,10 @@ struct JourneyArchiveView: View {
 private struct JourneyArchiveYearCard: View {
     let year: Int
     let count: Int
+    @Environment(\.colorScheme) private var colorScheme
     private var seed: UInt64 { UInt64(max(0, year)) &* 2_654_435_761 }
-    private var tint: Color { Color(hue: Double(seed % 360) / 360, saturation: 0.20, brightness: 0.60) }
+    private var tint: Color { Color(hue: Double(seed % 360) / 360, saturation: 0.44, brightness: colorScheme == .dark ? 0.88 : 0.40) }
+    private var paper: Color { Color(hue: Double(seed % 360) / 360, saturation: colorScheme == .dark ? 0.38 : 0.22, brightness: colorScheme == .dark ? 0.30 : 0.92) }
     var body: some View {
         HStack(spacing: 16) {
             Text(String(year)).font(.system(size: 27, weight: .medium, design: .rounded)).monospacedDigit()
@@ -530,9 +561,8 @@ private struct JourneyArchiveYearCard: View {
         .frame(height: 38).padding(22)
         .frame(maxWidth: .infinity, minHeight: 204, maxHeight: 204, alignment: .topLeading)
         .background {
-            RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .systemBackground))
+            RoundedRectangle(cornerRadius: 26).fill(paper)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 26).fill(tint.opacity(0.09))
                     Canvas { context, size in
                         let variant = Int(seed % 3)
                         for index in 0..<7 {
@@ -586,23 +616,33 @@ private struct ArchiveCardFrames: PreferenceKey {
     }
 }
 
-private enum ArchiveStorage {
-    static let angle = -24.0 * Double.pi / 180
-    static func transform(enabled: Bool) -> CATransform3D {
+enum ArchiveStorage {
+    static func packingReserve(viewportHeight: CGFloat, enabled: Bool = true) -> CGFloat {
+        enabled ? max(0, min(48, viewportHeight * 0.12)) : 0
+    }
+    static func packingOffset(midY: CGFloat, viewportHeight: CGFloat, enabled: Bool = true) -> CGFloat {
+        guard enabled, viewportHeight > 0 else { return 0 }
+        let boundary = viewportHeight / 2
+        let progress = max(0, min(1, midY / boundary))
+        // Integrate a linear spacing gradient: tighter above, unchanged below the midpoint.
+        let lift = packingReserve(viewportHeight: viewportHeight)
+        return -lift * progress * (2 - progress)
+    }
+    static func angle(midY: CGFloat, viewportHeight: CGFloat, baseMidY: CGFloat? = nil, enabled: Bool = true) -> Double {
+        guard enabled, viewportHeight > 0 else { return 0 }
+        let flatBoundary = max(viewportHeight / 2, baseMidY ?? 0)
+        // Reach full tilt above the bottom controls, linearly from the flat upper half.
+        let tiltBoundary = max(flatBoundary + 1, viewportHeight - 84)
+        let progress = max(0, min(1, (midY - flatBoundary) / (tiltBoundary - flatBoundary)))
+        return -60 * Double(progress) * .pi / 180
+    }
+    static func transform(enabled: Bool, midY: CGFloat, viewportHeight: CGFloat, baseMidY: CGFloat? = nil) -> CATransform3D {
         guard enabled else { return CATransform3DIdentity }
         var transform = CATransform3DIdentity
         transform.m34 = -1 / 1000
-        return CATransform3DRotate(transform, angle, 1, 0, 0)
-    }
-}
-
-private struct ArchiveStoragePerspective: GeometryEffect {
-    let enabled: Bool
-    func effectValue(size: CGSize) -> ProjectionTransform {
-        let toOrigin = CATransform3DMakeTranslation(-size.width / 2, -size.height / 2, 0)
-        let rotation = CATransform3DConcat(toOrigin, ArchiveStorage.transform(enabled: enabled))
-        return ProjectionTransform(CATransform3DConcat(rotation,
-            CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)))
+        return CATransform3DConcat(
+            CATransform3DRotate(transform, angle(midY: midY, viewportHeight: viewportHeight, baseMidY: baseMidY), 1, 0, 0),
+            CATransform3DMakeTranslation(0, packingOffset(midY: midY, viewportHeight: viewportHeight), 0))
     }
 }
 
@@ -690,7 +730,6 @@ private struct ArchiveTransferCard: Identifiable {
 
 // UIKit animates cached pixels; SwiftUI/List do no layout or blur work per frame.
 private struct ArchiveCardTransition: UIViewRepresentable {
-    private static let imageContext = CIContext()
     let cards: [ArchiveTransferCard]
     let dividers: [ArchiveTransferDivider]
     let selectedID: String
@@ -704,21 +743,16 @@ private struct ArchiveCardTransition: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    private var baseMidY: CGFloat? {
+        (dividers.map { $0.frame.minY } + cards.filter { !$0.isTop }.map { $0.frame.minY }).min().map { $0 + 102 }
+    }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> UIView {
         let container = UIView()
         container.isUserInteractionEnabled = false
-        let ciContext = Self.imageContext
-        let selectedIndex = cards.first { $0.id == selectedID }?.index ?? 0
-        let topBoundary = max(0, cards.filter { $0.isTop && $0.index < selectedIndex }
-            .map { $0.frame.minY + 204 + 24 }.max() ?? 0)
-        let upperStack = UIView(frame: CGRect(x: 0, y: topBoundary,
-            width: cards.map { $0.frame.maxX }.max() ?? 0, height: max(0, height - topBoundary)))
-        upperStack.clipsToBounds = true
-        upperStack.layer.zPosition = CGFloat(selectedIndex) - 0.25
-        container.addSubview(upperStack)
+        // The shared SwiftUI mask owns clipping, including the bottom safe-area strip.
         for card in cards where card.trip.id == selectedID ||
-            (card.frame.minY < height && card.frame.minY + 204 > 0) {
+            (card.frame.minY < height + 204 && card.frame.minY + 408 > 0) {
             let renderer = ImageRenderer(content: JourneyArchiveCard(trip: card.trip, colorIndex: card.index, photo: card.photo)
                 .frame(width: card.frame.width, height: 204)
                 .environment(\.colorScheme, colorScheme)
@@ -727,29 +761,22 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             guard let image = renderer.uiImage else { continue }
             let view = UIImageView(image: image)
             view.frame = CGRect(x: card.frame.minX, y: card.frame.minY, width: card.frame.width, height: 204)
-            view.layer.zPosition = CGFloat(card.index)
-            if !card.isTop && card.index < selectedIndex {
-                // Restore the stacked group below the stationary full top cards.
-                view.frame.origin.y -= topBoundary
-                upperStack.addSubview(view)
-            } else { container.addSubview(view) }
-            view.layer.transform = ArchiveStorage.transform(enabled: !card.isTop && !typeSize.isAccessibilitySize)
+            let plane = UIView(frame: CGRect(x: 0, y: 0, width: card.frame.maxX, height: height))
+            plane.layer.zPosition = CGFloat(card.index)
+            container.addSubview(plane)
+            plane.addSubview(view)
+            context.coordinator.planes[card.id] = plane
+            view.layer.transform = ArchiveStorage.transform(enabled: !card.isTop && !typeSize.isAccessibilitySize && !reduceMotion, midY: card.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
             context.coordinator.views[card.id] = view
-            if card.id != selectedID, let cg = image.cgImage {
-                let input = CIImage(cgImage: cg)
-                let blurred = input.clampedToExtent().applyingFilter("CIGaussianBlur",
-                    parameters: [kCIInputRadiusKey: 8 * displayScale]).cropped(to: input.extent)
-                if let output = ciContext.createCGImage(blurred, from: input.extent) {
-                    let overlay = UIImageView(image: UIImage(cgImage: output, scale: displayScale, orientation: .up))
-                    overlay.frame = view.bounds
-                    overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                    overlay.alpha = 0
-                    view.addSubview(overlay)
-                    context.coordinator.blurs[card.id] = overlay
-                }
+            // The absent card retains its original slot pose throughout the round trip.
+            if card.id == selectedID {
+                context.coordinator.slotBounds = view.bounds
+                context.coordinator.slotPosition = view.layer.position
+                context.coordinator.slotTransform = view.layer.transform
             }
+
         }
-        for divider in dividers where divider.frame.minY < height && divider.frame.minY + 204 > 0 {
+        for divider in dividers where divider.frame.minY < height + 204 && divider.frame.minY + 408 > 0 {
             let renderer = ImageRenderer(content: JourneyArchiveYearCard(year: divider.year, count: divider.count)
                 .frame(width: divider.frame.width, height: 204)
                 .environment(\.colorScheme, colorScheme)
@@ -758,12 +785,12 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             if let image = renderer.uiImage {
                 let view = UIImageView(image: image)
                 view.frame = CGRect(x: divider.frame.minX, y: divider.frame.minY, width: divider.frame.width, height: 204)
-                view.layer.zPosition = CGFloat(divider.index) - 0.5
-                if divider.index <= selectedIndex {
-                    view.frame.origin.y -= topBoundary
-                    upperStack.addSubview(view)
-                } else { container.addSubview(view) }
-                view.layer.transform = ArchiveStorage.transform(enabled: !typeSize.isAccessibilitySize)
+                let plane = UIView(frame: CGRect(x: 0, y: 0, width: divider.frame.maxX, height: height))
+                plane.layer.zPosition = CGFloat(divider.index) - 0.5
+                container.addSubview(plane)
+                plane.addSubview(view)
+                context.coordinator.dividerPlanes[divider.index] = plane
+                view.layer.transform = ArchiveStorage.transform(enabled: !typeSize.isAccessibilitySize && !reduceMotion, midY: divider.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
                 context.coordinator.dividerViews[divider.index] = view
             }
         }
@@ -771,8 +798,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
     }
     func updateUIView(_ view: UIView, context: Context) {
         let coordinator = context.coordinator
-        guard let selected = coordinator.views[selectedID],
-              let index = cards.first(where: { $0.id == selectedID })?.index else { return }
+        guard let selected = coordinator.views[selectedID] else { return }
         if coordinator.expanded == expanded {
             selected.isHidden = handedOff
             return
@@ -781,7 +807,13 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         let currentBounds = currentLayer?.bounds ?? selected.bounds
         let currentPosition = currentLayer?.position ?? selected.layer.position
         let currentTransform = currentLayer?.transform ?? selected.layer.transform
+        let snapshots = Array(coordinator.views.values) + Array(coordinator.dividerViews.values)
+        let planes = Array(coordinator.planes.values) + Array(coordinator.dividerPlanes.values)
+        let planeTransforms = planes.map { $0.layer.presentation()?.transform ?? $0.layer.transform }
+        let currentAlphas = snapshots.map { CGFloat($0.layer.presentation()?.opacity ?? $0.layer.opacity) }
         coordinator.animator?.stopAnimation(true)
+        for (snapshot, alpha) in zip(snapshots, currentAlphas) { snapshot.alpha = alpha }
+        for (plane, transform) in zip(planes, planeTransforms) { plane.layer.transform = transform }
         if selected.isHidden {
             selected.layer.transform = CATransform3DIdentity
             selected.frame = destination
@@ -797,40 +829,47 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             selected.alpha = 0
         }
         coordinator.expanded = expanded
-        let upperBottom = cards.filter { $0.index < index }.map { $0.frame.minY + 204 }.max() ?? 0
-        let lowerTop = cards.filter { $0.index > index }.map { $0.frame.minY }.min() ?? height
-        let animator = UIViewPropertyAnimator(duration: reduceMotion ? 0.15 : 0.32,
-            timingParameters: UISpringTimingParameters(dampingRatio: 1))
+        guard let card = cards.first(where: { $0.id == selectedID }) else { return }
+        let source = CGRect(x: coordinator.slotPosition.x - coordinator.slotBounds.width / 2,
+            y: coordinator.slotPosition.y - coordinator.slotBounds.height / 2,
+            width: coordinator.slotBounds.width, height: coordinator.slotBounds.height)
+        let sourceTransform = coordinator.slotTransform
+        let upperBottom = max(cards.filter { $0.index < card.index }.map { $0.frame.maxY + 204 }.max() ?? 0,
+            dividers.filter { $0.index <= card.index }.map { $0.frame.minY + 204 }.max() ?? 0)
+        let lowerTop = min(cards.filter { $0.index > card.index }.map { $0.frame.minY }.min() ?? height,
+            dividers.filter { $0.index > card.index }.map { $0.frame.minY }.min() ?? height)
+        let animator: UIViewPropertyAnimator
+        if reduceMotion {
+            animator = UIViewPropertyAnimator(duration: 0.15, curve: .linear)
+        } else {
+            // Cubic approximation of ln(x): fast departure, long gentle settle.
+            animator = UIViewPropertyAnimator(duration: 0.30,
+                timingParameters: UICubicTimingParameters(controlPoint1: CGPoint(x: 0.16, y: 0.86),
+                    controlPoint2: CGPoint(x: 0.28, y: 1.0)))
+        }
         animator.addAnimations {
-            for card in cards {
-                guard let cardView = coordinator.views[card.id] else { continue }
-                if card.id == selectedID {
-                    if !reduceMotion {
-                        let target = expanded ? destination : CGRect(x: card.frame.minX,
-                            y: card.frame.minY, width: card.frame.width, height: 204)
-                        cardView.bounds = CGRect(origin: .zero, size: target.size)
-                        cardView.center = CGPoint(x: target.midX, y: target.midY)
-                        cardView.layer.transform = ArchiveStorage.transform(enabled: !expanded && !card.isTop && !typeSize.isAccessibilitySize)
-                    }
-                    cardView.alpha = reduceMotion && !expanded ? 0 : 1
-                } else {
-                    let offset = card.index < index ? -max(0, upperBottom) - 24 : max(0, height - lowerTop) + 24
-                    cardView.layer.transform = CATransform3DConcat(
-                        ArchiveStorage.transform(enabled: !card.isTop && !typeSize.isAccessibilitySize),
-                        CATransform3DMakeTranslation(0, expanded && !reduceMotion && !card.isTop ? offset : 0, 0))
-                    cardView.alpha = expanded ? 0 : 1
-                    coordinator.blurs[card.id]?.alpha = expanded && !reduceMotion ? 1 : 0
-                }
-            }
-            for divider in dividers {
-                guard let dividerView = coordinator.dividerViews[divider.index] else { continue }
-                let offset = divider.index <= index ? -max(0, upperBottom) - 24 : max(0, height - lowerTop) + 24
-                dividerView.layer.transform = CATransform3DConcat(
-                    ArchiveStorage.transform(enabled: !typeSize.isAccessibilitySize),
-                    CATransform3DMakeTranslation(0, expanded && !reduceMotion ? offset : 0, 0))
-                dividerView.alpha = expanded ? 0 : 1
+            if reduceMotion {
+                selected.alpha = expanded ? 1 : 0
+            } else {
+                let target = expanded ? destination : source
+                selected.bounds = CGRect(origin: .zero, size: target.size)
+                selected.center = CGPoint(x: target.midX, y: target.midY)
+                selected.layer.transform = expanded ? CATransform3DIdentity : sourceTransform
             }
         }
+        let moveRack: () -> Void = {
+            for other in cards where other.id != selectedID {
+                if reduceMotion { coordinator.views[other.id]?.alpha = expanded ? 0 : 1 }
+                coordinator.planes[other.id]?.transform = CGAffineTransform(translationX: 0,
+                    y: expanded && !reduceMotion ? (other.index < card.index ? -max(0, upperBottom) - 48 : max(0, height - lowerTop) + 252) : 0)
+            }
+            for divider in dividers {
+                if reduceMotion { coordinator.dividerViews[divider.index]?.alpha = expanded ? 0 : 1 }
+                coordinator.dividerPlanes[divider.index]?.transform = CGAffineTransform(translationX: 0,
+                    y: expanded && !reduceMotion ? (divider.index <= card.index ? -max(0, upperBottom) - 48 : max(0, height - lowerTop) + 252) : 0)
+            }
+        }
+        animator.addAnimations(moveRack, delayFactor: expanded && !reduceMotion ? 0.28 : 0)
         animator.addCompletion { position in
             guard position == .end else { return }
             onCompletion()
@@ -842,9 +881,13 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         coordinator.animator?.stopAnimation(true)
     }
     final class Coordinator {
+        var planes: [String: UIView] = [:]
+        var dividerPlanes: [Int: UIView] = [:]
         var views: [String: UIImageView] = [:]
-        var blurs: [String: UIImageView] = [:]
         var dividerViews: [Int: UIImageView] = [:]
+        var slotBounds = CGRect.zero
+        var slotPosition = CGPoint.zero
+        var slotTransform = CATransform3DIdentity
         var expanded: Bool = false
         var animator: UIViewPropertyAnimator?
     }

@@ -79,7 +79,9 @@ struct JourneyDaySummary {
 // Decode off the main actor; share the same pixels with the archive's ImageRenderer.
 actor JourneyPhotoCache {
     static let shared = JourneyPhotoCache()
-    private let cache = NSCache<NSURL, UIImage>()
+    private static let imageCache = NSCache<NSURL, UIImage>()
+    nonisolated static func cachedImage(for url: URL) -> UIImage? { imageCache.object(forKey: url as NSURL) }
+    private let cache = JourneyPhotoCache.imageCache
     private var requests: [URL: Task<UIImage?, Never>] = [:]
     init() { cache.totalCostLimit = 32 * 1024 * 1024 }
     func image(for url: URL) async -> UIImage? {
@@ -117,6 +119,8 @@ struct JourneyDayCardContent: View {
     @State private var loadedURL: URL?
 
     var body: some View {
+        let cachedPhoto = summary.coverURL.flatMap(JourneyPhotoCache.cachedImage(for:))
+        let displayPhoto = photo ?? cachedPhoto
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 ViewThatFits(in: .horizontal) {
@@ -134,7 +138,7 @@ struct JourneyDayCardContent: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     Color.clear.aspectRatio(2.2, contentMode: .fit)
                         .overlay {
-                            if let photo, loadedURL == summary.coverURL {
+                            if let photo = displayPhoto, loadedURL == summary.coverURL || cachedPhoto != nil {
                                 GeometryReader { geometry in
                                     Image(uiImage: photo).resizable().scaledToFill()
                                         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -145,7 +149,7 @@ struct JourneyDayCardContent: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .accessibilityHidden(true)
                     Text(summary.coverTitle ?? "").font(.caption2).foregroundStyle(.secondary)
-                        .opacity(photo != nil && loadedURL == summary.coverURL ? 1 : 0)
+                        .opacity(displayPhoto != nil && (loadedURL == summary.coverURL || cachedPhoto != nil) ? 1 : 0)
                 }
             }
             if summary.count == 0 {
