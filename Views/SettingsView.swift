@@ -21,6 +21,9 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 28) {
                         mapPreferences
                         serviceConnection.id("settings-service")
+                        group("AI 助手") {
+                            card { AIConfigurationSection(planner: aiPlanner, showsHeading: false) }
+                        }
                         privacy
                         about
                     }
@@ -35,7 +38,11 @@ struct SettingsView: View {
                 .background(Color(uiColor: .systemBackground))
                 .navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    PanelCloseToolbarItem(identifier: "close-settings", disabled: checking) { dismiss() }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button { dismiss() } label: { Image(systemName: "xmark") }
+                            .accessibilityLabel("关闭").accessibilityIdentifier("close-settings")
+                            .disabled(checking)
+                    }
                     ToolbarItem(placement: .confirmationAction) {
                         Button(action: saveAndClose) { Image(systemName: "checkmark") }
                             .accessibilityLabel("保存设置").accessibilityIdentifier("save-settings")

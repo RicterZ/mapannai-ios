@@ -1,6 +1,139 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testHomeHistoryButtonPaddingIsTappable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--archive-ai-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let history = app.buttons["archive-chat-history"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !history.isHittable { app.swipeUp() }
+        XCTAssertGreaterThanOrEqual(history.frame.height, 44)
+        history.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.1)).tap()
+        XCTAssertTrue(app.scrollViews["ai-conversation-list"].waitForExistence(timeout: 3))
+    }
+    @MainActor func testChatEdgeSwipeReturnsHome() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--archive-ai-preview", "--fullscreen-chat-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let recent = app.buttons["archive-chat-recent"]
+        XCTAssertTrue(recent.waitForExistence(timeout: 5)); recent.tap()
+        XCTAssertTrue(app.buttons["ai-close"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["ai-close"].label, "返回")
+        attach(app, "AI bare back arrow")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.45)))
+        XCTAssertTrue(recent.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["ai-close"].exists)
+    }
+    @MainActor func testFullScreenChatReadingKeyboardAndHistory() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--archive-ai-preview", "--fullscreen-chat-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let recent = app.buttons["archive-chat-recent"]
+        XCTAssertTrue(recent.waitForExistence(timeout: 5)); recent.tap()
+        XCTAssertTrue(app.buttons["ai-close"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["archive-chat-history"].isHittable)
+        attach(app, "Full screen AI conversation")
+        let input = app.descendants(matching: .any)["ai-message-input"].firstMatch
+        input.tap(); input.typeText("交通方便的酒店就好。")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertTrue(app.buttons["ai-copy-answer"].isHittable)
+        XCTAssertFalse(app.buttons["ai-jump-latest"].exists)
+        attach(app, "Full screen AI keyboard")
+        app.buttons["ai-conversations"].tap()
+        XCTAssertTrue(app.scrollViews["ai-conversation-list"].waitForExistence(timeout: 3))
+        attach(app, "Full screen AI conversation history")
+        app.buttons["京都的四天慢旅行"].tap()
+        let list = app.scrollViews["ai-message-list"]
+        list.swipeDown(); list.swipeDown()
+        XCTAssertTrue(app.buttons["ai-jump-latest"].waitForExistence(timeout: 3))
+        let process = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "工具过程")).firstMatch
+        XCTAssertTrue(process.isHittable)
+        process.tap()
+        XCTAssertTrue(app.staticTexts["搜索地点 · 已返回结果"].waitForExistence(timeout: 3))
+        attach(app, "Full screen AI tool process")
+        app.buttons["ai-close"].tap()
+        XCTAssertTrue(recent.waitForExistence(timeout: 3))
+    }
+    @MainActor func testHomeKeyboardDismissal() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--archive-ai-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let input = app.textFields["archive-chat-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap(); input.typeText("京都")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertLessThan(input.frame.maxY, app.keyboards.firstMatch.frame.minY)
+        attach(app, "Home keyboard with dismissal and background")
+        XCTAssertFalse(app.buttons["archive-keyboard-dismiss"].exists)
+        app.staticTexts["目的地、想做的事，或一个还没成形的想法。"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(input.value as? String, "京都")
+    }
+    @MainActor func testHomeChatEntryZeroOneThreeAndHistory() {
+        for variant in ["--empty-archive-preview", "--one-archive-preview", "--three-archive-preview"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--demo", "--archive-preview", "--archive-ai-preview", variant, "-AppleLanguages", "(zh-Hans)"]
+            app.launch()
+            let history = app.buttons["archive-chat-history"]
+            XCTAssertTrue(history.waitForExistence(timeout: 5))
+            for _ in 0..<4 where !history.isHittable { app.swipeUp() }
+            XCTAssertTrue(history.isHittable)
+            attach(app, "Home AI " + variant)
+            if variant == "--one-archive-preview" {
+                let input = app.textFields["archive-chat-input"]
+                input.tap(); input.typeText("想去京都，四天，慢一点。")
+                XCTAssertTrue(app.buttons["archive-chat-send"].exists)
+                attach(app, "Home AI plain send icon")
+            }
+            history.tap()
+            XCTAssertTrue(app.scrollViews["ai-conversation-list"].waitForExistence(timeout: 3))
+            app.buttons["京都的四天慢旅行"].tap()
+            XCTAssertTrue(app.buttons["ai-close"].waitForExistence(timeout: 3))
+            app.buttons["ai-close"].tap()
+            XCTAssertTrue(history.waitForExistence(timeout: 3))
+            app.terminate()
+        }
+    }
+    @MainActor func testHomeChatConfigurationEntry() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let configure = app.buttons["archive-chat-settings"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !configure.isHittable { app.swipeUp() }
+        configure.tap()
+        let model = app.textFields["ai-model"]
+        for _ in 0..<5 where !model.isHittable { app.swipeUp() }
+        XCTAssertTrue(model.exists)
+    }
+    @MainActor func testArchiveNumbersContinueIntoDetail() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let card = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(app.buttons["archive-settings"].frame.midY, app.frame.height * 0.8)
+        XCTAssertEqual(card.staticTexts["archive-number-demo-trip"].label, "No. 001")
+        attach(app, "Archive card automatic number")
+        card.tap()
+        XCTAssertTrue(app.buttons["journey-day-day-1"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["archive-number-demo-trip"].firstMatch.label, "No. 001")
+    }
+    @MainActor func testEmptyArchiveUsesExistingCardsAndCreation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--empty-archive-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let create = app.buttons["empty-archive-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["0 次旅途"].exists)
+        XCTAssertFalse(app.staticTexts["把第一段旅途，放进这里。"].exists)
+        attach(app, "Empty archive existing three-card stack")
+        create.tap()
+        XCTAssertTrue(app.textFields["trip-name-field"].waitForExistence(timeout: 5))
+    }
     @MainActor func testDayThemeMenuAndCancel() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview"]
@@ -130,9 +263,9 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["archive-create"].waitForExistence(timeout: 5))
         XCTAssertEqual(card.frame.minY, initialY, accuracy: 2)
         let settings = app.buttons["archive-settings"]
-        if !settings.isHittable { app.swipeDown() }
+        for _ in 0..<5 where !settings.isHittable { app.scrollViews["archive-trip-list"].swipeUp() }
         XCTAssertTrue(settings.isHittable)
-        attach(app, "Archive title settings button")
+        attach(app, "Archive footer settings entry")
         settings.tap()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 3))
     }

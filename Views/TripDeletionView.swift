@@ -22,11 +22,12 @@ struct DayDeletionView: View {
     }
 }
 
-private struct DeletionConfirmationView: View {
+struct DeletionConfirmationView: View {
     @ObservedObject var store: AppStore
     let title: String
     let message: String
     let kind: String
+    var offersExclusiveMarkers = true
     let action: (Bool) -> Void
     @State private var contentHeight: CGFloat = 220
     @State private var bottomSafeArea: CGFloat = 0
@@ -47,6 +48,7 @@ private struct DeletionConfirmationView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Divider()
+                if offersExclusiveMarkers {
                 Button { deleteExclusiveMarkers.toggle() } label: {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: deleteExclusiveMarkers ? "checkmark.circle.fill" : "circle")
@@ -61,12 +63,14 @@ private struct DeletionConfirmationView: View {
                 }.buttonStyle(.plain)
                     .accessibilityValue(deleteExclusiveMarkers ? "已选" : "未选")
                     .accessibilityIdentifier("delete-\(kind)-markers")
+                }
                 HStack(spacing: 12) {
                     Button { dismiss() } label: {
                         Text("取消").font(.body.weight(.medium)).frame(maxWidth: .infinity, minHeight: 52)
                             .foregroundStyle(.primary)
                             .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
                     }.buttonStyle(.plain)
+                        .accessibilityIdentifier("cancel-delete-\(kind)")
                     Button(role: .destructive) {
                         deleting = true
                         let includeMarkers = deleteExclusiveMarkers

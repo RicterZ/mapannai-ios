@@ -92,8 +92,10 @@ final class RouteScheduleUITests: XCTestCase {
     @MainActor func testHoldRouteDragAtRowMidpoint() {
         for fraction in [0.4, 0.5, 0.6] {
             let app = XCUIApplication()
-            app.launchArguments = ["--demo", "--trip-places-preview", "--transport-schedule-preview", "--route-drag-diagnostics"]
+            app.launchArguments = ["--demo", "--archive-preview", "--transport-schedule-preview", "--route-drag-diagnostics"]
             app.launch()
+            let trip = app.buttons["archive-trip-demo-trip"]
+            XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
             let day = app.buttons["journey-day-day-1"]
             XCTAssertTrue(day.waitForExistence(timeout: 10)); day.tap()
             let source = app.buttons["route-0-marker-demo-2"]

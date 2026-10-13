@@ -68,6 +68,7 @@ struct DayMapDateStrip: View {
                                 Text(JourneyDayCardContent.dateFormatter.string(from: Date.fromDay(date.date))).font(.caption)
                             }.foregroundStyle(date.id == day.id ? .primary : .secondary)
                                 .frame(height: 44)
+                                .contentShape(Rectangle())
                                 .overlay(alignment: .bottom) {
                                     if date.id == day.id { Capsule().fill(Color.primary).frame(width: 18, height: 3) }
                                 }

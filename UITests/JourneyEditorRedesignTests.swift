@@ -1,6 +1,71 @@
 import XCTest
 
 final class JourneyEditorRedesignTests: XCTestCase {
+    @MainActor func testEmptyUnplannedAppearsDuringEditingAndRemovalUsesPanel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+        XCTAssertFalse(app.otherElements["day-unplanned-drop-area"].exists)
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.press(forDuration: 0.8)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["day-unplanned-drop-area"].firstMatch.exists)
+        row.tap()
+        app.buttons["day-selection-delete"].tap()
+        XCTAssertTrue(app.buttons["confirm-delete-day-places"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        capture("Day place removal confirmation")
+        app.buttons["cancel-delete-day-places"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+    }
+    @MainActor func testUnplannedEditingAlignsWithRouteAndStillSelects() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--inline-address-preview", "--day-detail-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.press(forDuration: 0.8)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
+        let unplanned = app.buttons["day-marker-demo-3"]
+        for _ in 0..<3 where !unplanned.isHittable { app.swipeUp() }
+        XCTAssertTrue(unplanned.isHittable)
+        XCTAssertEqual(unplanned.frame.minX, row.frame.minX, accuracy: 2)
+        unplanned.tap()
+        XCTAssertTrue(app.buttons["day-selection-copy"].isEnabled)
+        capture("Unplanned editing aligned with route")
+        unplanned.swipeLeft()
+        XCTAssertTrue(app.buttons["day-edit-done"].exists, "排序期间不能横滑切天")
+        XCTAssertTrue(unplanned.exists)
+    }
+    @MainActor func testDayDetailPagesSwipeBothDirectionsAndDateButtonsStaySynced() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+        let first = app.descendants(matching: .any)["day-detail-page-day-1"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.swipeLeft()
+        let second = app.descendants(matching: .any)["day-detail-page-day-2"].firstMatch
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["城市与旧时光"].waitForExistence(timeout: 5))
+        capture("Day detail after left swipe")
+        second.swipeRight()
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        app.buttons["day-detail-date-day-2"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        second.swipeLeft()
+        XCTAssertTrue(second.waitForExistence(timeout: 3), "末日不能越界")
+    }
     @MainActor private func launch(_ kind: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--editor-preview", kind, "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -26,15 +91,18 @@ final class JourneyEditorRedesignTests: XCTestCase {
         let address = app.staticTexts["route-0-address-demo-0"]
         XCTAssertTrue(address.exists)
         address.press(forDuration: 1)
-        XCTAssertEqual(address.value as? String, "已复制完整地址")
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 3))
+        app.buttons["day-edit-done"].tap()
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForNonExistence(timeout: 3))
         let transport = app.otherElements["route-0-transport-0"].firstMatch
         let expand = transport.buttons["展开备注"]
         XCTAssertTrue(expand.waitForExistence(timeout: 3))
         expand.tap()
         XCTAssertTrue(transport.buttons["收起备注"].waitForExistence(timeout: 3))
         transport.buttons["收起备注"].tap()
-        if transport.exists { transport.press(forDuration: 1) }
-        else { app.staticTexts["地铁 · 10号线"].press(forDuration: 1) }
+        transport.press(forDuration: 0.8)
+        XCTAssertFalse(app.textFields["schedule-service"].exists)
+        app.buttons["编辑交通安排"].firstMatch.tap()
         XCTAssertTrue(app.textFields["schedule-service"].waitForExistence(timeout: 3))
         app.buttons["schedule-cancel"].tap()
         let handle = app.buttons["面板高度"]
@@ -80,17 +148,23 @@ final class JourneyEditorRedesignTests: XCTestCase {
         }
     }
 
-    @MainActor func testArchiveHeaderSettingsAndFloatingCreate() {
+    @MainActor func testArchiveFooterSettingsAndFloatingCreate() {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
         let heading = app.staticTexts["archive-page-title"]
         let settings = app.buttons["archive-settings"]
         let create = app.buttons["archive-create"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        XCTAssertEqual(settings.frame.midY, heading.frame.midY, accuracy: 3)
-        XCTAssertGreaterThan(settings.frame.minX, heading.frame.maxX)
+        XCTAssertGreaterThan(settings.frame.minY, heading.frame.maxY + 44)
+        XCTAssertEqual(settings.frame.midX, app.frame.midX, accuracy: 3)
+        capture("Archive settings quietly below the card stack")
         XCTAssertGreaterThan(create.frame.minY, app.frame.height * 0.75)
         settings.tap()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+        let close = app.buttons["close-settings"]
+        let save = app.buttons["save-settings"]
+        XCTAssertEqual(close.frame.midY, save.frame.midY, accuracy: 2)
+        XCTAssertEqual(close.frame.width, save.frame.width, accuracy: 2)
+        capture("Settings symmetric native close and save buttons")
         app.terminate(); app.launch()
         XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
         XCTAssertTrue(app.textFields["trip-name-field"].waitForExistence(timeout: 5))
@@ -266,6 +340,43 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertTrue(picker.label.contains("🇨🇳"))
         capture("Selected trip flag retains its stored emoji identity")
     }
+    @MainActor func testStackedTripLongPressUsesFullCardPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let card = app.buttons["archive-trip-year-2025-a"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).press(forDuration: 0.8)
+        XCTAssertTrue(app.buttons["编辑旅途"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["删除旅途"].isHittable)
+        capture("Stacked trip full unoccluded context preview")
+        app.buttons["编辑旅途"].tap()
+        XCTAssertTrue(app.textFields["trip-name-field"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testStackedTripContextDismissPreservesSlotsAndScroll() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let card = app.buttons["archive-trip-year-2025-a"]
+        let next = app.buttons["archive-trip-year-2025-b"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let original = card.frame
+        let nextY = next.frame.minY
+        for _ in 0..<2 {
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).press(forDuration: 0.8)
+            XCTAssertTrue(app.buttons["编辑旅途"].waitForExistence(timeout: 3))
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.12)).tap()
+            XCTAssertTrue(app.buttons["编辑旅途"].waitForNonExistence(timeout: 3))
+            XCTAssertEqual(card.frame.minY, original.minY, accuracy: 1)
+            XCTAssertEqual(next.frame.minY, nextY, accuracy: 1)
+        }
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)))
+        XCTAssertFalse(app.buttons["编辑旅途"].exists)
+        XCTAssertLessThan(card.frame.minY, original.minY - 20)
+    }
+
     @MainActor func testArchiveLongPressOpensSharedTripEditor() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -284,7 +395,31 @@ final class JourneyEditorRedesignTests: XCTestCase {
         app.buttons["trip-create-cancel"].tap()
         XCTAssertTrue(card.waitForExistence(timeout: 5))
     }
-    @MainActor func testDayLongPressEditsInPlaceAndSwipeOffersTransfer() {
+    @MainActor func testCompareJourneyAndDayLongPressFeedback() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 5)); trip.tap()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        day.press(forDuration: 0.7)
+        XCTAssertTrue(app.buttons["编辑"].waitForExistence(timeout: 3))
+        app.buttons["编辑"].tap()
+        XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 3))
+        app.buttons["取消"].tap()
+        day.tap()
+        let row = app.buttons["route-0-marker-demo-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        for _ in 0..<2 {
+            row.press(forDuration: 0.8)
+            XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 3))
+            app.buttons["day-edit-done"].tap()
+            XCTAssertTrue(app.buttons["day-edit-done"].waitForNonExistence(timeout: 3))
+        }
+    }
+
+    @MainActor func testDayLongPressEditsInPlaceWithoutSwipeActions() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
@@ -295,10 +430,12 @@ final class JourneyEditorRedesignTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
         let row = app.buttons["route-0-marker-demo-1"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.press(forDuration: 0.7)
+        row.press(forDuration: 0.8)
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
         XCTAssertTrue(app.buttons["route-view-0"].exists)
         XCTAssertFalse(app.buttons["save-chain-editor"].exists)
+        row.tap()
         capture("Day long press editing in place")
         XCTAssertTrue(app.buttons["day-selection-copy"].isEnabled)
         app.buttons["day-selection-copy"].tap()
@@ -312,13 +449,18 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertFalse(app.buttons["day-edit-done"].exists)
         let cell = app.cells.containing(.button, identifier: "route-0-marker-demo-1").firstMatch
         cell.swipeRight()
-        XCTAssertTrue(app.buttons["day-move-demo-1"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["day-copy-demo-1"].exists)
-        XCTAssertTrue(app.buttons["day-delete-demo-1"].exists)
-        capture("Place right swipe move copy delete")
-        app.buttons["day-move-demo-1"].tap()
+        XCTAssertFalse(app.buttons["day-delete-demo-1"].exists)
+        XCTAssertFalse(app.buttons["day-move-demo-1"].exists)
+        cell.swipeLeft()
+        XCTAssertFalse(app.buttons["day-delete-demo-1"].exists)
+        capture("Day rows have no horizontal swipe actions")
+        cell.swipeRight()
+        row.press(forDuration: 0.8)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 3))
+        row.tap()
+        app.buttons["day-selection-move"].tap()
         XCTAssertTrue(app.buttons["transfer-day-day-2"].waitForExistence(timeout: 5))
-        capture("Move a place to another day")
+        capture("Move remains available from long press selection")
         app.buttons["transfer-day-cancel"].tap()
     }
     @MainActor func testSearchOpensAsSheetAndKeepsDraftInItsNavigation() {
@@ -394,7 +536,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
                 XCTAssertLessThan(handle.frame.minY, app.frame.height * 0.65)
             }
         }
-        row.press(forDuration: 0.7)
+        row.press(forDuration: 0.8)
         let done = app.buttons["day-edit-done"]
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(done.frame.midX, app.frame.width * 0.75)

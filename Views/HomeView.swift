@@ -7,7 +7,6 @@ struct HomeView: View {
     // Only presentation changes invalidate Home/map; streaming tokens are observed inside the chat view.
     @State private var aiPlanner = AIPlannerStore()
     @State private var aiPresented = false
-    @State private var aiSheetDetent: PresentationDetent = .medium
     @State private var aiSettingsPresented = false
     @State private var showSettings = false
     @State private var editorPreviewPresented = false
@@ -44,7 +43,7 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack(path: $archivePath) {
-            JourneyArchiveView(store: store, path: $archivePath, mapVisible: mapEntered, onOpenSettings: { showSettings = true }) { trip, day in
+            JourneyArchiveView(store: store, planner: aiPlanner, path: $archivePath, mapVisible: mapEntered, onOpenSettings: { showSettings = true }) { trip, day in
                 initialDayPanelReady = false
                 visibleDayPanelHeight = 0
                 store.select(trip: trip, day: day)
@@ -58,6 +57,33 @@ struct HomeView: View {
                 mapWorkspace.toolbar(.hidden, for: .navigationBar)
             }
         }.tint(Color(uiColor: .label))
+        .onReceive(aiPlanner.$presented.removeDuplicates()) { aiPresented = $0 }
+        .fullScreenCover(isPresented: Binding(get: { aiPresented && !mapEntered }, set: { if !$0 { aiPlanner.close() } })) {
+            AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { aiSettingsPresented = true })
+                .sheet(isPresented: $aiSettingsPresented) {
+                    SettingsView(settings: settings, store: store, aiPlanner: aiPlanner)
+                }
+        }
+
+        .task(id: settings.revision) {
+            await aiPlanner.configure(for: settings)
+            #if DEBUG
+            if store.demo && ProcessInfo.processInfo.arguments.contains("--archive-ai-preview") {
+                aiPlanner.configuration = AIConfiguration(model: "preview")
+                let conversation = AIConversation(title: "京都的四天慢旅行", messages: [])
+                aiPlanner.conversations = [conversation]; aiPlanner.activeID = conversation.id
+                if ProcessInfo.processInfo.arguments.contains("--fullscreen-chat-preview") {
+                    let calls = [AIMessage.ToolCall(id: "preview-search", type: "function", function: .init(name: "search_places", arguments: "{}"))]
+                    aiPlanner.conversations[0].messages = [
+                        AIMessage(role: "user", content: "想去京都，四天，慢一点。"),
+                        AIMessage(role: "assistant", content: nil, tool_calls: calls),
+                        AIMessage(role: "tool", content: "{}", tool_call_id: "preview-search"),
+                        AIMessage(role: "assistant", content: "四天可以留得从容一些。先把京都分成几片街区，每天少换一次地方。\n\n**我会这样安排**\n\n第一天 · 抵达与鸭川\n\n安顿好后，沿河散步，不赶景点。\n\n第二天 · 东山的小巷\n\n清水寺、二年坂，留一段时间喝茶。\n\n第三天 · 岚山\n\n早点去竹林，午后留给渡月桥和河边。\n\n第四天 · 咖啡与返程\n\n根据离开的时间，安排一片附近街区。\n\n你已经确定出行日期了吗？住在哪里也会影响每天的顺序。")
+                    ]
+                }
+            }
+            #endif
+        }
         .onAppear {
             if store.demo, ProcessInfo.processInfo.arguments.contains("--editor-preview") { editorPreviewPresented = true }
         }
@@ -189,7 +215,6 @@ struct HomeView: View {
                     location.requestStartupLocation { store.receiveStartupLocation($0) }
                 }
                 .task(id: settings.revision) {
-                    await aiPlanner.configure(for: settings)
                     #if DEBUG
                     if store.demo && ProcessInfo.processInfo.arguments.contains("--note-composer-preview") { noteComposerPreview = true }
                     if store.demo && ProcessInfo.processInfo.arguments.contains("--ai-chat-preview") {
@@ -203,12 +228,6 @@ struct HomeView: View {
                     }
                     #endif
                     if ProcessInfo.processInfo.arguments.contains("--ai-planner-demo") { aiPlanner.presented = true }
-                }
-                .onReceive(aiPlanner.$presented.removeDuplicates()) { open in
-                    withAnimation(AppMotion.presentation(reduceMotion: reduceMotion)) {
-                        aiPresented = open
-                        if open { aiSheetDetent = .medium }
-                    }
                 }
                 .onChange(of: store.selectedMarker?.id) { _, id in
                     guard !sidebar, !store.placeSearchPresented else { return }
@@ -288,9 +307,7 @@ struct HomeView: View {
             let layout = MapLayout(width: proxy.size.width, height: proxy.size.height,
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
                                    sheetHeight: store.placeSearchPresented ? (searchDetent == .compact ? 80 : searchDetent == .half ? proxy.size.height * 0.5 : proxy.size.height) : store.dayMapBrowsing && visibleDayPanelHeight > 0 ? max(0, visibleDayPanelHeight - proxy.safeAreaInsets.bottom) : store.dayMapBrowsing && sheetDetent == .compact ? DayMapPresentation.contentHeight - 16 : sheetDetent == .compact ? compactJourneyHeight : sheetDetent == .half ? proxy.size.height * 0.5 : proxy.size.height)
-            let cameraInsets = aiPresented && layout.usesSidebar
-                ? MapViewportInsets(top: 50, left: 35, bottom: 70, right: min(420, Double(proxy.size.width) * 0.46) + 25)
-                : layout.insets
+            let cameraInsets = layout.insets
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
                     store.mapViewportInsets = cameraInsets
@@ -330,11 +347,8 @@ struct HomeView: View {
             set: { store.dayEditorDraft = $0 })) { draft in
             JourneyDayEditor(store: store, draft: draft)
         }
-        .sheet(isPresented: Binding(get: { aiPresented && !sidebar }, set: { if !$0 { aiPlanner.close() } })) {
+        .fullScreenCover(isPresented: Binding(get: { aiPresented && mapEntered }, set: { if !$0 { aiPlanner.close() } })) {
             AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { aiSettingsPresented = true })
-                .presentationDetents([.medium, .large], selection: $aiSheetDetent)
-                .presentationDragIndicator(UIDevice.current.userInterfaceIdiom == .pad ? .hidden : .visible)
-                .presentationBackgroundInteraction(.enabled)
                 .sheet(isPresented: $aiSettingsPresented) {
                     SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible)
                 }
@@ -628,15 +642,6 @@ struct HomeView: View {
             MapSurface(store: store, settings: settings, onOpenSettings: { showSettings = true })
                 .transaction { $0.animation = nil; $0.disablesAnimations = true }
                 .ignoresSafeArea()
-            if aiPresented && layout.usesSidebar {
-                AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { showSettings = true })
-                    .padding(.top, 60)
-                    .frame(width: min(420, layout.width * 0.46), height: layout.height)
-                    .background(.regularMaterial)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .transition(AppMotion.workspaceTransition(edge: .trailing, reduceMotion: reduceMotion))
-                    .zIndex(2)
-            }
             if store.dayMapBrowsing && !store.placeSearchPresented && store.selectedMarker == nil {
                 HStack {
                     Button {

@@ -47,7 +47,7 @@ final class SettingsAboutTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--demo", "--archive-preview"]; app.launch()
         let settings = app.buttons["archive-settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
-        if !settings.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        for _ in 0..<5 where !settings.isHittable { app.scrollViews["archive-trip-list"].swipeUp() }
         XCTAssertTrue(settings.isHittable); settings.tap()
         XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
         return app

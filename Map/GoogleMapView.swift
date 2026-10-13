@@ -223,7 +223,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
             store.noteMapInteraction(); store.create(at: Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude))
         }
         func mapView(_ mapView: GMSMapView, didTapPOIWithPlaceID placeID: String, name: String, location: CLLocationCoordinate2D) {
-            guard !store.placeSearchPresented else { return }
+            guard store.draft?.marker == nil else { return }
             let point = mapView.projection.point(for: location)
             if let saved = store.mapMarkers.first(where: { marker in
                 let screen = mapView.projection.point(for: Self.coordinate(marker.coordinates))

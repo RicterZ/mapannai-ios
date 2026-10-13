@@ -72,6 +72,7 @@
 		820E0ED4AE6E2330AA685E65 /* TripDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB8D50F9FB8E05601301E564 /* TripDeletionView.swift */; };
 		88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDDA121FFD3C16E1FD7287B /* JourneyCircleButtonStyle.swift */; };
 		8ACAB632ABC3011A72B69678 /* JourneySwitchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */; };
+		8D220614F0AEA12467FDEF08 /* ArchiveChatEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F120DDA67261A84FB9EE3349 /* ArchiveChatEntry.swift */; };
 		8D82153E326BE8226D9B4A5B /* RouteScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C16D7526C2682672D53176 /* RouteScheduleTests.swift */; };
 		8E4BA9BE46B890358BAE4A01 /* BackgroundSaveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 198C34C423C7BB478F9EC042 /* BackgroundSaveTests.swift */; };
 		8FC298524B1D52C0FBF7C80B /* SearchSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C335E3944995E33E94762A45 /* SearchSelectionTests.swift */; };
@@ -290,6 +291,7 @@
 		EB3432BE0A08F9D2F367BDED /* JourneyActionStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyActionStyle.swift; sourceTree = "<group>"; };
 		EECFC36D7A9E94D3DD010E88 /* EdgeAttachedPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeAttachedPanel.swift; sourceTree = "<group>"; };
 		F00A56773C523B6EC0BA67DC /* SearchPaginationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPaginationUITests.swift; sourceTree = "<group>"; };
+		F120DDA67261A84FB9EE3349 /* ArchiveChatEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveChatEntry.swift; sourceTree = "<group>"; };
 		F68E87F16FD306CFB5F81815 /* MapAnNaiUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MapAnNaiUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F72771F1E2B151FC279B7446 /* Geometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Geometry.swift; sourceTree = "<group>"; };
 		F96C9DF6A9CD060EB8FC5BF9 /* InteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionTests.swift; sourceTree = "<group>"; };
@@ -327,6 +329,7 @@
 			children = (
 				A262662E6BA41D29BEFD1710 /* AIMessageMarkdown.swift */,
 				3E64E5D5CCD66C47F3724D18 /* AIPlannerView.swift */,
+				F120DDA67261A84FB9EE3349 /* ArchiveChatEntry.swift */,
 				2AF9FACCA64C54BC3BF05746 /* DayMapJourneyView.swift */,
 				EECFC36D7A9E94D3DD010E88 /* EdgeAttachedPanel.swift */,
 				3F55A919B31EC92357E58F47 /* HomeView.swift */,
@@ -650,6 +653,7 @@
 				D69B2CB94D1270DA835B774D /* AppMotion.swift in Sources */,
 				CD90D38874039B3AA27EE68D /* AppStore.swift in Sources */,
 				D70143FF5E7F6EA42305BABF /* AppleMapView.swift in Sources */,
+				8D220614F0AEA12467FDEF08 /* ArchiveChatEntry.swift in Sources */,
 				5E5B7F87B301257F05899C5B /* CameraMotion.swift in Sources */,
 				98077213B5743CC94A28A49C /* ChatMarkdown.swift in Sources */,
 				914195C48F8818624FEEA4F5 /* DayMapJourneyView.swift in Sources */,

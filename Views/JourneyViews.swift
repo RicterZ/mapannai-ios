@@ -8,6 +8,7 @@ struct JourneyDaysContents: View {
     var onSelectDay: ((TripDay) -> Void)? = nil
     var archiveColorIndex: Int? = nil
     var archiveHeaderVisible = true
+    var archiveContentVisible = true
     var archivePhoto: UIImage? = nil
     var onArchiveHeaderFrame: (CGRect) -> Void = { _ in }
     private var unscheduledPlaces: [Marker] {
@@ -131,10 +132,14 @@ struct JourneyDaysContents: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
             }
+            .opacity(archiveContentVisible ? 1 : 0)
+            .offset(y: archiveContentVisible || reduceMotion ? 0 : -28)
+            .animation(reduceMotion ? .linear(duration: 0.15) :
+                .timingCurve(0.16, 0.86, 0.28, 1, duration: archiveContentVisible ? 0.60 : 0.30), value: archiveContentVisible)
         }
             .onPreferenceChange(ArchiveHeaderFrame.self) { if !$0.isEmpty { onArchiveHeaderFrame($0) } }
             .scrollContentBackground(.hidden)
-            .background(Color(uiColor: .systemBackground))
+            .background(archiveColorIndex == nil ? Color(uiColor: .systemBackground) : Color.clear)
             .listSectionSpacing(8)
             .onPreferenceChange(NativeDayFrames.self) { nativeDayFrames = $0 }
             .sensoryFeedback(.selection, trigger: targetedDayID) { _, newValue in newValue != nil }
@@ -202,11 +207,14 @@ private struct NativeDayFrames: PreferenceKey {
 
 struct JourneyArchiveView: View {
     @ObservedObject var store: AppStore
+    let planner: AIPlannerStore
     @Binding var path: [JourneyDestination]
     let mapVisible: Bool
     var onOpenSettings: () -> Void
     var onSelect: (Trip, TripDay?) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var openedID: String?
     @State private var openingFrame = CGRect.zero
@@ -223,6 +231,8 @@ struct JourneyArchiveView: View {
     @State private var dividerFrames: [Int: CGRect] = [:]
     @State private var transferDividers: [ArchiveTransferDivider] = []
     @State private var photos: [URL: UIImage] = [:]
+    @State private var archiveHeadingFrame = CGRect.zero
+    @State private var transferHeading: ArchiveTransferHeading?
     @State private var creating = false
     @State private var editing: Trip?
     @State private var deleting: Trip?
@@ -262,6 +272,7 @@ struct JourneyArchiveView: View {
                     ZStack(alignment: .topLeading) {
                         JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, archiveColorIndex: openingIndex,
                             archiveHeaderVisible: cardInList,
+                            archiveContentVisible: detailVisible,
                             archivePhoto: coverPhoto(trip) ?? transferCards.first { $0.id == trip.id }?.photo,
                             onArchiveHeaderFrame: {
                                 let origin = geometry.frame(in: .global).origin
@@ -274,13 +285,11 @@ struct JourneyArchiveView: View {
                             .modifier(ArchiveDetailScrollEdges())
                             .scrollContentBackground(.hidden)
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
-                            .opacity(cardInList ? 1 : 0)
-                            .transaction { $0.animation = nil; $0.disablesAnimations = true }
                             .allowsHitTesting(cardInList)
                             .zIndex(Double(openingIndex))
                             .task(id: trip.id) { await beginTransition(trip) }
                         if transitionStarted {
-                            ArchiveCardTransition(cards: transferCards, dividers: transferDividers, selectedID: trip.id,
+                            ArchiveCardTransition(heading: transferHeading, cards: transferCards, dividers: transferDividers, selectedID: trip.id,
                                 destination: destinationFrame, height: slotViewportHeight ?? geometry.size.height,
                                 expanded: detailVisible, handedOff: cardInList, reduceMotion: reduceMotion) {
                                     if detailVisible && !closing {
@@ -311,7 +320,7 @@ struct JourneyArchiveView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if openedID == nil {
+            if openedID == nil && !trips.isEmpty {
                 Button { creating = true } label: {
                     Image(systemName: "plus").font(.system(size: 23, weight: .regular))
                         .frame(width: 52, height: 52)
@@ -323,7 +332,7 @@ struct JourneyArchiveView: View {
                     .padding(.trailing, 24).padding(.bottom, 16)
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background { Color(uiColor: .systemGroupedBackground).ignoresSafeArea() }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Visibility.hidden, for: .navigationBar)
@@ -358,6 +367,7 @@ struct JourneyArchiveView: View {
             photos = photos.filter { urls.contains($0.key) }
         }
         .onPreferenceChange(ArchiveCardFrames.self) { if openedID == nil { cardFrames = $0 } }
+        .onPreferenceChange(ArchiveHeadingFrame.self) { if openedID == nil, !$0.isEmpty { archiveHeadingFrame = $0 } }
         .onPreferenceChange(ArchiveDividerFrames.self) { if openedID == nil { dividerFrames = $0 } }
         .onAppear { if let trip = openedTrip { store.select(trip: trip, focus: false) } }
         .onChange(of: path) { _, value in
@@ -391,33 +401,41 @@ struct JourneyArchiveView: View {
     }
 
     private func archive(height: CGFloat) -> some View {
+        ScrollViewReader { scroll in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("我的旅途").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                            .accessibilityIdentifier("archive-page-title")
-                        Spacer()
-                        Button(action: onOpenSettings) {
-                            Image(systemName: "gearshape").font(.system(size: 20))
-                                .frame(width: 44, height: 44)
-                                .background(.regularMaterial, in: Circle())
-                                .contentShape(Circle())
-                        }.buttonStyle(.plain).accessibilityLabel("设置")
-                            .accessibilityIdentifier("archive-settings")
-                    }
-                    Text("旅の目的地は、まだ見ぬ地平線の向こうに")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.opacity(reduceMotion && detailVisible ? 0 : 1)
-                    .offset(y: detailVisible && !reduceMotion ? -(height + 204) : 0)
-                    .animation(reduceMotion ? .linear(duration: 0.15) :
-                        .timingCurve(0.16, 0.86, 0.28, 1, duration: 0.30)
-                            .delay(detailVisible ? 0.084 : 0), value: detailVisible)
+                ArchiveHeading()
+                    .background(GeometryReader { proxy in
+                        Color.clear.preference(key: ArchiveHeadingFrame.self,
+                            value: proxy.frame(in: .named("journey-archive")))
+                    })
+                    .opacity(openedID == nil || !transitionStarted ? 1 : 0)
                 if trips.isEmpty {
-                    ContentUnavailableView {
-                        Label("还没有旅途", systemImage: "suitcase.rolling")
-                    } description: { Text("创建一次旅行，再慢慢安排想去的地方。") }
-                    actions: { Button("创建旅行") { creating = true }.buttonStyle(.borderedProminent) }
+                    VStack(alignment: .leading, spacing: 0) {
+                        ZStack(alignment: .top) {
+                            ForEach(0..<3) { index in
+                                JourneyArchiveCard(trip: Trip(id: "empty-archive-\(index)", name: "第一程",
+                                    startDate: "", endDate: "", days: []), colorIndex: index,
+                                    isPlaceholder: true)
+                                    .frame(height: 204)
+                                    .padding(.horizontal, CGFloat(2 - index) * 7)
+                                    .compositingGroup()
+                                    .shadow(color: .black.opacity(index == 2 ? 0.09 : 0.06),
+                                            radius: index == 2 ? 12 : 8, y: 5)
+                                    .offset(y: CGFloat(2 - index) * 18)
+                                    .accessibilityHidden(index != 2)
+                                    .accessibilityIdentifier("empty-archive-card-\(index)")
+                            }
+                        }.frame(height: 240).allowsHitTesting(false)
+                        Button { creating = true } label: {
+                            Label("创建旅途", systemImage: "plus")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity, minHeight: 54)
+                                .foregroundStyle(Color(uiColor: .systemBackground))
+                                .background(Color(uiColor: .label), in: Capsule())
+                        }.buttonStyle(.plain).padding(.top, 48)
+                            .accessibilityIdentifier("empty-archive-create")
+                    }.padding(.top, 28).padding(.horizontal, 8)
                 }
                 VStack(spacing: 0) {
                     let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
@@ -451,26 +469,45 @@ struct JourneyArchiveView: View {
                                 .frame(height: compact ? 88 : 204, alignment: .top)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(ArchiveCardButtonStyle())
                         .background(GeometryReader { proxy in
                             Color.clear.preference(key: ArchiveCardFrames.self, value: [trip.id: proxy.frame(in: .named("journey-archive"))])
                         })
                         .opacity(openedID == nil || !transitionStarted ? 1 : 0)
-                        .zIndex(Double(index))
-                        .contextMenu {
-                            Button("编辑旅途", systemImage: "pencil") { editing = trip }
-                            DestructiveMenuButton(title: "删除旅途", systemImage: "trash") { deleting = trip }
+                        .overlay {
+                            ArchiveContextInteraction(
+                                preview: JourneyArchiveCard(trip: trip, colorIndex: index, photo: coverPhoto(trip))
+                                    .frame(width: min(608, max(1, cardFrames[trip.id]?.width ?? 340)), height: 204),
+                                onOpen: { open(trip, index: index, viewportHeight: height) },
+                                onEdit: { editing = trip }, onDelete: { deleting = trip })
+                                .accessibilityHidden(true)
                         }
+                        .zIndex(Double(index))
                         .accessibilityIdentifier("archive-trip-\(trip.id)")
                         .accessibilityHint(isTop ? "置顶旅途，打开旅行详情" : "打开旅行详情")
+                        .accessibilityAction(named: "编辑旅途") { editing = trip }
+                        .accessibilityAction(named: "删除旅途") { deleting = trip }
                         .padding(.bottom, isTop && index + 1 < trips.count
                             ? 24 + (beforeStorage ? ArchiveStorage.packingReserve(viewportHeight: height,
                                 enabled: !typeSize.isAccessibilitySize && !reduceMotion) : 0) : 0)
                     }
                 }
+                ArchiveChatEntry(planner: planner, store: store, mapVisible: mapVisible)
+                    .id("archive-chat-entry")
+                    .overlay(alignment: .top) {
+                        if !trips.isEmpty {
+                            Rectangle().fill(Color(uiColor: .separator).opacity(0.18))
+                                .frame(height: 0.5).offset(y: -16)
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
+                    .padding(.top, trips.isEmpty ? 16 : trips.count == 1 ? 56 : 20)
+                    .opacity(detailVisible ? 0 : 1)
+                    .allowsHitTesting(openedID == nil)
+                Spacer(minLength: 0)
                 VStack(spacing: 24) {
-                    Text("\(trips.count) 次旅途").font(.footnote).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
+                    if trips.isEmpty { Color.clear.frame(height: 64).accessibilityHidden(true) }
+                    else { Color.clear.frame(height: 40).accessibilityHidden(true) }
                     if !independent.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("未加入行程").font(.headline)
@@ -481,15 +518,31 @@ struct JourneyArchiveView: View {
                             }
                         }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
                     }
+                    Button(action: onOpenSettings) {
+                        Label("设置", systemImage: "gearshape")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("archive-settings")
                 }.opacity(reduceMotion && detailVisible ? 0 : 1)
                     .offset(y: detailVisible && !reduceMotion ? (height + 204) : 0)
                     .animation(reduceMotion ? .linear(duration: 0.15) :
-                        .timingCurve(0.16, 0.86, 0.28, 1, duration: 0.30)
-                            .delay(detailVisible ? 0.084 : 0), value: detailVisible)
-            }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 84).frame(maxWidth: 640).frame(maxWidth: .infinity)
-        }.scrollDisabled(openedID != nil)
+                        .timingCurve(0.16, 0.86, 0.28, 1, duration: detailVisible ? 0.60 : 0.30), value: detailVisible)
+            }.background(ArchiveKeyboardDismissal())
+                .frame(minHeight: max(0, height - 104), alignment: .top)
+                .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 84).frame(maxWidth: 640).frame(maxWidth: .infinity)
+        }.modifier(ArchiveDetailScrollEdges())
+            .scrollDismissesKeyboard(.interactively)
+            .scrollDisabled(openedID != nil)
             .refreshable { await store.refresh(force: true) }
             .accessibilityIdentifier("archive-trip-list")
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                guard openedID == nil, !mapVisible else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                    scroll.scrollTo("archive-chat-input-area", anchor: .center)
+                }
+            }
+        }
     }
 
     private func open(_ trip: Trip, index: Int, viewportHeight: CGFloat) {
@@ -506,6 +559,13 @@ struct JourneyArchiveView: View {
                 ArchiveTransferDivider(index: position, frame: frame, year: group.year, count: group.count)
             }
         }
+        assert(!archiveHeadingFrame.isEmpty, "Archive heading geometry must be ready before opening a card")
+        let renderer = ImageRenderer(content: ArchiveHeading()
+            .frame(width: archiveHeadingFrame.width)
+            .environment(\.colorScheme, colorScheme)
+            .environment(\.dynamicTypeSize, typeSize))
+        renderer.scale = displayScale
+        transferHeading = renderer.uiImage.map { ArchiveTransferHeading(image: $0, frame: archiveHeadingFrame) }
         openingIndex = index
         closing = false
         transitionStarted = true
@@ -595,6 +655,30 @@ private struct JourneyArchiveYearCard: View {
     }
 }
 
+private struct ArchiveHeading: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("我的旅途").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("archive-page-title")
+            Text("旅の目的地は、まだ見ぬ地平線の向こうに")
+                .font(.caption).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ArchiveHeadingFrame: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty { value = next }
+    }
+}
+
+private struct ArchiveTransferHeading {
+    let image: UIImage
+    let frame: CGRect
+}
+
 private struct ArchiveDividerFrames: PreferenceKey {
     static let defaultValue: [Int: CGRect] = [:]
     static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
@@ -613,6 +697,66 @@ private struct ArchiveCardFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct ArchiveContextInteraction<Preview: View>: UIViewRepresentable {
+    let preview: Preview
+    let onOpen: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
+        view.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.open)))
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self }
+
+    final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
+        var parent: ArchiveContextInteraction
+        init(_ parent: ArchiveContextInteraction) { self.parent = parent }
+        @objc func open() { parent.onOpen() }
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+            configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+            UIContextMenuConfiguration(identifier: nil, previewProvider: { [self] in
+                let controller = UIHostingController(rootView: parent.preview)
+                controller.view.backgroundColor = .clear
+                controller.preferredContentSize = CGSize(width: interaction.view?.bounds.width ?? 340, height: 204)
+                return controller
+            }, actionProvider: { [self] _ in
+                UIMenu(children: [
+                    UIAction(title: "编辑旅途", image: UIImage(systemName: "pencil")) { [self] _ in parent.onEdit() },
+                    UIAction(title: "删除旅途", image: UIImage(systemName: "trash"), attributes: .destructive) { [self] _ in parent.onDelete() }
+                ])
+            })
+        }
+        // The interaction's source is a clear plane, never the overlapping SwiftUI card hierarchy.
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+            previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+            targetedPreview(interaction)
+        }
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+            previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+            targetedPreview(interaction)
+        }
+        private func targetedPreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
+            guard let view = interaction.view else { return nil }
+            let parameters = UIPreviewParameters()
+            parameters.backgroundColor = .clear
+            parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: 26)
+            parameters.shadowPath = UIBezierPath()
+            return UITargetedPreview(view: view, parameters: parameters)
+        }
+    }
+}
+
+private struct ArchiveCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
 
@@ -650,34 +794,41 @@ private struct JourneyArchiveCard: View {
     let trip: Trip
     let colorIndex: Int
     var photo: UIImage? = nil
+    var isPlaceholder = false
     var body: some View {
         let today = Date.now.dayString
-        let ongoing = JourneyArchiveOrdering.isOngoing(trip, today: today)
+        let ongoing = !isPlaceholder && JourneyArchiveOrdering.isOngoing(trip, today: today)
         let status = trip.startDate > today ? "即将出发" : trip.endDate < today ? "旅行回忆" : "旅行中"
+        let statusTint = Theme.color(colorIndex).opacity(0.35)
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 PlaceIconView(emoji: trip.emoji ?? "✈️", size: 26).padding(.top, 2)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(trip.name).font(.title3.weight(.semibold)).lineLimit(2)
-                    Text("\(trip.startDate) — \(trip.endDate)").font(.footnote).foregroundStyle(.secondary)
+                    Text(isPlaceholder ? "从一个想去的地方开始。" : "\(trip.startDate) — \(trip.endDate)")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if !isPlaceholder {
+                        Text("\(trip.days.count) 天 · \(Set(trip.days.flatMap(\.markerIds) + (trip.markerIds ?? [])).count) 个地点")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 0)
-                if ongoing {
-                    HStack(spacing: 5) {
-                        Circle().fill(Color(red: 0.60, green: 0.73, blue: 0.63))
-                            .frame(width: 6, height: 6).accessibilityHidden(true)
-                        Text("旅途中").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .fixedSize().padding(.top, 4)
-                    .accessibilityIdentifier("archive-ongoing-\(trip.id)")
-                }
             }
             Spacer(minLength: 8)
-            HStack {
-                if !ongoing { Text(status).font(.subheadline.weight(.medium)) }
+            HStack(alignment: .bottom) {
+                Text(isPlaceholder ? "旅途档案" : ongoing ? "旅途中" : status)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background {
+                        Capsule().fill(Color(uiColor: .secondaryLabel).opacity(0.04))
+                            .overlay { Capsule().fill(statusTint.opacity(0.14)) }
+                    }
+                    .accessibilityIdentifier(ongoing ? "archive-ongoing-\(trip.id)" : "archive-status-\(trip.id)")
                 Spacer()
-                Text("\(trip.days.count) 天 · \(Set(trip.days.flatMap(\.markerIds) + (trip.markerIds ?? [])).count) 个地点")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    Text(String(format: "No. %03d", isPlaceholder ? 1 : colorIndex + 1))
+                        .font(.caption2.monospaced()).tracking(1).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("archive-number-\(trip.id)")
             }
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading)
         .background {
@@ -730,6 +881,7 @@ private struct ArchiveTransferCard: Identifiable {
 
 // UIKit animates cached pixels; SwiftUI/List do no layout or blur work per frame.
 private struct ArchiveCardTransition: UIViewRepresentable {
+    let heading: ArchiveTransferHeading?
     let cards: [ArchiveTransferCard]
     let dividers: [ArchiveTransferDivider]
     let selectedID: String
@@ -762,7 +914,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             let view = UIImageView(image: image)
             view.frame = CGRect(x: card.frame.minX, y: card.frame.minY, width: card.frame.width, height: 204)
             let plane = UIView(frame: CGRect(x: 0, y: 0, width: card.frame.maxX, height: height))
-            plane.layer.zPosition = CGFloat(card.index)
+            plane.layer.zPosition = CGFloat(card.index) + 1
             container.addSubview(plane)
             plane.addSubview(view)
             context.coordinator.planes[card.id] = plane
@@ -786,13 +938,20 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                 let view = UIImageView(image: image)
                 view.frame = CGRect(x: divider.frame.minX, y: divider.frame.minY, width: divider.frame.width, height: 204)
                 let plane = UIView(frame: CGRect(x: 0, y: 0, width: divider.frame.maxX, height: height))
-                plane.layer.zPosition = CGFloat(divider.index) - 0.5
+                plane.layer.zPosition = CGFloat(divider.index) + 0.5
                 container.addSubview(plane)
                 plane.addSubview(view)
                 context.coordinator.dividerPlanes[divider.index] = plane
                 view.layer.transform = ArchiveStorage.transform(enabled: !typeSize.isAccessibilitySize && !reduceMotion, midY: divider.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
                 context.coordinator.dividerViews[divider.index] = view
             }
+        }
+        if let heading {
+            let view = UIImageView(image: heading.image)
+            view.frame = heading.frame
+            view.layer.zPosition = CGFloat((cards.map(\.index).max() ?? 0) + 2)
+            container.addSubview(view)
+            context.coordinator.headingView = view
         }
         return container
     }
@@ -807,8 +966,8 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         let currentBounds = currentLayer?.bounds ?? selected.bounds
         let currentPosition = currentLayer?.position ?? selected.layer.position
         let currentTransform = currentLayer?.transform ?? selected.layer.transform
-        let snapshots = Array(coordinator.views.values) + Array(coordinator.dividerViews.values)
-        let planes = Array(coordinator.planes.values) + Array(coordinator.dividerPlanes.values)
+        let snapshots = Array(coordinator.views.values) + Array(coordinator.dividerViews.values) + [coordinator.headingView].compactMap { $0 }
+        let planes = Array(coordinator.planes.values) + Array(coordinator.dividerPlanes.values) + [coordinator.headingView].compactMap { $0 }
         let planeTransforms = planes.map { $0.layer.presentation()?.transform ?? $0.layer.transform }
         let currentAlphas = snapshots.map { CGFloat($0.layer.presentation()?.opacity ?? $0.layer.opacity) }
         coordinator.animator?.stopAnimation(true)
@@ -838,14 +997,17 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             dividers.filter { $0.index <= card.index }.map { $0.frame.minY + 204 }.max() ?? 0)
         let lowerTop = min(cards.filter { $0.index > card.index }.map { $0.frame.minY }.min() ?? height,
             dividers.filter { $0.index > card.index }.map { $0.frame.minY }.min() ?? height)
+        // The shared mask extends above the viewport into the top safe area.
+        let upperExit = -max(0, upperBottom) - 252
         let animator: UIViewPropertyAnimator
         if reduceMotion {
             animator = UIViewPropertyAnimator(duration: 0.15, curve: .linear)
         } else {
-            // Cubic approximation of ln(x): fast departure, long gentle settle.
-            animator = UIViewPropertyAnimator(duration: 0.30,
-                timingParameters: UICubicTimingParameters(controlPoint1: CGPoint(x: 0.16, y: 0.86),
-                    controlPoint2: CGPoint(x: 0.28, y: 1.0)))
+            // Both directions depart quickly and settle gently.
+            animator = UIViewPropertyAnimator(duration: expanded ? 0.60 : 0.30,
+                timingParameters: UICubicTimingParameters(
+                    controlPoint1: CGPoint(x: 0.16, y: 0.86),
+                    controlPoint2: CGPoint(x: 0.28, y: 1)))
         }
         animator.addAnimations {
             if reduceMotion {
@@ -858,18 +1020,23 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             }
         }
         let moveRack: () -> Void = {
+            if heading != nil {
+                if reduceMotion { coordinator.headingView?.alpha = expanded ? 0 : 1 }
+                coordinator.headingView?.transform = CGAffineTransform(translationX: 0,
+                    y: expanded && !reduceMotion ? upperExit : 0)
+            }
             for other in cards where other.id != selectedID {
                 if reduceMotion { coordinator.views[other.id]?.alpha = expanded ? 0 : 1 }
                 coordinator.planes[other.id]?.transform = CGAffineTransform(translationX: 0,
-                    y: expanded && !reduceMotion ? (other.index < card.index ? -max(0, upperBottom) - 48 : max(0, height - lowerTop) + 252) : 0)
+                    y: expanded && !reduceMotion ? (other.index < card.index ? upperExit : max(0, height - lowerTop) + 252) : 0)
             }
             for divider in dividers {
                 if reduceMotion { coordinator.dividerViews[divider.index]?.alpha = expanded ? 0 : 1 }
                 coordinator.dividerPlanes[divider.index]?.transform = CGAffineTransform(translationX: 0,
-                    y: expanded && !reduceMotion ? (divider.index <= card.index ? -max(0, upperBottom) - 48 : max(0, height - lowerTop) + 252) : 0)
+                    y: expanded && !reduceMotion ? (divider.index <= card.index ? upperExit : max(0, height - lowerTop) + 252) : 0)
             }
         }
-        animator.addAnimations(moveRack, delayFactor: expanded && !reduceMotion ? 0.28 : 0)
+        animator.addAnimations(moveRack)
         animator.addCompletion { position in
             guard position == .end else { return }
             onCompletion()
@@ -881,6 +1048,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         coordinator.animator?.stopAnimation(true)
     }
     final class Coordinator {
+        var headingView: UIImageView?
         var planes: [String: UIView] = [:]
         var dividerPlanes: [Int: UIView] = [:]
         var views: [String: UIImageView] = [:]

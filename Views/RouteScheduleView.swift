@@ -220,6 +220,16 @@ struct RouteTransportRow: View {
     let tint: Color
     let action: () -> Void
     var body: some View {
+        HStack(alignment: .center, spacing: 4) {
+            Button(action: action) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .accessibilityLabel("编辑交通安排")
+                .accessibilityIdentifier("transport-edit")
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 if let leg { TransportArtwork(mode: leg.mode) }
@@ -234,8 +244,8 @@ struct RouteTransportRow: View {
         }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle()).accessibilityElement(children: .contain)
-            .onLongPressGesture(minimumDuration: 0.5, perform: action)
             .accessibilityAction(named: "编辑交通安排", action)
+        }.accessibilityElement(children: .contain)
             .padding(.leading, 33).padding(.top, 4).padding(.bottom, 12)
     }
 }

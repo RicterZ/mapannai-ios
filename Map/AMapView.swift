@@ -562,7 +562,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         func mapView(_ mapView: MAMapView!, didTouchPois pois: [Any]!) {
             guard !mapTapClaimed, mapTapAnnotation == nil,
-                  !store.placeSearchPresented, store.draft?.marker == nil,
+                  store.draft?.marker == nil,
                   let poi = (pois ?? []).compactMap({ $0 as? MATouchPoi }).first else { return }
             if let tap = mapTapPoint, annotationAt(tap, map: mapView) != nil { return }
             mapTapClaimed = true

@@ -77,6 +77,26 @@ struct AIMessage: Codable, Equatable {
         flush(); return result
     }
 }
+enum AIToolLabel {
+    static func text(_ name: String) -> String {
+        let labels = [
+            "change_title": "修改会话标题", "list_markers": "查看已收藏地点",
+            "create_marker": "收藏地点", "update_marker": "更新地点", "delete_marker": "删除地点",
+            "search_places": "搜索地点", "search_place": "搜索地点", "get_place_details": "查询地点详情",
+            "search_destinations": "搜索目的地",
+            "search_web": "搜索网页", "fetch_web": "读取网页",
+            "get_directions": "查询路线", "get_walking_directions": "查询步行路线",
+            "list_trips": "查看已有旅行", "get_trip_detail": "查看旅行安排", "create_trip": "创建旅行",
+            "add_day_to_trip": "添加行程日", "assign_marker_to_day": "安排当天地点",
+            "assign_marker_to_trip": "加入旅行待安排", "remove_marker_from_trip": "移出旅行待安排",
+            "plan_trip_day": "规划当天行程", "create_day_chain": "建立路线",
+            "update_day_chain": "更新路线安排", "delete_day_chain": "删除路线",
+            "reorder_day_markers": "调整地点顺序", "delete_trip": "删除旅行"
+        ]
+        return labels[name] ?? name
+    }
+}
+
 struct AIEvent: Decodable {
     var type: String
     var text: String?
@@ -263,7 +283,8 @@ actor AIHistoryRepository {
         createdIDs = []
         if let store = activeStore { queueRefresh(store: store, ids: []) }
     }
-    func close() { presented = false; stop() }
+    // Presentation does not own the request; only explicit stop or connection changes cancel it.
+    func close() { presented = false }
     func send(_ text: String, store: AppStore) {
         let input = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !busy, ready, !input.isEmpty else { return }
@@ -357,7 +378,7 @@ actor AIHistoryRepository {
         guard generation == revision, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         switch event.type {
         case "delta": partial += event.text ?? ""; status = "正在回复…"
-        case "status": status = "正在处理行程…"
+        case "status": status = event.name.map { "正在调用 · " + AIToolLabel.text($0) } ?? "正在处理行程…"
         case "message":
             guard let message = event.message else { return }
             if message.role == "assistant" { partial = "" }

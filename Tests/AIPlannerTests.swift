@@ -2,6 +2,44 @@ import XCTest
 @testable import MapAnNai
 
 final class AIPlannerTests: XCTestCase {
+    func testToolLabelsTranslateKnownNamesAndPreserveUnknownNames() {
+        XCTAssertEqual(AIToolLabel.text("search_places"), "搜索地点")
+        XCTAssertEqual(AIToolLabel.text("plan_trip_day"), "规划当天行程")
+        XCTAssertEqual(AIToolLabel.text("search_web"), "搜索网页")
+        XCTAssertEqual(AIToolLabel.text("fetch_web"), "读取网页")
+        XCTAssertEqual(AIToolLabel.text("future_tool"), "future_tool")
+    }
+    func testAllRegisteredMCPToolsHaveLocalizedLabels() {
+        let tools = ["list_markers", "create_marker", "update_marker", "delete_marker",
+            "search_destinations", "search_places", "search_web", "fetch_web", "get_place_details", "get_directions",
+            "get_walking_directions", "list_trips", "get_trip_detail", "create_trip", "add_day_to_trip",
+            "assign_marker_to_trip", "remove_marker_from_trip", "assign_marker_to_day", "plan_trip_day",
+            "create_day_chain", "update_day_chain", "delete_day_chain", "reorder_day_markers", "delete_trip", "change_title"]
+        for name in tools { XCTAssertNotEqual(AIToolLabel.text(name), name, name) }
+    }
+    @MainActor func testClosingKeepsReplyRunningAndReopeningPreservesConversation() async throws {
+        let planner = AIPlannerStore()
+        let conversation = AIConversation()
+        planner.conversations = [conversation]
+        planner.activeID = conversation.id
+        planner.presented = true
+        let stream = Task { await planner.previewStreamingReply() }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(planner.busy)
+        let received = planner.partial
+        planner.close()
+        XCTAssertFalse(planner.presented)
+        XCTAssertTrue(planner.busy)
+        XCTAssertEqual(planner.partial, received)
+        XCTAssertNil(planner.error)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertGreaterThan(planner.partial.count, received.count)
+        planner.presented = true
+        XCTAssertEqual(planner.activeID, conversation.id)
+        await stream.value
+        XCTAssertFalse(planner.busy)
+        XCTAssertTrue(planner.conversation?.messages.last?.content?.contains("完成末尾") == true)
+    }
     @MainActor func testStopPreservesPartialReplyWithoutRepeatingIt() {
         let planner = AIPlannerStore()
         let conversation = AIConversation()

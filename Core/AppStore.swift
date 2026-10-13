@@ -1603,6 +1603,19 @@ struct DayEditorDraft: Identifiable {
         } else {
             tripID = trips.first?.id; dayID = days.first?.id
         }
+        if ProcessInfo.processInfo.arguments.contains("--empty-archive-preview") {
+            trips = []; markers = []; tripID = nil; dayID = nil
+        }
+        if ProcessInfo.processInfo.arguments.contains("--three-archive-preview"), let first = trips.first {
+            trips = [first] + (1...2).map { index in
+                var trip = first
+                trip.id = "archive-preview-\(index)"
+                trip.name = index == 1 ? "京都 · 四日慢游" : "腾冲 · 山间小住"
+                trip.startDate = index == 1 ? "2026-06-10" : "2026-03-02"
+                trip.endDate = index == 1 ? "2026-06-13" : "2026-03-06"
+                return trip
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--ongoing-archive-preview") {
             let today = Date.fromDay(Date.now.dayString)
             trips = [("ongoing-new", -1, 7), ("ongoing-old", -3, 5),
