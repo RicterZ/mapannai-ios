@@ -25,6 +25,8 @@ Saved places that are not part of a trip appear above the AI chat entry as horiz
 
 The default background is System Maps (Apple MapKit). Choose System Maps, AMap, or Google Maps in Settings → Map and Routes → Map Background. Google Maps is also available in builds configured with a Google Maps SDK key; otherwise it quietly uses System Maps. This changes the in-app map; search and route planning continue to use your connected server.
 
+The map icon on the home screen opens a full-screen map without the itinerary panel, framing the first pinned trip shown on the home screen. Use the upper-left back arrow to return home.
+
 ## Plan your first trip
 
 1. Connect to your MapAnNai Plus server in the app's settings.

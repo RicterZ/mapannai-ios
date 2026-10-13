@@ -10,6 +10,11 @@ struct AMapNativeRenderer: UIViewRepresentable {
     func makeUIView(context: Context) -> MAMapView {
         AMapBootstrap.configure(settings)
         let map = MAMapView(frame: .zero)
+        map.tintColor = .systemBlue
+        let userLocationStyle = MAUserLocationRepresentation()
+        userLocationStyle.locationDotFillColor = .systemBlue
+        userLocationStyle.locationDotBgColor = .white
+        map.update(userLocationStyle)
         map.delegate = context.coordinator; map.zoomLevel = 13; map.isShowsIndoorMap = false
         map.showsCompass = false; map.showsScale = true
         map.zoomingInPivotsAroundAnchorPoint = false

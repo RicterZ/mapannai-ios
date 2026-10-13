@@ -1,5 +1,36 @@
 import XCTest
 
+final class JourneySnapshotReadinessTests: XCTestCase {
+    @MainActor func testCachedSnapshotMakesArchiveReadyIncludingEmptySnapshot() async throws {
+        let defaults = UserDefaults.standard
+        let previousURL = defaults.object(forKey: "baseURL")
+        defaults.set("https://example.invalid", forKey: "baseURL")
+        let settings = Settings()
+        if let previousURL { defaults.set(previousURL, forKey: "baseURL") }
+        else { defaults.removeObject(forKey: "baseURL") }
+        defer { MockURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let client = APIClient(baseURL: settings.baseURL, token: settings.token,
+            session: URLSession(configuration: configuration))
+        for populated in [true, false] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let repository = MarkerRepository(directory: directory)
+            MockURLProtocol.handler = { request in
+                let trips = populated ? #"[{"id":"cached-trip","name":"Cached","startDate":"2026-10-14","endDate":"2026-10-14","days":[]}]"# : "[]"
+                return (200, Data((request.url!.path.hasSuffix("trips") ? trips : "[]").utf8))
+            }
+            _ = try await repository.refresh(using: client)
+            let store = AppStore(settings: settings, demo: false, markerRepository: repository)
+            XCTAssertFalse(store.hasLoadedJourneySnapshot)
+            await store.connect()
+            XCTAssertTrue(store.hasLoadedJourneySnapshot)
+            XCTAssertEqual(store.trips.count, populated ? 1 : 0)
+        }
+    }
+}
+
 final class ArchiveSeparatorFrameTests: XCTestCase {
     func testEmptySiblingPreferencesPreserveMeasuredSeparator() {
         let measured = CGRect(x: 16, y: 318, width: 370, height: 104)

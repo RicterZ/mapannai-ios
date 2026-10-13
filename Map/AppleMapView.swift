@@ -13,6 +13,7 @@ struct AppleMapRenderer: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(store) }
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
+        map.tintColor = .systemBlue
         map.delegate = context.coordinator
         map.showsCompass = false; map.showsScale = true; map.showsUserLocation = true
         map.selectableMapFeatures = [.pointsOfInterest]
@@ -99,7 +100,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                 if let view = map.view(for: pin) { style(view, pin: pin) }
             }
             map.pointOfInterestFilter = .includingAll
-            map.selectableMapFeatures = store.placeSearchPresented ? [] : [.pointsOfInterest]
+            map.selectableMapFeatures = [.pointsOfInterest]
             if routes.map(RouteOverlayGeometry.init) != store.mapDisplayRoutes.map(RouteOverlayGeometry.init) {
                 routes = store.mapDisplayRoutes
                 map.removeOverlays(map.overlays.filter { $0 is Line })
@@ -286,7 +287,7 @@ struct AppleMapRenderer: UIViewRepresentable {
                 tapArbiter.claim()
                 if let marker = pin.marker { store.selectMapMarker(marker) }
                 else if let place = pin.place { store.choose(place, fromMap: true) }
-            } else if let feature = annotation as? MKMapFeatureAnnotation, !store.placeSearchPresented {
+            } else if let feature = annotation as? MKMapFeatureAnnotation {
                 if let point = lastTap, let pin = hitPin(mapView, at: point), let marker = pin.marker {
                     tapArbiter.claim(); store.selectMapMarker(marker)
                 } else {

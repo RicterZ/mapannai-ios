@@ -43,16 +43,21 @@ struct MarkerDetailView: View {
             ])
     }
     private var detailContent: some View {
-        ZStack(alignment: .top) {
-            Group {
-                if embedded { detailPage }
-                else { NavigationStack { detailPage } }
-            }
+        Group {
+            if embedded { detailPage }
+            else { NavigationStack { detailPage } }
+        }
             .opacity(compact ? 0 : 1)
             .allowsHitTesting(!compact)
             .accessibilityHidden(compact)
-            if compact { compactContent }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .overlay {
+                if compact {
+                    compactContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .ignoresSafeArea(.container, edges: .bottom)
+                }
+            }
             .onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
             .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
             .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose))
@@ -69,7 +74,7 @@ struct MarkerDetailView: View {
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.up").font(.subheadline).foregroundStyle(.secondary)
                                 .frame(width: 44, height: 44)
-                        }.padding(.horizontal, 20).frame(height: 66).padding(.top, 14)
+                        }.padding(.horizontal, 20).frame(height: 66)
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain).foregroundStyle(.primary)
                         .accessibilityLabel("展开地点详情").accessibilityIdentifier("marker-compact-expand")
@@ -491,17 +496,17 @@ struct MarkerEditorView: View {
         fieldsFocused = false
         draft.html = rich.exportHTML(original: draft.html)
         if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
-            if store.addSearchPlaceInBackground(place, edited: draft) { onSaved(); closeEditor() }
+            if store.addSearchPlaceInBackground(place, edited: draft) { onSaved(); closeEditor(restoringMap: false) }
             else { localError = store.addPlaceError ?? store.errorMessage }
-        } else if store.saveMarkerInBackground(draft) { onSaved(); if embedded { closeEditor() } else { dismiss() } }
+        } else if store.saveMarkerInBackground(draft) { onSaved(); if embedded { closeEditor(restoringMap: false) } else { dismiss() } }
         else { localError = store.errorMessage }
     }
     private var hasChanges: Bool {
         draft.title != initial.title || draft.icon != initial.icon || draft.headerImage != initial.headerImage || draft.html != initial.html
             || rich.changed || draft.coordinates != initial.coordinates
     }
-    private func closeEditor() {
-        if embedded { store.draft = nil; store.editingSearchPlaceID = nil; onClosed() }
+    private func closeEditor(restoringMap: Bool = true) {
+        if embedded { store.closeSearchDraft(restoringMap: restoringMap); onClosed() }
         else { dismiss() }
     }
 }

@@ -2,6 +2,16 @@ import XCTest
 @testable import MapAnNai
 
 final class DayMapJourneyTests: XCTestCase {
+    @MainActor func testEnteringDayBrowsingWithoutFocusPreservesMapCamera() {
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = store.trips[0], day = trip.days[0]
+        store.select(trip: trip, day: day, focus: false)
+        let cameraID = store.camera?.id
+        store.beginDayMapBrowsing(focus: false)
+        XCTAssertTrue(store.dayMapBrowsing)
+        XCTAssertEqual(store.dayID, day.id)
+        XCTAssertEqual(store.camera?.id, cameraID)
+    }
     private let markers = (0..<4).map { index in
         Marker(id: "p\(index)", coordinates: Coordinate(latitude: 31.2 + Double(index) * 0.01, longitude: 121.4),
             content: MarkerContent(id: "p\(index)", title: "地点\(index)", markdownContent: ""))

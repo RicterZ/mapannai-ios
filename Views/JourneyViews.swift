@@ -210,6 +210,7 @@ struct JourneyArchiveView: View {
     @Binding var path: [JourneyDestination]
     let mapVisible: Bool
     var onOpenSettings: () -> Void
+    var onOpenMap: (Trip?) -> Void
     var onSelect: (Trip, TripDay?) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -418,13 +419,13 @@ struct JourneyArchiveView: View {
         ScrollViewReader { scroll in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                ArchiveHeading()
+                ArchiveHeading(onOpenMap: { onOpenMap(trips.first) })
                     .background(GeometryReader { proxy in
                         Color.clear.preference(key: ArchiveHeadingFrame.self,
                             value: proxy.frame(in: .named("journey-archive")))
                     })
                     .opacity(openedID == nil || !transitionStarted ? 1 : 0)
-                if trips.isEmpty {
+                if trips.isEmpty && store.hasLoadedJourneySnapshot {
                     VStack(alignment: .leading, spacing: 0) {
                         ZStack(alignment: .top) {
                             ForEach(0..<3) { index in
@@ -728,6 +729,7 @@ private struct ArchiveSavedPlaceCard: View {
 }
 
 private struct ArchiveHeading: View {
+    var onOpenMap: (() -> Void)? = nil
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 40
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -735,8 +737,10 @@ private struct ArchiveHeading: View {
                 Text("我的旅途").font(.system(size: titleSize, weight: .bold)).accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("archive-page-title")
                 Spacer(minLength: 12)
-                Image(systemName: "map").font(.system(size: 22, weight: .regular))
-                    .frame(width: 44, height: 44)
+                Button { onOpenMap?() } label: {
+                    Image(systemName: "map").font(.system(size: 22, weight: .regular))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain)
                     .accessibilityLabel("地图").accessibilityIdentifier("archive-map-icon")
             }
             Text("旅の目的地は、まだ見ぬ地平線の向こうに")

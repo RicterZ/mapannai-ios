@@ -13,19 +13,20 @@ struct HomeView: View {
     @State private var noteComposerPreview = false
     @State private var mapEntered = ProcessInfo.processInfo.arguments.contains("--demo") && !ProcessInfo.processInfo.arguments.contains("--archive-preview")
     @State private var initialDayPanelReady = false
+    @State private var overviewMap = false
     @State private var archivePath: [JourneyDestination] = []
     @State private var creatingTrip = false
     @State private var editingTrip: Trip?
     @State private var deletingPanelDay = false
     @State private var expanded = true
     @State private var journeyAvailableHeight: CGFloat = 0
+    @State private var mapBottomSafeArea: CGFloat = 0
     @State private var nativeJourneyPresented = false
     @State private var journeyPath: [JourneyDestination] = []
     @State private var journeyNavigationWidth: CGFloat = 0
     @State private var visibleDayPanelHeight: CGFloat = 0
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var routeReturnDetent: ItineraryDetent?
-    @State private var editingDayPlaces = false
     @State private var journeyPanelMoving = true
     @State private var markerPanelMoving = true
     @State private var markerDetailHeight: CGFloat = 0
@@ -33,6 +34,7 @@ struct HomeView: View {
     @State private var markerReturnDetent: ItineraryDetent?
     @State private var mapDraftReady = true
     @State private var searchReturnDetent: ItineraryDetent?
+    @State private var searchDraftReturnDetent: ItineraryDetent?
     @State private var searchDetent: ItineraryDetent = .half
     @State private var searchOpenedMap = false
     @State private var mapEditorActive = false
@@ -43,7 +45,13 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack(path: $archivePath) {
-            JourneyArchiveView(store: store, planner: aiPlanner, path: $archivePath, mapVisible: mapEntered, onOpenSettings: { showSettings = true }) { trip, day in
+            JourneyArchiveView(store: store, planner: aiPlanner, path: $archivePath, mapVisible: mapEntered, onOpenSettings: { showSettings = true }, onOpenMap: { trip in
+                overviewMap = true
+                nativeJourneyPresented = false
+                store.select(trip: trip)
+                mapEntered = true
+            }) { trip, day in
+                overviewMap = false
                 initialDayPanelReady = false
                 visibleDayPanelHeight = 0
                 store.select(trip: trip, day: day)
@@ -102,9 +110,20 @@ struct HomeView: View {
                 searchDetent = previous
             }
         }
+        .onChange(of: store.draft?.id) { old, id in
+            guard store.placeSearchPresented else { return }
+            if old == nil, id != nil {
+                searchDraftReturnDetent = searchDetent
+                if searchDetent == .compact { searchDetent = .half }
+            } else if id == nil, let previous = searchDraftReturnDetent {
+                searchDraftReturnDetent = nil
+                searchDetent = previous
+            }
+        }
         .onChange(of: store.placeSearchPresented) { _, open in
             if open {
                 searchReturnDetent = nil
+                searchDraftReturnDetent = nil
                 searchDetent = .half
                 if !mapEntered { searchOpenedMap = true; mapEntered = true }
             } else if searchOpenedMap {
@@ -123,13 +142,13 @@ struct HomeView: View {
         GeometryReader { geometry in
             let sidebar = horizontalSizeClass == .regular && geometry.size.width >= 700
             Group {
-                if sidebar { modalContent(mapPage, sidebar: true) }
+                if sidebar || overviewMap { modalContent(mapPage, sidebar: sidebar) }
                 else if store.dayMapBrowsing { modalContent(mapPage) }
                 else { mapPage }
             }
-                .edgeAttachedPanel(isPresented: Binding(get: { !sidebar && (nativeJourneyPresented || store.placeSearchPresented) && (store.selectedMarker == nil || store.dayMapBrowsing || store.placeSearchPresented) && !(store.dayMapBrowsing && mapEditorActive) }, set: { if !store.placeSearchPresented { nativeJourneyPresented = $0 } }), detent: Binding(get: { store.placeSearchPresented ? searchDetent : store.dayMapBrowsing && store.selectedMarker != nil ? markerDetailDetent : sheetDetent }, set: { if store.placeSearchPresented { searchDetent = $0 } else if store.dayMapBrowsing && store.selectedMarker != nil { markerDetailDetent = $0 } else { sheetDetent = $0 } }),
-                    compactHeight: store.placeSearchPresented ? (store.searchDetailPlace != nil || store.draft != nil ? nil : 80 + geometry.safeAreaInsets.bottom) : store.dayMapBrowsing ? (store.selectedMarker != nil ? 80 : DayMapPresentation.contentHeight + max(0, geometry.safeAreaInsets.bottom - 16)) : compactJourneyHeight,
-                    canDismiss: false, backgroundColor: store.placeSearchPresented || store.dayMapBrowsing ? .systemBackground : .systemGroupedBackground, animatesPresentation: !store.dayMapBrowsing || initialDayPanelReady, topContentInset: store.placeSearchPresented ? 24 : store.dayMapBrowsing ? 14 : 24, fullTopInset: store.placeSearchPresented || store.dayMapBrowsing ? 64 : 8, onHeightChange: { height in if store.dayMapBrowsing && !store.placeSearchPresented { if store.selectedMarker != nil { markerDetailHeight = height } else { visibleDayPanelHeight = height }; initialDayPanelReady = true } }, onMotionChange: { journeyPanelMoving = $0 }, onDismiss: { if mapEditorActive && store.draft != nil { mapDraftReady = true }; if !store.placeSearchPresented { nativeJourneyPresented = true } }) {
+                .edgeAttachedPanel(isPresented: Binding(get: { !sidebar && (nativeJourneyPresented || store.placeSearchPresented) && (store.selectedMarker == nil || store.dayMapBrowsing || store.placeSearchPresented) && !(store.dayMapBrowsing && mapEditorActive) }, set: { if !store.placeSearchPresented { nativeJourneyPresented = $0 } }), detent: Binding(get: { store.placeSearchPresented ? searchDetent : store.dayMapBrowsing && store.selectedMarker != nil ? markerDetailDetent : sheetDetent }, set: { if store.placeSearchPresented { searchDetent = store.draft != nil && $0 == .compact ? .half : $0 } else if store.dayMapBrowsing && store.selectedMarker != nil { markerDetailDetent = $0 } else { sheetDetent = $0 } }),
+                    compactHeight: store.placeSearchPresented ? (store.searchDetailPlace != nil || store.draft != nil ? nil : 80 + geometry.safeAreaInsets.bottom) : store.dayMapBrowsing ? (store.selectedMarker != nil ? 80 + geometry.safeAreaInsets.bottom : DayMapPresentation.contentHeight + max(0, geometry.safeAreaInsets.bottom - 16)) : compactJourneyHeight,
+                    canDismiss: false, backgroundColor: store.placeSearchPresented || store.dayMapBrowsing ? .systemBackground : .systemGroupedBackground, animatesPresentation: !store.dayMapBrowsing || initialDayPanelReady, topContentInset: store.placeSearchPresented ? 24 : store.dayMapBrowsing ? 14 : 24, fullTopInset: store.placeSearchPresented || store.dayMapBrowsing ? 64 : 8, onHeightChange: { height in if store.dayMapBrowsing && !store.placeSearchPresented { if store.selectedMarker != nil { markerDetailHeight = height } else { visibleDayPanelHeight = height }; initialDayPanelReady = true } }, onMotionChange: { journeyPanelMoving = $0 }, onDismiss: { if mapEditorActive && store.draft != nil { mapDraftReady = true }; if !store.placeSearchPresented { nativeJourneyPresented = !overviewMap } }) {
                     ZStack {
                       Group {
                     if store.dayMapBrowsing {
@@ -211,10 +230,10 @@ struct HomeView: View {
                     }
                 }
                 .onChange(of: store.placeSearchPresented) { _, open in
-                    if !open { nativeJourneyPresented = true }
+                    if !open { nativeJourneyPresented = !overviewMap }
                 }
                 .onAppear {
-                    nativeJourneyPresented = true
+                    nativeJourneyPresented = !overviewMap
                     if store.tripPlacesPreview { store.select(trip: store.trips.first, focus: false) }
                 }
                 .task {
@@ -248,7 +267,7 @@ struct HomeView: View {
                     }
                     setJourneyDetent(.compact)
                 }
-                .onChange(of: sidebar) { _, _ in nativeJourneyPresented = true }
+                .onChange(of: sidebar) { _, _ in nativeJourneyPresented = !overviewMap }
                 .onDisappear { aiPlanner.close(); store.endDayMapBrowsing() }
         }
     }
@@ -314,10 +333,11 @@ struct HomeView: View {
             let layout = MapLayout(width: proxy.size.width, height: proxy.size.height,
                                    regularWidth: horizontalSizeClass == .regular, expanded: expanded,
                                    sheetHeight: store.placeSearchPresented ? (searchDetent == .compact ? 80 : searchDetent == .half ? proxy.size.height * 0.5 : proxy.size.height) : store.dayMapBrowsing && visibleDayPanelHeight > 0 ? max(0, visibleDayPanelHeight - proxy.safeAreaInsets.bottom) : store.dayMapBrowsing && sheetDetent == .compact ? DayMapPresentation.contentHeight - 16 : sheetDetent == .compact ? compactJourneyHeight : sheetDetent == .half ? proxy.size.height * 0.5 : proxy.size.height)
-            let cameraInsets = layout.insets
+            let cameraInsets = overviewMap && !nativeJourneyPresented && !store.placeSearchPresented && store.selectedMarker == nil ? MapViewportInsets(top: 85, left: 35, bottom: 70, right: 35) : layout.insets
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
                     store.mapViewportInsets = cameraInsets
+                    mapBottomSafeArea = proxy.safeAreaInsets.bottom
                     journeyAvailableHeight = proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
                 .onChange(of: proxy.size) { _, size in
@@ -331,8 +351,15 @@ struct HomeView: View {
                 .onChange(of: journeyPanelMoving) { _, moving in
                     if !moving, store.mapViewportInsets != cameraInsets { store.mapViewportInsets = cameraInsets }
                 }
+                .onChange(of: store.dayID) { _, id in
+                    guard id != nil, !store.dayMapBrowsing, !store.placeSearchPresented else { return }
+                    store.beginDayMapBrowsing(focus: false)
+                    nativeJourneyPresented = true
+                }
                 .onChange(of: store.routeSelectionRequest) { _, _ in
+                    store.beginDayMapBrowsing(focus: false)
                     expanded = true
+                    nativeJourneyPresented = true
                     if !layout.usesSidebar {
                         if routeReturnDetent == nil { routeReturnDetent = sheetDetent }
                         setJourneyDetent(.half)
@@ -370,7 +397,7 @@ struct HomeView: View {
         .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible) }
         .edgeAttachedPanel(isPresented: Binding(get: { (sidebar || !store.dayMapBrowsing) && !store.placeSearchPresented && store.selectedMarker != nil && store.draft == nil && !mapEditorActive }, set: {
             if !$0, store.draft == nil, !mapEditorActive { store.selectedMarker = nil; restoreJourneyAfterMarker() }
-        }), detent: $markerDetailDetent, compactHeight: 80, canDismiss: false, backgroundColor: .systemBackground, topContentInset: 14, onHeightChange: { markerDetailHeight = $0 }, onMotionChange: { markerPanelMoving = $0 }, onDismiss: {
+        }), detent: $markerDetailDetent, compactHeight: 80 + mapBottomSafeArea, canDismiss: false, backgroundColor: .systemBackground, topContentInset: 14, onHeightChange: { markerDetailHeight = $0 }, onMotionChange: { markerPanelMoving = $0 }, onDismiss: {
             if store.draft != nil { mapDraftReady = true }
             else { restoreJourneyAfterMarker() }
         }) {
@@ -380,27 +407,35 @@ struct HomeView: View {
                     restoreJourneyAfterMarker()
                     store.selectedMarker = nil
                 }, onNavigateItinerary: {
+                    store.beginDayMapBrowsing(focus: false)
                     expanded = true
+                    nativeJourneyPresented = true
                     markerReturnDetent = .half
                     markerReturnExpanded = true
                 })
             }
         }
-        .sheet(item: Binding(get: { !store.placeSearchPresented && mapDraftReady && store.selectedMarker == nil ? store.draft : nil }, set: { if mapDraftReady { store.draft = $0 } }), onDismiss: {
+        .sheet(item: Binding(get: { UIDevice.current.userInterfaceIdiom == .pad && !store.placeSearchPresented && mapDraftReady && store.selectedMarker == nil ? store.draft : nil }, set: { if mapDraftReady { store.draft = $0 } }), onDismiss: {
             mapEditorActive = false
             mapDraftReady = true
             store.draft = nil
         }) { draft in
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                MarkerEditorView(store: store, initial: draft).id(draft.id)
-                    .onAppear { store.draftExpanded = true }
-            } else {
-                MarkerEditorView(store: store, initial: draft).id(draft.id)
-                    .presentationDetents([.medium, .large], selection: Binding(
-                        get: { store.draftExpanded ? .large : .medium },
-                        set: { store.draftExpanded = $0 == .large }))
-                    .presentationBackgroundInteraction(.enabled)
-                    .presentationDragIndicator(.visible)
+            MarkerEditorView(store: store, initial: draft).id(draft.id)
+                .onAppear { store.draftExpanded = true }
+        }
+        .edgeAttachedPanel(isPresented: Binding(get: {
+            UIDevice.current.userInterfaceIdiom != .pad && !store.placeSearchPresented
+                && mapDraftReady && store.selectedMarker == nil && store.draft != nil
+        }, set: { if !$0 { store.draft = nil } }), detent: Binding(
+            get: { store.draftExpanded ? .full : .half },
+            set: { store.draftExpanded = $0 == .full }), canDismiss: false,
+            backgroundColor: .systemBackground, topContentInset: 14,
+            onDismiss: { mapEditorActive = false; mapDraftReady = true }) {
+            if let draft = store.draft {
+                NavigationStack {
+                    MarkerEditorView(store: store, initial: draft, embedded: true)
+                        .id(draft.id)
+                }
             }
         }
         .onChange(of: store.selectedMarker?.id) { old, id in
@@ -547,10 +582,18 @@ struct HomeView: View {
     }
     @ViewBuilder private func journeyPage(_ destination: JourneyDestination?, sidebar: Bool) -> some View {
         let page = scope(destination)
-        Group {
-            if let day = page.day {
-                DayContentsView(store: store, day: day, editingPlaces: $editingDayPlaces)
-            } else if let trip = page.trip {
+        if let trip = page.trip, let day = page.day {
+            DayDetailPage(store: store, trip: trip, day: day, showsNavigation: sidebar,
+                onClose: {
+                    store.select(trip: trip, focus: false)
+                    if !sidebar { setJourneyDetent(.compact) }
+                }, onMap: {
+                    store.beginDayMapBrowsing(focus: false)
+                    if !sidebar { setJourneyDetent(.compact) }
+                })
+        } else {
+          Group {
+            if let trip = page.trip {
                 JourneyDaysContents(store: store, trip: trip, onSelectDay: { day in
                     store.select(trip: trip, day: day, focus: false); store.beginDayMapBrowsing(); setJourneyDetent(.full)
                 })
@@ -569,7 +612,7 @@ struct HomeView: View {
             .navigationBarBackButtonHidden()
             .toolbar { journeyToolbar(sidebar: sidebar, destination: destination) }
             .background(JourneyToolbarContainerOffset())
-
+        }
     }
 
     @ToolbarContentBuilder private func journeyToolbar(sidebar: Bool, destination: JourneyDestination?) -> some ToolbarContent {
@@ -647,12 +690,13 @@ struct HomeView: View {
             MapSurface(store: store, settings: settings, onOpenSettings: { showSettings = true })
                 .transaction { $0.animation = nil; $0.disablesAnimations = true }
                 .ignoresSafeArea()
-            if store.dayMapBrowsing && !store.placeSearchPresented && store.selectedMarker == nil {
+            if overviewMap || (store.dayMapBrowsing && !store.placeSearchPresented && store.selectedMarker == nil) {
                 HStack {
                     Button {
                         mapEntered = false
                     } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44).contentShape(Rectangle()) }
-                        .accessibilityLabel("返回旅途详情").accessibilityIdentifier("day-map-back")
+                        .accessibilityLabel(overviewMap ? "返回首页" : "返回旅途详情")
+                        .accessibilityIdentifier(overviewMap ? "overview-map-back" : "day-map-back")
                     Spacer()
                 }.font(.system(size: 19, weight: .regular)).foregroundStyle(.primary).buttonStyle(.plain)
                     .padding(.horizontal, 16).padding(.top, 8)
@@ -671,7 +715,7 @@ struct HomeView: View {
             }
             if layout.usesSidebar {
                 HStack(spacing: 0) {
-                    if expanded {
+                    if expanded && (!overviewMap || nativeJourneyPresented || store.placeSearchPresented) {
                         workspacePanel(topInset: topInset, bottomInset: bottomInset, leftInset: leftInset)
                             .frame(width: layout.sidebarWidth + leftInset, height: layout.height + topInset + bottomInset)
                             .background(.regularMaterial)
@@ -679,7 +723,7 @@ struct HomeView: View {
                             .accessibilityElement(children: .contain).accessibilityIdentifier("landscape-itinerary-sidebar")
                             .offset(x: -leftInset, y: -topInset)
                     } else {
-                        Button { togglePanel() } label: {
+                        Button { nativeJourneyPresented = true; togglePanel() } label: {
                             Image(systemName: "sidebar.left")
                                 .font(.system(size: 20)).frame(width: 48, height: 48)
                                 .softSurface(fill: Theme.console)
@@ -708,17 +752,17 @@ struct HomeView: View {
                     .accessibilityHidden(markerPanelMoving)
                     .animation(markerPanelMoving || reduceMotion ? nil : .easeOut(duration: 0.22), value: markerPanelMoving)
             }
-            if !layout.usesSidebar && !store.placeSearchPresented && store.selectedMarker == nil && (sheetDetent != .full) {
+            if (overviewMap || !layout.usesSidebar) && !store.placeSearchPresented && store.selectedMarker == nil && ((overviewMap && !nativeJourneyPresented) || sheetDetent != .full) {
                 mapActionBar.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 16)
-                    .padding(.bottom, max(12, (store.dayMapBrowsing && !store.placeSearchPresented && visibleDayPanelHeight > 0 ? visibleDayPanelHeight - bottomInset : CGFloat(layout.sheetHeight ?? compactJourneyHeight) - bottomInset) + 16))
-                    .offset(x: journeyPanelMoving && !reduceMotion ? 96 : 0)
-                    .opacity(journeyPanelMoving ? 0 : 1)
-                    .allowsHitTesting(!journeyPanelMoving)
-                    .accessibilityHidden(journeyPanelMoving)
+                    .padding(.bottom, overviewMap && !nativeJourneyPresented ? 16 : max(12, (store.dayMapBrowsing && !store.placeSearchPresented && visibleDayPanelHeight > 0 ? visibleDayPanelHeight - bottomInset : CGFloat(layout.sheetHeight ?? compactJourneyHeight) - bottomInset) + 16))
+                    .offset(x: !overviewMap && journeyPanelMoving && !reduceMotion ? 96 : 0)
+                    .opacity(!overviewMap && journeyPanelMoving ? 0 : 1)
+                    .allowsHitTesting(overviewMap || !journeyPanelMoving)
+                    .accessibilityHidden(!overviewMap && journeyPanelMoving)
                     .animation(journeyPanelMoving || reduceMotion ? nil : .easeOut(duration: 0.22), value: journeyPanelMoving)
             }
-            let capsulesVisible = layout.usesSidebar && !store.placeSearchPresented && !aiPresented
+            let capsulesVisible = (!overviewMap || nativeJourneyPresented) && layout.usesSidebar && !store.placeSearchPresented && !aiPresented
             ZStack {
                 if capsulesVisible {
                     navigationCapsules.transition(.opacity)
@@ -735,26 +779,18 @@ struct HomeView: View {
     }
 
     private var compactJourneyControls: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                compactDateNavigation
+        Button { setJourneyDetent(.half) } label: {
+            HStack(spacing: 12) {
                 Text(store.trip?.name ?? "我的旅途")
-                    .font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
-                    .accessibilityIdentifier("itinerary-panel-title")
-                if store.trip == nil {
-                    Text("旅の目的地は、まだ見ぬ地平線の向こうに")
-                        .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            Button { mapEntered = false } label: {
-                Image(systemName: "xmark").font(.system(size: 20, weight: .regular))
-                    .frame(width: 44, height: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain).foregroundStyle(.primary)
-                .accessibilityLabel("关闭地图").accessibilityIdentifier("close-map-workspace")
-        }
-        .padding(.horizontal, 20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("compact-journey-controls")
+                    .font(.subheadline.weight(.semibold)).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.up").foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+            }.padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(.primary)
+            .accessibilityLabel("展开旅途")
     }
 
     private var mapActionBar: some View {
@@ -773,32 +809,6 @@ struct HomeView: View {
             .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
     }
 
-    @ViewBuilder private var compactDateNavigation: some View {
-        if let trip = store.trip {
-            Menu {
-                ForEach(trip.days.sorted { $0.date < $1.date }) { day in
-                    Button { store.select(trip: trip, day: day) } label: {
-                        if store.dayID == day.id {
-                            Label("第\(dayNumber(day))天 · \(shortDate(day.date))", systemImage: "checkmark")
-                        } else {
-                            Text("第\(dayNumber(day))天 · \(shortDate(day.date))")
-                        }
-                    }.accessibilityIdentifier("date-option-\(day.id)")
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Text(store.day.map { "第\(dayNumber($0))天" } ?? "选择日期")
-                        .font(.subheadline.weight(.semibold))
-                    if let day = store.day {
-                        Text(shortDate(day.date)).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-                }.frame(maxWidth: .infinity, alignment: .leading).frame(height: 28).contentShape(Rectangle())
-            }.buttonStyle(.plain).tint(Theme.accent)
-                .accessibilityLabel("选择日期").accessibilityIdentifier("date-selector")
-        }
-    }
-
     @ViewBuilder private var navigationCapsules: some View {
         if let trip = store.trip {
             HStack(spacing: 8) {
@@ -811,6 +821,8 @@ struct HomeView: View {
                     ForEach(trip.days.sorted { $0.date < $1.date }) { day in
                         Button {
                             store.select(trip: trip, day: day)
+                            store.beginDayMapBrowsing(focus: false)
+                            nativeJourneyPresented = true
                         } label: {
                             if store.dayID == day.id {
                                 Label("第\(dayNumber(day))天 · \(shortDate(day.date))", systemImage: "checkmark")

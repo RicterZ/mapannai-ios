@@ -85,6 +85,7 @@ struct DayEditorDraft: Identifiable {
     private var addSession = UUID()
     private var createdSearchMarkers: [String: Marker] = [:]
     @Published var searchDetailPlace: Place?
+    private var searchDraftReturnState: (selectedID: String?, bounds: SearchBounds?)?
     @Published var searchResults: [Place] = []
     @Published var searchText = "" {
         didSet { if oldValue != searchText { resetSearchSession() } }
@@ -95,6 +96,7 @@ struct DayEditorDraft: Identifiable {
     @Published private(set) var searchPageRevision = UUID()
     @Published var searching = false
     @Published var loading = false
+    @Published private(set) var hasLoadedJourneySnapshot = false
     private var itineraryWriteTail: Task<Void, Never>?
     private var itineraryWriteGeneration = UUID()
     private var itineraryRollbacks: [() -> Void] = []
@@ -189,9 +191,11 @@ struct DayEditorDraft: Identifiable {
         self.routeCache = routeCache
         self.markerRepository = markerRepository
         self.settings = settings; self.demo = demo; self.servicesOverride = services; self.configurationSource = configurationSource ?? FixedMapConfigurationSource()
+        hasLoadedJourneySnapshot = demo || !settings.configured
         if demo { loadDemo() }
     }
     func connect() async {
+        hasLoadedJourneySnapshot = demo || !settings.configured
         applePOIRequest?.task.cancel(); applePOIRequest = nil; appleMapItems = [:]
         itineraryWriteGeneration = UUID(); itineraryWriteTail = nil; itineraryRollbacks = []
         connectionRevision = UUID(); refreshGeneration = UUID(); dataRevision = UUID()
@@ -235,6 +239,7 @@ struct DayEditorDraft: Identifiable {
         let changedTrips = trips != snapshot.trips
         if changedMarkers { markers = snapshot.markers }
         if changedTrips { trips = snapshot.trips }
+        hasLoadedJourneySnapshot = true
         if let tripID, !trips.contains(where: { $0.id == tripID }) { self.tripID = nil; dayID = nil }
         if let dayID, !(trip?.days.contains(where: { $0.id == dayID }) ?? false) { self.dayID = nil }
         if let selection = selectedMarker, let updated = markers.first(where: { $0.id == selection.id }) {
@@ -288,11 +293,11 @@ struct DayEditorDraft: Identifiable {
         if dayMapBrowsing { dayMapCameraFollowing = false }
     }
     func noteDayMapTransform() { if dayMapBrowsing { dayMapCameraFollowing = false } }
-    func beginDayMapBrowsing() {
+    func beginDayMapBrowsing(focus: Bool = true) {
         guard let day else { return }
         dayMapBrowsing = true; dayMapCameraFollowing = true
         dayMapFocusID = DayMapJourney.stops(day: day, markers: markers).first?.marker.id
-        showWholeDayOnMap()
+        if focus { showWholeDayOnMap() }
     }
     func endDayMapBrowsing() { dayMapBrowsing = false; dayMapFocusID = nil }
     func showWholeDayOnMap() {
@@ -1136,6 +1141,9 @@ struct DayEditorDraft: Identifiable {
         if draft?.coordinates == coordinate { return }
         let selectedName = poiName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let searchSession = addSession, revision = connectionRevision
+        if placeSearchPresented, draft == nil {
+            searchDraftReturnState = (selectedSearchPlaceID, bounds)
+        }
         var searchPlaceID: String?
         if placeSearchPresented {
             let place = Place(id: UUID().uuidString, name: selectedName.isEmpty ? "地图选点" : selectedName,
@@ -1144,7 +1152,8 @@ struct DayEditorDraft: Identifiable {
             searchResults.append(place); editingSearchPlaceID = place.id
             searchPlaceID = place.id
         }
-        selectedSearchPlaceID = nil; draftExpanded = false
+        if !placeSearchPresented { selectedSearchPlaceID = nil }
+        draftExpanded = false
         var pending = draft ?? MarkerDraft(coordinates: coordinate)
         applePOIRequest?.task.cancel(); applePOIRequest = nil
         pending.placeReferences = placeReferences
@@ -1208,6 +1217,7 @@ struct DayEditorDraft: Identifiable {
                          coordinates: $0.coordinates, markerId: $0.id) }
     }
     func endAddingPlace() {
+        searchDraftReturnState = nil
         searchDetailPlace = nil
         addSession = UUID(); addedPlaceIDs = []; createdSearchMarkers = [:]
         addPlaceError = nil; editingSearchPlaceID = nil
@@ -1293,6 +1303,17 @@ struct DayEditorDraft: Identifiable {
         searchResults = []; selectedSearchPlaceID = nil; searchPageRevision = UUID()
     }
     func clearSearch() { resetSearchSession(); searchText = ""; showNearbySearchPlaces() }
+    func closeSearchDraft(restoringMap: Bool = true) {
+        draft = nil; editingSearchPlaceID = nil
+        guard let previous = searchDraftReturnState else { return }
+        searchDraftReturnState = nil
+        guard restoringMap else { return }
+        selectedSearchPlaceID = previous.selectedID
+        if let bounds = previous.bounds {
+            fly([Coordinate(latitude: bounds.south, longitude: bounds.west),
+                 Coordinate(latitude: bounds.north, longitude: bounds.east)])
+        }
+    }
     func choose(_ place: Place, fromMap: Bool = false) {
         guard place.coordinates.isValid else { return }
         if placeSearchPresented {

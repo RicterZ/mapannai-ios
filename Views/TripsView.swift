@@ -1122,7 +1122,7 @@ struct DayMarkerPicker: View {
                     }
             }
             .navigationDestination(isPresented: Binding(get: { store.searchDetailPlace == nil && store.draft != nil }, set: {
-                if !$0 && store.searchDetailPlace == nil { store.draft = nil; store.editingSearchPlaceID = nil }
+                if !$0 && store.searchDetailPlace == nil { store.closeSearchDraft() }
             })) {
                 if let draft = store.draft {
                     MarkerEditorView(store: store, initial: draft, embedded: true)
