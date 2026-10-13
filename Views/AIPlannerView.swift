@@ -40,6 +40,7 @@ struct AIPlannerView: View {
     @State private var text = ""
     @State private var historyPresented = false
     @State private var resetConfirmation = false
+    @State private var configurationAlert = false
     @State private var following = true
     @State private var nearBottom = true
     @FocusState private var inputFocused: Bool
@@ -196,6 +197,19 @@ struct AIPlannerView: View {
             close()
         })
         .accessibilityIdentifier("ai-planner-panel")
+        .onAppear {
+            if let pending = planner.pendingConfigurationPrompt {
+                text = pending
+                planner.pendingConfigurationPrompt = nil
+                configurationAlert = true
+            }
+        }
+        .alert("AI 尚未配置", isPresented: $configurationAlert) {
+            Button("取消", role: .cancel) {}
+            Button("前往设置", action: onOpenSettings)
+        } message: {
+            Text("请在应用设置中配置 AI API 和模型。你的输入已保留，配置后可继续发送。")
+        }
         #if DEBUG
         .task {
             if store.demo && ProcessInfo.processInfo.arguments.contains("--ai-stream-preview") { await planner.previewStreamingReply() }

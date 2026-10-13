@@ -130,6 +130,7 @@ struct JourneyDayCardContent: View {
                 Spacer(minLength: 8)
                 Color.clear.frame(width: 44, height: 34).accessibilityHidden(true)
             }
+            VStack(alignment: .leading, spacing: 16) {
             if let theme = summary.theme {
                 Text(theme).font(.title2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
@@ -160,6 +161,10 @@ struct JourneyDayCardContent: View {
             Text("\(summary.count) 个地点" + (summary.timing.map { " · " + $0 } ?? ""))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(.primary)

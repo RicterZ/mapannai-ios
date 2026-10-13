@@ -8,7 +8,6 @@ struct ArchiveChatEntry: View {
     @State private var text = ""
     @State private var historyPresented = false
     @State private var resumeAfterHistory = false
-    @State private var settingsPresented = false
     @FocusState private var inputFocused: Bool
     @ScaledMetric(relativeTo: .title2) private var headingSize = 24
     @ScaledMetric(relativeTo: .body) private var inputHeight = 84
@@ -20,6 +19,7 @@ struct ArchiveChatEntry: View {
             HStack {
                 Text("聊聊下一程").font(.system(size: headingSize, weight: .semibold))
                 Spacer(minLength: 8)
+                if !planner.conversations.isEmpty {
                 Button { inputFocused = false; historyPresented = true } label: {
                     Label("会话记录", systemImage: "clock.arrow.circlepath")
                         .font(.caption).foregroundStyle(.secondary)
@@ -28,6 +28,7 @@ struct ArchiveChatEntry: View {
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).padding(.trailing, -10)
                     .accessibilityIdentifier("archive-chat-history")
+                }
             }
             Text("目的地、想做的事，或一个想法。")
                 .font(.subheadline).foregroundStyle(.secondary)
@@ -41,19 +42,14 @@ struct ArchiveChatEntry: View {
                             .font(.system(size: 19, weight: .regular))
                             .foregroundStyle(.secondary)
                             .frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).disabled(!planner.ready || planner.busy || !configurationReady)
+                    }.buttonStyle(.plain).disabled(!planner.ready || planner.busy)
                         .accessibilityLabel("发送").accessibilityIdentifier("archive-chat-send")
                 }
             }.padding(.leading, 17).padding(.trailing, input.isEmpty ? 17 : 7)
                 .frame(minHeight: inputHeight)
                 .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 22))
                 .id("archive-chat-input-area")
-            if !configurationReady {
-                Button("配置 AI 后开始聊天") { settingsPresented = true }
-                    .font(.subheadline).foregroundStyle(.secondary).buttonStyle(.plain)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("archive-chat-settings")
-            } else if let recent = planner.busy ? planner.conversation : planner.conversations.first {
+            if let recent = planner.busy ? planner.conversation : planner.conversations.first {
                 Button {
                     inputFocused = false
                     Task { @MainActor in
@@ -79,14 +75,16 @@ struct ArchiveChatEntry: View {
             AIConversationList(planner: planner, onClose: { historyPresented = false }) { resumeAfterHistory = true }
         }
 
-        .sheet(isPresented: Binding(get: { settingsPresented && !planner.presented }, set: { settingsPresented = $0 })) {
-            SettingsView(settings: store.settings, store: store, aiPlanner: planner)
-        }
     }
 
     private func submit() {
         guard !input.isEmpty, planner.ready, !planner.busy else { return }
-        guard configurationReady else { inputFocused = false; settingsPresented = true; return }
+        guard configurationReady else {
+            inputFocused = false
+            planner.pendingConfigurationPrompt = input
+            planner.presented = true
+            return
+        }
         // Do not append a home prompt to the previously viewed conversation.
         let previousID = planner.activeID
         planner.newConversation()

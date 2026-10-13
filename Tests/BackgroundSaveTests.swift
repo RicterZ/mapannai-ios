@@ -505,6 +505,43 @@ final class BackgroundSaveTests: XCTestCase {
 }
 
 extension BackgroundSaveTests {
+    @MainActor func testQueuedDayEditsPublishImmediatelyAndWriteInOrder() async throws {
+        let store = store()
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-03", markerIds: ["a", "b", "c"], chains: [["a", "b", "c"]])
+        store.trips = [Trip(id: "trip", name: "Test", startDate: day.date, endDate: day.date, days: [day])]
+        let first = day.removing("a"), second = first.removing("b")
+        var requests = 0
+        DelayedSaveProtocol.handler = { _ in
+            requests += 1
+            return (200, try! JSONEncoder().encode(requests == 1 ? first : second))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.saveDayInBackground(first, using: client()))
+        XCTAssertTrue(store.saveDayInBackground(second, using: client()))
+        XCTAssertEqual(store.trips[0].days[0], second)
+        XCTAssertTrue(store.canEditItinerary)
+        XCTAssertEqual(requests, 0)
+        try await settle(store)
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(store.trips[0].days[0], second)
+    }
+    @MainActor func testFailedQueuedDayEditsRollbackInReverseAndCancelDependents() async throws {
+        let store = store()
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-03", markerIds: ["a", "b", "c"], chains: [["a", "b", "c"]])
+        store.trips = [Trip(id: "trip", name: "Test", startDate: day.date, endDate: day.date, days: [day])]
+        var requests = 0
+        DelayedSaveProtocol.handler = { _ in requests += 1; return (500, Data(#"{"error":"Failed"}"#.utf8)) }
+        defer { DelayedSaveProtocol.handler = nil }
+        let first = day.removing("a"), second = first.removing("b")
+        XCTAssertTrue(store.saveDayInBackground(first, using: client()))
+        XCTAssertTrue(store.saveDayInBackground(second, using: client()))
+        try await settle(store)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(store.trips[0].days[0], day)
+    }
+}
+
+extension BackgroundSaveTests {
     @MainActor func testRouteDropPublishesVisitsAndEdgesBeforeDelayedAPIReturns() async throws {
         let store = store()
         let route = RouteChain(id: "route", stops: [
@@ -528,7 +565,7 @@ extension BackgroundSaveTests {
         XCTAssertEqual(store.trips[0].days[0].routeChains?[0].stops[2].startTime, "10:00")
         XCTAssertTrue(store.trips[0].days[0].routeChains?[0].legs.isEmpty == true)
         XCTAssertEqual(store.trips[0].days[0].routeChains?[0].inactiveLegs?.first?.serviceNumber, "G123")
-        XCTAssertFalse(store.saveDayInBackground(day, using: client())) // Writes stay serial.
+        XCTAssertTrue(store.canEditItinerary) // Background writes no longer lock editing.
         try await settle(store)
         XCTAssertEqual(store.trips[0].days[0], changed)
     }

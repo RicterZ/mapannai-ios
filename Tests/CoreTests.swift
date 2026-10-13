@@ -81,6 +81,30 @@ final class OptimisticDeletionTests: XCTestCase {
 @testable import MapAnNai
 
 final class CoreTests: XCTestCase {
+    @MainActor func testRecognizedRouteLongPressSuppressesReleaseClick() {
+        let store = AppStore(settings: Settings(), demo: true)
+        XCTAssertTrue(store.canActivateRouteRow)
+        store.beginRouteLongPress()
+        XCTAssertFalse(store.canActivateRouteRow)
+        store.finishRouteDrop()
+        XCTAssertFalse(store.canActivateRouteRow)
+    }
+    func testDateIndicatorInterpolatesActualButtonCenters() {
+        XCTAssertEqual(DayDateIndicator.center(position: 0.3, centers: [40, 140, 260]), 70)
+        XCTAssertEqual(DayDateIndicator.center(position: 1.5, centers: [40, 140, 260]), 200)
+        XCTAssertEqual(DayDateIndicator.center(position: -0.2, centers: [40, 140]), 40)
+        XCTAssertEqual(DayDateIndicator.center(position: 2, centers: [40, 140]), 140)
+        XCTAssertNil(DayDateIndicator.center(position: 0, centers: []))
+    }
+    func testArchiveNumbersFollowAscendingStartDateWithStableTies() {
+        let trips = [
+            Trip(id: "old", name: "Old", startDate: "2025-01-01", endDate: "2025-01-02", days: []),
+            Trip(id: "b", name: "B", startDate: "2026-01-01", endDate: "2026-01-02", days: []),
+            Trip(id: "a", name: "A", startDate: "2026-01-01", endDate: "2026-01-02", days: [])
+        ]
+        XCTAssertEqual(JourneyArchiveOrdering.numberedIDs(trips), ["old", "a", "b"])
+        XCTAssertEqual(JourneyArchiveOrdering.numberedIDs([]), [])
+    }
     func testMotionPoliciesHonorReduceMotionAcrossInteractions() {
         XCTAssertNil(AppMotion.navigation(reduceMotion: true))
         XCTAssertNil(AppMotion.presentation(reduceMotion: true))

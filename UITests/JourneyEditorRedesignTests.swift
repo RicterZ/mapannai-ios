@@ -433,7 +433,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
         row.press(forDuration: 0.8)
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
-        XCTAssertTrue(app.buttons["route-view-0"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["route-heading-0"].firstMatch.exists)
         XCTAssertFalse(app.buttons["save-chain-editor"].exists)
         row.tap()
         capture("Day long press editing in place")
@@ -484,7 +484,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertEqual(search.value as? String, "咖啡")
         app.buttons["close-place-picker"].tap()
-        XCTAssertTrue(app.buttons["route-view-0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["route-heading-0"].firstMatch.waitForExistence(timeout: 5))
     }
     @MainActor func testDayListPlaceOpensHalfDetailAndRestoresFullAndHalfDay() {
         let app = XCUIApplication()
@@ -601,7 +601,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertEqual(search.frame.minY, fullY, accuracy: 4)
         capture("Returning restores the expanded search height")
         app.buttons["close-place-picker"].tap()
-        XCTAssertTrue(app.buttons["route-view-0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["route-heading-0"].firstMatch.waitForExistence(timeout: 5))
     }
     @MainActor func testSearchMapPreviewDoesNotAddAndLongPressCancelKeepsNamedRow() {
         let app = XCUIApplication()
@@ -638,7 +638,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.97)))
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(search.frame.minY, app.frame.height * 0.75)
-        XCTAssertFalse(app.buttons["route-view-0"].isHittable)
+        XCTAssertFalse(app.descendants(matching: .any)["route-heading-0"].firstMatch.isHittable)
         RunLoop.current.run(until: Date().addingTimeInterval(0.6))
         let input = app.searchFields["map-place-search"]
         let panel = app.otherElements["edge-attached-panel"].firstMatch
@@ -695,7 +695,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 8))
         XCTAssertEqual(search.value as? String, "咖啡")
         app.buttons["close-place-picker"].tap()
-        XCTAssertTrue(app.buttons["route-view-0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["route-heading-0"].firstMatch.waitForExistence(timeout: 5))
     }
     @MainActor func testDayMapEntryShowsJourneyChainAndActionsFit() {
         let app = XCUIApplication()

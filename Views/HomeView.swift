@@ -553,11 +553,7 @@ struct HomeView: View {
         let page = scope(destination)
         Group {
             if let day = page.day {
-                DayContentsView(store: store, day: day, onViewRoute: {
-                    if !sidebar {
-                        setJourneyDetent(.half)
-                    }
-                }, editingPlaces: $editingDayPlaces)
+                DayContentsView(store: store, day: day, editingPlaces: $editingDayPlaces)
             } else if let trip = page.trip {
                 JourneyDaysContents(store: store, trip: trip, onSelectDay: { day in
                     store.select(trip: trip, day: day, focus: false); store.beginDayMapBrowsing(); setJourneyDetent(.full)

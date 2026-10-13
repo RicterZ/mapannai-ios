@@ -48,11 +48,33 @@ enum DayMapJourney {
     }
 }
 
+final class DayPagingProgress: ObservableObject {
+    @Published var position: Double?
+}
+
+private struct DayDateFrames: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+enum DayDateIndicator {
+    static func center(position: Double, centers: [Double]) -> Double? {
+        guard !centers.isEmpty, position.isFinite else { return nil }
+        let clamped = min(Double(centers.count - 1), max(0, position))
+        let lower = Int(clamped), upper = min(lower + 1, centers.count - 1)
+        return centers[lower] + (centers[upper] - centers[lower]) * (clamped - Double(lower))
+    }
+}
+
 struct DayMapDateStrip: View {
     @ObservedObject var store: AppStore
     let trip: Trip
     let day: TripDay
     var identifierPrefix = "day-map-date-"
+    @ObservedObject var pagingProgress = DayPagingProgress()
+    @State private var dateFrames: [Int: CGRect] = [:]
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
@@ -69,10 +91,23 @@ struct DayMapDateStrip: View {
                             }.foregroundStyle(date.id == day.id ? .primary : .secondary)
                                 .frame(height: 44)
                                 .contentShape(Rectangle())
-                                .overlay(alignment: .bottom) {
-                                    if date.id == day.id { Capsule().fill(Color.primary).frame(width: 18, height: 3) }
-                                }
+                                .background(GeometryReader { geometry in
+                                    Color.clear.preference(key: DayDateFrames.self,
+                                        value: [index: geometry.frame(in: .named(identifierPrefix))])
+                                })
                         }.id(date.id).accessibilityIdentifier(identifierPrefix + date.id)
+                    }
+                }
+                .coordinateSpace(name: identifierPrefix)
+                .onPreferenceChange(DayDateFrames.self) { dateFrames = $0 }
+                .overlay(alignment: .topLeading) {
+                    let dates = trip.days.sorted { $0.date < $1.date }
+                    let position = pagingProgress.position ?? Double(dates.firstIndex { $0.id == day.id } ?? 0)
+                    let centers = dates.indices.compactMap { dateFrames[$0].map { Double($0.midX) } }
+                    if centers.count == dates.count, let center = DayDateIndicator.center(position: position, centers: centers) {
+                        Capsule().fill(Color.primary).frame(width: 18, height: 3)
+                            .offset(x: center - 9, y: 41)
+                            .allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
             }.scrollIndicators(.hidden)

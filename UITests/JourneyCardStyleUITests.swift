@@ -1,6 +1,108 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testEditingHidesRouteCountAndActions() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
+        let day = app.buttons["journey-day-day-2"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
+        let heading = app.descendants(matching: .any)["route-heading-0"].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        XCTAssertTrue(heading.label.contains("个地点"))
+        XCTAssertTrue(app.buttons["route-actions-0"].exists)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: heading.frame.midX, dy: heading.frame.midY))
+        point.press(forDuration: 0.8)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
+        XCTAssertFalse(heading.label.contains("个地点"))
+        XCTAssertFalse(app.buttons["route-actions-0"].exists)
+        XCTAssertTrue(app.buttons["route-toggle-0"].exists)
+        app.buttons["day-edit-done"].tap()
+        XCTAssertTrue(app.buttons["route-actions-0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(heading.label.contains("个地点"))
+    }
+
+    @MainActor func testRouteHeadingIsDisplayOnlyAndAllowsScrolling() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
+        let day = app.buttons["journey-day-day-2"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
+        let heading = app.descendants(matching: .any)["route-heading-0"].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        XCTAssertFalse(app.buttons["route-heading-0"].exists)
+        let originalY = heading.frame.minY
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: heading.frame.midX, dy: heading.frame.midY)).tap()
+        XCTAssertEqual(heading.frame.minY, originalY, accuracy: 3)
+        let toggle = app.buttons["route-toggle-0"]
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "已收起")
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: heading.frame.midX, dy: heading.frame.midY)).tap()
+        XCTAssertEqual(toggle.value as? String, "已收起")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "已展开")
+        let title = app.buttons["route-0-marker-demo-3"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        let titleY = title.frame.minY
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: heading.frame.minX + heading.frame.width * 0.3, dy: heading.frame.midY))
+        start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -120)), withVelocity: .fast, thenHoldForDuration: 0)
+        XCTAssertLessThan(title.frame.minY, titleY - 20, "Dragging the route heading must scroll the list")
+        XCTAssertFalse(app.buttons["day-edit-done"].exists)
+    }
+
+    @MainActor func testDayCoverIsDisplayOnlyAndScrolls() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
+        let day = app.buttons["journey-day-day-2"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8)); day.tap()
+        let title = app.buttons["route-0-marker-demo-3"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        // The cover begins below the title/address header and is 140pt high.
+        func coverPoint() -> XCUICoordinate {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(
+                CGVector(dx: title.frame.midX, dy: title.frame.maxY + 70))
+        }
+        attach(app, "Cover scroll before")
+        let before = title.frame.minY
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.65)).press(forDuration: 0.01, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.40)), withVelocity: .fast, thenHoldForDuration: 0)
+        XCTAssertLessThan(title.frame.minY, before - 30)
+        XCTAssertFalse(app.buttons["day-edit-done"].exists)
+        attach(app, "Cover scroll up")
+        let after = title.frame.minY
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.40)).press(forDuration: 0.01, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.65)), withVelocity: .fast, thenHoldForDuration: 0)
+        XCTAssertGreaterThan(title.frame.minY, after + 30)
+        coverPoint().tap()
+        XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
+        app.buttons["close-marker-detail"].tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        coverPoint().press(forDuration: 0.8)
+        XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
+        let selection = app.buttons["route-0-select-demo-3"]
+        XCTAssertTrue(selection.waitForExistence(timeout: 3))
+        XCTAssertEqual(selection.value as? String, "未选中", "长按松手不能顺带选中地点")
+        selection.tap()
+        XCTAssertEqual(selection.value as? String, "已选中")
+        selection.tap()
+        XCTAssertEqual(selection.value as? String, "未选中")
+        app.buttons["day-edit-done"].tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        title.tap()
+        XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
+    }
     @MainActor func testHomeHistoryButtonPaddingIsTappable() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--archive-ai-preview", "-AppleLanguages", "(zh-Hans)"]
@@ -109,13 +211,18 @@ final class JourneyCardStyleUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
-        let configure = app.buttons["archive-chat-settings"]
-        XCTAssertTrue(configure.waitForExistence(timeout: 5))
-        for _ in 0..<4 where !configure.isHittable { app.swipeUp() }
-        configure.tap()
-        let model = app.textFields["ai-model"]
-        for _ in 0..<5 where !model.isHittable { app.swipeUp() }
-        XCTAssertTrue(model.exists)
+        let input = app.textFields["archive-chat-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["archive-chat-settings"].exists)
+        input.tap(); input.typeText("想去京都")
+        XCTAssertTrue(app.buttons["archive-chat-send"].isEnabled)
+        app.buttons["archive-chat-send"].tap()
+        XCTAssertTrue(app.alerts["AI 尚未配置"].waitForExistence(timeout: 5))
+        app.alerts["AI 尚未配置"].buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["ai-close"].exists)
+        XCTAssertEqual(app.textFields["ai-message-input"].value as? String, "想去京都")
+        app.buttons["ai-close"].tap()
+        XCTAssertEqual(input.value as? String, "想去京都")
     }
     @MainActor func testArchiveNumbersContinueIntoDetail() {
         let app = XCUIApplication()
@@ -377,5 +484,44 @@ final class JourneyCardStyleUITests: XCTestCase {
     @MainActor private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+}
+
+// Temporary diagnostic; removed after collecting evidence.
+extension JourneyCardStyleUITests {
+    @MainActor func testDiagnosisPhotoScroll() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"].firstMatch
+        XCTAssertTrue(trip.waitForExistence(timeout: 10)); trip.tap()
+        let day = app.buttons["journey-day-day-2"].firstMatch
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1)); day.tap()
+        let title = app.buttons["route-0-marker-demo-3"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        func point(_ x: CGFloat, _ y: CGFloat) -> XCUICoordinate {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x, dy: y))
+        }
+        func shot(_ name: String) {
+            let a = XCTAttachment(screenshot: app.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a)
+        }
+        shot("Diagnosis initial")
+        let before = title.frame.minY
+        let photoY = title.frame.maxY + 75
+        let x: CGFloat = 220
+        print("PHOTO_DIAG before=\(before) photo=(\(x),\(photoY)) title=\(title.frame)")
+        let cell = app.cells.containing(.button, identifier: "route-0-marker-demo-3").firstMatch
+        print("PHOTO_DIAG cell=\(cell.frame)")
+        cell.swipeUp(velocity: .fast)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.7))
+        print("PHOTO_DIAG afterPhoto=\(title.frame.minY) editing=\(app.buttons["day-edit-done"].exists)")
+        shot("Diagnosis after photo drag")
+        let textBefore = title.frame.minY
+        title.swipeUp(velocity: .fast)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.7))
+        print("PHOTO_DIAG textBefore=\(textBefore) afterText=\(title.frame.minY)")
+        shot("Diagnosis after text drag")
     }
 }

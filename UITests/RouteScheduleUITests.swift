@@ -11,7 +11,14 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertTrue(day.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
         let leg = app.otherElements["route-0-transport-0"].firstMatch
-        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.press(forDuration: 1)
+        XCTAssertTrue(leg.waitForExistence(timeout: 5))
+        let edit = leg.buttons["transport-edit"]
+        XCTAssertTrue(edit.isHittable)
+        XCTAssertGreaterThan(edit.frame.midX, leg.frame.midX)
+        XCTAssertLessThanOrEqual(edit.frame.maxX, leg.frame.maxX)
+        XCTAssertGreaterThanOrEqual(edit.frame.minY, leg.frame.minY)
+        XCTAssertLessThanOrEqual(edit.frame.maxY, leg.frame.maxY)
+        edit.tap()
         let service = app.textFields["schedule-service"]
         XCTAssertTrue(service.waitForExistence(timeout: 5))
         XCTAssertEqual(service.value as? String, "10号线")
@@ -28,7 +35,7 @@ final class RouteScheduleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["schedule-clear"].isHittable)
         capture(app, "交通安排 · 时间备注与操作")
         app.buttons["schedule-cancel"].tap()
-        XCTAssertTrue(leg.waitForExistence(timeout: 5)); leg.press(forDuration: 1)
+        XCTAssertTrue(leg.waitForExistence(timeout: 5)); edit.tap()
         XCTAssertTrue(service.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["schedule-mode-subway"].isSelected, "取消不能保存交通方式修改")
         XCTAssertEqual(service.value as? String, "10号线")

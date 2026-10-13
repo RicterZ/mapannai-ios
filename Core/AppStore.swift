@@ -95,6 +95,40 @@ struct DayEditorDraft: Identifiable {
     @Published private(set) var searchPageRevision = UUID()
     @Published var searching = false
     @Published var loading = false
+    private var itineraryWriteTail: Task<Void, Never>?
+    private var itineraryWriteGeneration = UUID()
+    private var itineraryRollbacks: [() -> Void] = []
+    var canEditItinerary: Bool { !saving || !itineraryRollbacks.isEmpty }
+
+    private func enqueueItineraryWrite(using client: APIClient, rollback: @escaping () -> Void,
+        operation: @escaping () async throws -> Void) {
+        let predecessor = itineraryWriteTail
+        let generation = itineraryWriteGeneration, revision = connectionRevision
+        itineraryRollbacks.append(rollback)
+        itineraryWriteTail = Task {
+            await predecessor?.value
+            guard generation == itineraryWriteGeneration, revision == connectionRevision else { return }
+            do {
+                await markerRepository.invalidate(using: client)
+                try await operation()
+                guard generation == itineraryWriteGeneration, revision == connectionRevision else { return }
+                itineraryRollbacks.removeFirst()
+                if itineraryRollbacks.isEmpty {
+                    await markerRepository.invalidate(using: client)
+                    guard generation == itineraryWriteGeneration, revision == connectionRevision else { return }
+                    // A new edit can arrive while cache invalidation suspends.
+                    if itineraryRollbacks.isEmpty { saving = false; await refresh(quietly: true) }
+                }
+            } catch {
+                guard generation == itineraryWriteGeneration, revision == connectionRevision else { return }
+                itineraryWriteGeneration = UUID()
+                for undo in itineraryRollbacks.reversed() { undo() }
+                itineraryRollbacks = []; itineraryWriteTail = nil; saving = false
+                rebuildRoutes(preservingPlannedGeometry: true)
+                report(error)
+            }
+        }
+    }
     @Published var saving = false
     @Published var errorMessage: String?
     @Published var routeError: String?
@@ -159,6 +193,7 @@ struct DayEditorDraft: Identifiable {
     }
     func connect() async {
         applePOIRequest?.task.cancel(); applePOIRequest = nil; appleMapItems = [:]
+        itineraryWriteGeneration = UUID(); itineraryWriteTail = nil; itineraryRollbacks = []
         connectionRevision = UUID(); refreshGeneration = UUID(); dataRevision = UUID()
         loading = false; refreshing = false; saving = false
         failedSaveAction = nil; canResumeFailedSave = false; tripSaveRecovery = nil
@@ -694,6 +729,7 @@ struct DayEditorDraft: Identifiable {
     private var routeDropClickDeadline: Date = .distantPast
     var canActivateRouteRow: Bool { Date.now >= routeDropClickDeadline }
     func finishRouteDrop() { routeDropClickDeadline = .now.addingTimeInterval(0.35) }
+    func beginRouteLongPress() { routeDropClickDeadline = .distantFuture }
     func saveRouteSchedule(_ request: RouteScheduleRequest, patch: [String: Any], using suppliedClient: APIClient? = nil) async -> Bool {
         guard let latest = trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }),
               latest.chains == request.day.chains,
@@ -882,12 +918,13 @@ struct DayEditorDraft: Identifiable {
         let revision = connectionRevision
         return persistDayInBackground(day, animated: animated, using: suppliedClient) { client in
             let confirmed: TripDay = try await client.request(write.path, method: write.method, body: write.body)
-            await self.acceptRouteSchedule(confirmed, revision: revision)
+            guard self.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) == day else { return }
+            self.acceptRouteSchedule(confirmed, revision: revision)
         }
     }
     private func persistDayInBackground(_ day: TripDay, animated: Bool, using suppliedClient: APIClient? = nil, operation: @escaping (APIClient) async throws -> Void) -> Bool {
-        guard !demo else { errorMessage = "当前为只读示例，无法保存。"; return false }
-        guard !saving else { errorMessage = "请等待当前保存完成"; return false }
+        guard !demo || suppliedClient != nil else { errorMessage = "当前为只读示例，无法保存。"; return false }
+        guard canEditItinerary else { errorMessage = "请等待当前保存完成"; return false }
         guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
               let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return false }
         let previousTripMarkers = trips[ti].markerIds
@@ -899,28 +936,14 @@ struct DayEditorDraft: Identifiable {
             trips[ti].markerIds?.removeAll { day.markerIds.contains($0) }
         }
         rebuildRoutes(preservingPlannedGeometry: true)
-        Task {
-            await markerRepository.invalidate(using: client)
-            do {
-                try await operation(client)
-                guard revision == connectionRevision else { return }
-                await markerRepository.invalidate(using: client)
-                guard revision == connectionRevision else { return }
-                saving = false
-                await refresh(quietly: true)
-            } catch {
-                guard revision == connectionRevision else { return }
-                if let ti = trips.firstIndex(where: { $0.id == day.tripId }),
-                   let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) {
-                    withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
-                        trips[ti].days[di] = previous
-                        trips[ti].markerIds = previousTripMarkers
-                    }
-                }
-                saving = false
-                rebuildRoutes(preservingPlannedGeometry: true)
-                report(error)
-            }
+        enqueueItineraryWrite(using: client, rollback: {
+            guard let ti = self.trips.firstIndex(where: { $0.id == day.tripId }),
+                  let di = self.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
+            self.trips[ti].days[di] = previous
+            self.trips[ti].markerIds = previousTripMarkers
+        }) {
+            guard revision == self.connectionRevision else { throw CancellationError() }
+            try await operation(client)
         }
         return true
     }
@@ -929,7 +952,7 @@ struct DayEditorDraft: Identifiable {
     func transferDayPlaces(_ ids: Set<String>, from source: TripDay, to destination: TripDay,
                            copy: Bool, using suppliedClient: APIClient? = nil) -> Bool {
         guard !demo || suppliedClient != nil else { errorMessage = "当前为只读示例，无法保存。"; return false }
-        guard !saving, source.tripId == destination.tripId, source.id != destination.id,
+        guard canEditItinerary, source.tripId == destination.tripId, source.id != destination.id,
               let ti = trips.firstIndex(where: { $0.id == source.tripId }),
               let si = trips[ti].days.firstIndex(where: { $0.id == source.id }),
               let di = trips[ti].days.firstIndex(where: { $0.id == destination.id }) else { return false }
@@ -952,7 +975,11 @@ struct DayEditorDraft: Identifiable {
             trips[ti].days[si] = updatedSource; trips[ti].days[di] = updatedDestination
         }
         rebuildRoutes(preservingPlannedGeometry: true)
-        Task {
+        enqueueItineraryWrite(using: client, rollback: {
+            guard let ti = self.trips.firstIndex(where: { $0.id == source.tripId }) else { return }
+            if let si = self.trips[ti].days.firstIndex(where: { $0.id == source.id }) { self.trips[ti].days[si] = originalSource }
+            if let di = self.trips[ti].days.firstIndex(where: { $0.id == destination.id }) { self.trips[ti].days[di] = originalDestination }
+        }) { [self] in
             await markerRepository.invalidate(using: client)
             guard revision == connectionRevision else { return }
             var destinationWritten = false
@@ -961,19 +988,23 @@ struct DayEditorDraft: Identifiable {
                 if updatedDestination != originalDestination {
                     let confirmed: TripDay = try await client.request(destinationWrite.path, method: destinationWrite.method, body: destinationWrite.body)
                     guard revision == connectionRevision else { return }
-                    acceptRouteSchedule(confirmed, revision: revision)
+                    if trips.first(where: { $0.id == source.tripId })?.days.first(where: { $0.id == confirmed.id }) == (confirmed.id == source.id ? updatedSource : updatedDestination) {
+                        acceptRouteSchedule(confirmed, revision: revision)
+                    }
                     destinationWritten = true
                 }
                 guard revision == connectionRevision else { return }
                 if !copy {
                     let confirmed: TripDay = try await client.request(sourceWrite.path, method: sourceWrite.method, body: sourceWrite.body)
                     guard revision == connectionRevision else { return }
-                    acceptRouteSchedule(confirmed, revision: revision)
+                    if trips.first(where: { $0.id == source.tripId })?.days.first(where: { $0.id == confirmed.id }) == (confirmed.id == source.id ? updatedSource : updatedDestination) {
+                        acceptRouteSchedule(confirmed, revision: revision)
+                    }
                 }
                 guard revision == connectionRevision else { return }
                 await markerRepository.invalidate(using: client)
                 guard revision == connectionRevision else { return }
-                saving = false; await refresh(quietly: true)
+                return
             } catch {
                 guard revision == connectionRevision else { return }
                 if !copy {
@@ -983,8 +1014,10 @@ struct DayEditorDraft: Identifiable {
                         guard revision == connectionRevision else { return }
                         if ordered.allSatisfy({ !serverSource.markerIds.contains($0) }) {
                             // A lost response can follow a successful write; don't undo a completed move.
-                            acceptRouteSchedule(serverSource, revision: revision)
-                            saving = false; await refresh(quietly: true); return
+                            if trips.first(where: { $0.id == source.tripId })?.days.first(where: { $0.id == source.id }) == updatedSource {
+                                acceptRouteSchedule(serverSource, revision: revision)
+                            }
+                            return
                         }
                         guard ordered.allSatisfy({ serverSource.markerIds.contains($0) }) else {
                             throw AppError.message("源日期的地点已发生变化")
@@ -993,28 +1026,23 @@ struct DayEditorDraft: Identifiable {
                             let confirmed: TripDay = try await client.request(Self.dayPath(originalDestination), method: "PUT", body: [
                                 "markerIds": originalDestination.markerIds, "chains": originalDestination.chains])
                             guard revision == connectionRevision else { return }
-                            acceptRouteSchedule(confirmed, revision: revision)
+                            // The failed queue is rolled back locally after compensation.
+                            _ = confirmed
                         }
                     } catch { compensationFailed = true }
                 }
                 guard revision == connectionRevision else { return }
-                if let ti = trips.firstIndex(where: { $0.id == source.tripId }) {
-                    if let si = trips[ti].days.firstIndex(where: { $0.id == source.id }) { trips[ti].days[si] = originalSource }
-                    if let di = trips[ti].days.firstIndex(where: { $0.id == destination.id }) {
-                        trips[ti].days[di] = compensationFailed ? updatedDestination : originalDestination
-                    }
-                }
-                saving = false; rebuildRoutes(preservingPlannedGeometry: true)
                 if compensationFailed {
-                    errorMessage = "移动未完成，目标日期可能已保留副本，请检查两天的行程。"
-                    await refresh(quietly: true)
-                } else { report(error) }
+                    throw AppError.message("移动未完成，目标日期可能已保留副本，请检查两天的行程。")
+                }
+                throw error
             }
         }
         return true
     }
     @discardableResult
     func removeDayPlacesInBackground(_ ids: Set<String>, from day: TripDay) -> Bool {
+        guard !ids.isEmpty else { return false }
         guard let latest = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }),
               latest == day else { errorMessage = "行程已更新，请重新选择地点。"; return false }
         return saveDayInBackground(ids.reduce(latest) { $0.removing($1) })

@@ -7,7 +7,7 @@ final class JourneyEditingActionsTests: XCTestCase {
         if isPad { XCUIDevice.shared.orientation = .landscapeLeft }
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
-        let viewRoute = app.buttons["route-view-0"]
+        let viewRoute = app.descendants(matching: .any)["route-heading-0"].firstMatch
         XCTAssertTrue(viewRoute.waitForExistence(timeout: 10))
         let toggle = app.buttons["route-toggle-0"]
         let firstPlace = app.buttons["route-0-marker-demo-0"]
@@ -20,7 +20,7 @@ final class JourneyEditingActionsTests: XCTestCase {
         toggle.tap()
         XCTAssertTrue(firstPlace.waitForNonExistence(timeout: 3))
         viewRoute.tap()
-        XCTAssertFalse(firstPlace.exists, "Viewing a collapsed route must not expand it")
+        XCTAssertFalse(firstPlace.exists, "Tapping a collapsed route heading must not expand it")
         toggle.tap()
         XCTAssertTrue(firstPlace.waitForExistence(timeout: 3))
         if !isPad {
@@ -30,11 +30,7 @@ final class JourneyEditingActionsTests: XCTestCase {
             let panel = app.otherElements["phone-itinerary-panel"]
             XCTAssertGreaterThan(panel.frame.height, 650)
             viewRoute.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-            let medium = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                panel.frame.height > 300 && panel.frame.height < 650
-            }, object: nil)
-            XCTAssertEqual(XCTWaiter.wait(for: [medium], timeout: 5), .completed)
-            handle.press(forDuration: 0.1, thenDragTo: handle.withOffset(CGVector(dx: 0, dy: -450)))
+            XCTAssertGreaterThan(panel.frame.height, 650, "The route heading must not open a route overview or change the panel height")
         } else { viewRoute.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap() }
         let place = app.buttons["route-0-marker-demo-0"]
         XCTAssertTrue(place.waitForExistence(timeout: 5))

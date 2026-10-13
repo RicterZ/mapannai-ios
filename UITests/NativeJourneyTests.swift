@@ -205,7 +205,7 @@ final class NativeJourneyTests: XCTestCase {
 
     @MainActor func testDeleteChainConfirmationActuallySubmitsDeletion() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
-        let route = app.buttons["route-view-0"]
+        let route = app.descendants(matching: .any)["route-heading-0"].firstMatch
         XCTAssertTrue(route.waitForExistence(timeout: 10))
         route.press(forDuration: 0.7)
         app.buttons["删除路线"].tap()
@@ -298,7 +298,7 @@ final class NativeJourneyTests: XCTestCase {
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["save-chain-editor"].exists)
         app.buttons["day-edit-done"].tap()
-        app.buttons["route-view-0"].press(forDuration: 0.7)
+        app.descendants(matching: .any)["route-heading-0"].firstMatch.press(forDuration: 0.7)
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         XCTAssertTrue(row.exists)
         app.buttons["day-edit-done"].tap()

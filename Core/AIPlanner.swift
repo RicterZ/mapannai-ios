@@ -205,6 +205,7 @@ actor AIHistoryRepository {
     // The settings preference controls entry visibility independently of conversations.
     static let entryEnabled = false
     @Published var presented = false
+    var pendingConfigurationPrompt: String?
     @Published var configuration = AIConfiguration()
     @Published var conversations: [AIConversation] = []
     @Published var activeID: UUID?
@@ -227,6 +228,7 @@ actor AIHistoryRepository {
     private let history = AIHistoryRepository()
 
     func configure(for settings: Settings) async {
+        pendingConfigurationPrompt = nil
         activeStore = nil; presented = false; stop()
         let oldEffects = effectsTask; oldEffects?.cancel()
         generation = UUID(); let revision = generation

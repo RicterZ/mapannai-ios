@@ -97,6 +97,7 @@ struct MarkerDetailView: View {
                                 else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
                             }
                         }.clipShape(RoundedRectangle(cornerRadius: 8))
+                            .allowsHitTesting(false)
                     }
                     if !itineraries.isEmpty {
                         VStack(spacing: 0) {

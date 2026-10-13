@@ -58,7 +58,11 @@ struct RouteScheduleEditor: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("备注").font(.subheadline).foregroundStyle(.secondary)
                         TextField(request.isTransport ? "站台、集合点或其他提醒" : "入口、预约或其他提醒", text: $note, axis: .vertical)
-                            .lineLimit(2...5).accessibilityIdentifier("schedule-note")
+                            .lineLimit(2...5)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                            .accessibilityIdentifier("schedule-note")
                     }
                     Text("按行程当天的当地时间填写")
                         .font(.caption).foregroundStyle(.tertiary)
@@ -81,9 +85,15 @@ struct RouteScheduleEditor: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: { Image(systemName: "chevron.left") }
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .regular))
+                            .foregroundStyle(Color(uiColor: .label))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                         .accessibilityLabel("取消").accessibilityIdentifier("schedule-cancel").disabled(submitting)
-                }
+                }.journeyBareBackground
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 JourneyEditorSubmit(title: "保存安排", enabled: !submitting && !store.saving,
@@ -112,7 +122,8 @@ struct RouteScheduleEditor: View {
                     .foregroundStyle(.tertiary).accessibilityHidden(true)
                 Text(to).frame(maxWidth: .infinity, alignment: .trailing)
             }
-        }.font(.headline).lineLimit(2).padding(.vertical, 8)
+        }.font(request.isTransport ? .headline : .title2.weight(.semibold))
+            .lineLimit(2).padding(.vertical, 8)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(request.toTitle.map { "从\(request.fromTitle)到\($0)" } ?? request.fromTitle)
     }
@@ -189,6 +200,7 @@ struct TransportArtwork: View {
 
 struct ItineraryNote: View {
     let text: String
+    var allowsExpansion = true
     @State private var expanded = false
     @State private var fullHeight: CGFloat = 0
     @State private var collapsedHeight: CGFloat = 0
@@ -206,7 +218,7 @@ struct ItineraryNote: View {
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { collapsedHeight = $0 }
                         .hidden().accessibilityHidden(true)
                 }
-            if fullHeight > collapsedHeight + 1 {
+            if allowsExpansion && fullHeight > collapsedHeight + 1 {
                 Button(expanded ? "收起备注" : "展开备注") { expanded.toggle() }
                     .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
             }
@@ -220,16 +232,8 @@ struct RouteTransportRow: View {
     let tint: Color
     let action: () -> Void
     var body: some View {
+        Button(action: action) {
         HStack(alignment: .center, spacing: 4) {
-            Button(action: action) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }.buttonStyle(.plain)
-                .accessibilityLabel("编辑交通安排")
-                .accessibilityIdentifier("transport-edit")
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 if let leg { TransportArtwork(mode: leg.mode) }
@@ -240,12 +244,20 @@ struct RouteTransportRow: View {
             let metadata = [leg?.startTime.map { $0 + " 出发" }, leg?.durationMinutes.map { "计划 " + RouteScheduleText.duration($0) }, distance]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary).monospacedDigit() }
-            if let note = leg?.note, !note.isEmpty { ItineraryNote(text: note) }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            if let note = leg?.note, !note.isEmpty { ItineraryNote(text: note, allowsExpansion: false) }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+        }.padding(12)
             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(Rectangle()).accessibilityElement(children: .contain)
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+            .accessibilityLabel("编辑交通安排")
+            .accessibilityIdentifier("transport-edit")
             .accessibilityAction(named: "编辑交通安排", action)
-        }.accessibilityElement(children: .contain)
             .padding(.leading, 33).padding(.top, 4).padding(.bottom, 12)
     }
 }

@@ -39,15 +39,17 @@ struct SettingsView: View {
                 .navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button { dismiss() } label: { Image(systemName: "xmark") }
+                        Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 20, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                            .buttonStyle(.plain).foregroundStyle(Color(uiColor: .label))
                             .accessibilityLabel("关闭").accessibilityIdentifier("close-settings")
                             .disabled(checking)
-                    }
+                    }.journeyBareBackground
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(action: saveAndClose) { Image(systemName: "checkmark") }
+                        Button(action: saveAndClose) { Image(systemName: "checkmark").font(.system(size: 20, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                            .buttonStyle(.plain).foregroundStyle(Color(uiColor: .label))
                             .accessibilityLabel("保存设置").accessibilityIdentifier("save-settings")
                             .disabled(store.saving || checking)
-                    }
+                    }.journeyBareBackground
                 }
             }
         }

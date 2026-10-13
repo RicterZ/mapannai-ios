@@ -7,6 +7,7 @@ struct JourneyDaysContents: View {
     let trip: Trip
     var onSelectDay: ((TripDay) -> Void)? = nil
     var archiveColorIndex: Int? = nil
+    var archiveNumber: Int? = nil
     var archiveHeaderVisible = true
     var archiveContentVisible = true
     var archivePhoto: UIImage? = nil
@@ -29,7 +30,7 @@ struct JourneyDaysContents: View {
         List {
             if let archiveColorIndex {
                 Section {
-                    JourneyArchiveCard(trip: trip, colorIndex: archiveColorIndex, photo: archivePhoto)
+                    JourneyArchiveCard(trip: trip, colorIndex: archiveColorIndex, number: archiveNumber, photo: archivePhoto)
                         .frame(height: 204)
                         .opacity(archiveHeaderVisible ? 1 : 0)
                         // The snapshot owns motion; the live header must hand off without a cross-fade.
@@ -255,6 +256,9 @@ struct JourneyArchiveView: View {
         }
         return Array(Set(urls))
     }
+    private func number(for trip: Trip) -> Int {
+        JourneyArchiveOrdering.numberedIDs(store.trips).firstIndex(of: trip.id).map { $0 + 1 } ?? 1
+    }
     private func coverPhoto(_ trip: Trip) -> UIImage? {
         JourneyDaySummary.cover(trip: trip, markers: store.markers).flatMap { photos[$0] }
     }
@@ -270,7 +274,7 @@ struct JourneyArchiveView: View {
                     .accessibilityHidden(openedID != nil)
                 if let trip = openedTrip {
                     ZStack(alignment: .topLeading) {
-                        JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, archiveColorIndex: openingIndex,
+                        JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, archiveColorIndex: openingIndex, archiveNumber: number(for: trip),
                             archiveHeaderVisible: cardInList,
                             archiveContentVisible: detailVisible,
                             archivePhoto: coverPhoto(trip) ?? transferCards.first { $0.id == trip.id }?.photo,
@@ -345,8 +349,7 @@ struct JourneyArchiveView: View {
                             Image(systemName: "xmark").font(.system(size: 20, weight: .regular))
                                 .foregroundStyle(Color(uiColor: .label))
                                 .frame(width: 44, height: 44)
-                                .background(.regularMaterial, in: Circle())
-                                .contentShape(Circle())
+                                .contentShape(Rectangle())
                         }.accessibilityLabel("关闭旅途详情")
                             .accessibilityIdentifier("archive-detail-close").buttonStyle(.plain)
                     } else {
@@ -433,7 +436,7 @@ struct JourneyArchiveView: View {
                                 .frame(maxWidth: .infinity, minHeight: 48)
                                 .foregroundStyle(Color(uiColor: .systemBackground))
                                 .background(Color(uiColor: .label), in: Capsule())
-                        }.buttonStyle(.plain).padding(.top, 24)
+                        }.buttonStyle(.plain).padding(.top, 48)
                             .accessibilityIdentifier("empty-archive-create")
                     }.padding(.horizontal, 8)
                 }
@@ -460,7 +463,7 @@ struct JourneyArchiveView: View {
                         let compact = !isTop && index != trips.count - 1 && !typeSize.isAccessibilitySize
                         let beforeStorage = isTop && index + 1 < trips.count && !topIDs.contains(trips[index + 1].id)
                         Button { open(trip, index: index, viewportHeight: height) } label: {
-                            JourneyArchiveCard(trip: trip, colorIndex: index, photo: coverPhoto(trip))
+                            JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
                                 .frame(height: 204)
                                 .visualEffect { content, proxy in
                                     content.rotation3DEffect(.radians(ArchiveStorage.angle(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, baseMidY: proxy.frame(in: .named("journey-archive")).midY - CGFloat(storageSlot + (yearGroups[index] == nil ? 0 : 1)) * 88, enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion)), axis: (x: 1, y: 0, z: 0), perspective: proxy.size.width / 1000)
@@ -476,7 +479,7 @@ struct JourneyArchiveView: View {
                         .opacity(openedID == nil || !transitionStarted ? 1 : 0)
                         .overlay {
                             ArchiveContextInteraction(
-                                preview: JourneyArchiveCard(trip: trip, colorIndex: index, photo: coverPhoto(trip))
+                                preview: JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
                                     .frame(width: min(608, max(1, cardFrames[trip.id]?.width ?? 340)), height: 204),
                                 onOpen: { open(trip, index: index, viewportHeight: height) },
                                 onEdit: { editing = trip }, onDelete: { deleting = trip })
@@ -550,7 +553,7 @@ struct JourneyArchiveView: View {
         slotViewportHeight = viewportHeight
         let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
         transferCards = trips.enumerated().compactMap { position, value in
-            cardFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, frame: $0,
+            cardFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, number: number(for: value), frame: $0,
                 photo: coverPhoto(value), isTop: topIDs.contains(value.id)) }
         }
         transferDividers = dividerFrames.compactMap { position, frame in
@@ -793,6 +796,7 @@ enum ArchiveStorage {
 private struct JourneyArchiveCard: View {
     let trip: Trip
     let colorIndex: Int
+    var number: Int? = nil
     var photo: UIImage? = nil
     var isPlaceholder = false
     var body: some View {
@@ -826,7 +830,7 @@ private struct JourneyArchiveCard: View {
                     }
                     .accessibilityIdentifier(ongoing ? "archive-ongoing-\(trip.id)" : "archive-status-\(trip.id)")
                 Spacer()
-                    Text(String(format: "No. %03d", isPlaceholder ? 1 : colorIndex + 1))
+                    Text(String(format: "No. %03d", isPlaceholder ? 1 : (number ?? colorIndex + 1)))
                         .font(.caption2.monospaced()).tracking(1).foregroundStyle(.secondary)
                         .accessibilityIdentifier("archive-number-\(trip.id)")
             }
@@ -873,6 +877,7 @@ private struct ArchiveHeaderFrame: PreferenceKey {
 private struct ArchiveTransferCard: Identifiable {
     let trip: Trip
     let index: Int
+    let number: Int
     let frame: CGRect
     let photo: UIImage?
     let isTop: Bool
@@ -905,7 +910,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         // The shared SwiftUI mask owns clipping, including the bottom safe-area strip.
         for card in cards where card.trip.id == selectedID ||
             (card.frame.minY < height + 204 && card.frame.minY + 408 > 0) {
-            let renderer = ImageRenderer(content: JourneyArchiveCard(trip: card.trip, colorIndex: card.index, photo: card.photo)
+            let renderer = ImageRenderer(content: JourneyArchiveCard(trip: card.trip, colorIndex: card.index, number: card.number, photo: card.photo)
                 .frame(width: card.frame.width, height: 204)
                 .environment(\.colorScheme, colorScheme)
                 .environment(\.dynamicTypeSize, typeSize))
@@ -1068,6 +1073,10 @@ struct JourneyArchiveYearGroup: Equatable {
 }
 
 enum JourneyArchiveOrdering {
+    static func numberedIDs(_ trips: [Trip]) -> [String] {
+        trips.sorted { $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate < $1.startDate }.map(\.id)
+    }
+
     /// Receives the displayed order; top trips retain their own full-card group.
     static func yearGroups(_ trips: [Trip], today: String) -> [Int: JourneyArchiveYearGroup] {
         let topIDs = Set(topTrips(trips, today: today).map(\.id))
