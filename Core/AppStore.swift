@@ -950,7 +950,7 @@ struct DayEditorDraft: Identifiable {
     /// Reuse saved places. Write the destination first so a failed move never loses the source.
     @discardableResult
     func transferDayPlaces(_ ids: Set<String>, from source: TripDay, to destination: TripDay,
-                           copy: Bool, using suppliedClient: APIClient? = nil) -> Bool {
+                           copy: Bool, using suppliedClient: APIClient? = nil, references: Set<DayPlaceReference>? = nil) -> Bool {
         guard !demo || suppliedClient != nil else { errorMessage = "当前为只读示例，无法保存。"; return false }
         guard canEditItinerary, source.tripId == destination.tripId, source.id != destination.id,
               let ti = trips.firstIndex(where: { $0.id == source.tripId }),
@@ -963,7 +963,7 @@ struct DayEditorDraft: Identifiable {
         let ordered = originalSource.markerIds.filter { ids.contains($0) }
         guard !ordered.isEmpty else { return false }
         let updatedDestination = originalDestination.addingToDefaultRoute(ordered)
-        let updatedSource = copy ? originalSource : ordered.reduce(originalSource) { $0.removing($1) }
+        let updatedSource = copy ? originalSource : references.map { originalSource.removingReferences($0) } ?? ordered.reduce(originalSource) { $0.removing($1) }
         let destinationWrite: RouteOrderWrite, sourceWrite: RouteOrderWrite
         do {
             destinationWrite = try RouteOrderWrite(previous: originalDestination, updated: updatedDestination)
@@ -1012,7 +1012,7 @@ struct DayEditorDraft: Identifiable {
                     do {
                         let serverSource: TripDay = try await client.request(Self.dayPath(originalSource))
                         guard revision == connectionRevision else { return }
-                        if ordered.allSatisfy({ !serverSource.markerIds.contains($0) }) {
+                        if serverSource.markerIds == updatedSource.markerIds && serverSource.chains == updatedSource.chains {
                             // A lost response can follow a successful write; don't undo a completed move.
                             if trips.first(where: { $0.id == source.tripId })?.days.first(where: { $0.id == source.id }) == updatedSource {
                                 acceptRouteSchedule(serverSource, revision: revision)
@@ -1513,6 +1513,11 @@ struct DayEditorDraft: Identifiable {
         }
     }
 
+    func cachedRouteDistances(for days: [TripDay]) async throws -> [String: Double] {
+        try await routeProcessing.cachedDistances(days: days, markers: markers, cache: routeCache,
+            provider: mapConfiguration.directionsProvider, server: settings.baseURL)
+    }
+
     func awaitRouteUpdates() async { await routeTask?.value }
 
     private func loadDemo() {
@@ -1604,6 +1609,17 @@ struct DayEditorDraft: Identifiable {
             trips[0].endDate = "2026-10-04"
             trips.append(Trip(id: "style-trip-2", name: "冬日 · 城市漫游", startDate: "2026-12-12", endDate: "2026-12-14", emoji: "❄️", days: []))
             trips.append(Trip(id: "style-trip-3", name: "周末小旅行", startDate: "2026-09-12", endDate: "2026-09-13", emoji: "🌿", days: [], markerIds: ["demo-3"]))
+        }
+        #endif
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--saved-places-preview") {
+            markers[3].content.headerImage = "http://localhost:8766/street.jpg"
+            for index in trips.indices {
+                trips[index].markerIds?.removeAll { ["demo-3", "demo-4"].contains($0) }
+                for dayIndex in trips[index].days.indices {
+                    trips[index].days[dayIndex] = trips[index].days[dayIndex].removing("demo-3").removing("demo-4")
+                }
+            }
         }
         #endif
         if ProcessInfo.processInfo.arguments.contains("--overlapping-routes-demo") {

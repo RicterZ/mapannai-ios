@@ -80,10 +80,6 @@ struct JourneyDaysContents: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color(uiColor: .tertiarySystemFill).opacity(targetedDayID == day.id ? 1 : 0))
                     .animation(reduceMotion ? nil : .default, value: targetedDayID == day.id)
-                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                        Button { store.beginDayEditor(trip: trip, day: day) } label: { Image(systemName: "pencil") }
-                            .accessibilityLabel("编辑").tint(.blue).disabled(store.saving)
-                    }
 
 
                 }
@@ -125,10 +121,12 @@ struct JourneyDaysContents: View {
                     Button { store.beginDayEditor(trip: trip) } label: { Label("添加一天", systemImage: "plus") }
                         .disabled(store.saving)
                         .accessibilityIdentifier("journey-add-day")
-                    Button { editing = true } label: {
-                        Label("编辑旅途", systemImage: "pencil")
+                    if archiveColorIndex == nil {
+                        Button { editing = true } label: {
+                            Label("编辑旅途", systemImage: "pencil")
+                        }
+                            .disabled(store.saving).accessibilityIdentifier("journey-edit-trip")
                     }
-                        .disabled(store.saving).accessibilityIdentifier("journey-edit-trip")
                 }.listRowBackground(Color.clear).listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
@@ -217,6 +215,7 @@ struct JourneyArchiveView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .title2) private var savedPlacesHeadingSize = 24
     @State private var openedID: String?
     @State private var openingFrame = CGRect.zero
     @State private var openingIndex = 0
@@ -225,6 +224,8 @@ struct JourneyArchiveView: View {
     @State private var cardInList = false
     @State private var closing = false
     @State private var transitionStarted = false
+    @State private var separatorFrame = CGRect.zero
+    @State private var transferSeparatorFrame = CGRect.zero
     @State private var destinationFrame = CGRect.zero
     @State private var headerGeometry = ArchiveHeaderGeometry()
     @State private var cardFrames: [String: CGRect] = [:]
@@ -293,7 +294,7 @@ struct JourneyArchiveView: View {
                             .zIndex(Double(openingIndex))
                             .task(id: trip.id) { await beginTransition(trip) }
                         if transitionStarted {
-                            ArchiveCardTransition(heading: transferHeading, cards: transferCards, dividers: transferDividers, selectedID: trip.id,
+                            ArchiveCardTransition(heading: transferHeading, separatorFrame: transferSeparatorFrame, cards: transferCards, dividers: transferDividers, selectedID: trip.id,
                                 destination: destinationFrame, height: slotViewportHeight ?? geometry.size.height,
                                 expanded: detailVisible, handedOff: cardInList, reduceMotion: reduceMotion) {
                                     if detailVisible && !closing {
@@ -346,17 +347,26 @@ struct JourneyArchiveView: View {
                 Group {
                     if openedID != nil && !closing {
                         Button(action: close) {
-                            Image(systemName: "xmark").font(.system(size: 20, weight: .regular))
+                            Image(systemName: "chevron.left").font(.system(size: 20, weight: .regular))
                                 .foregroundStyle(Color(uiColor: .label))
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
-                        }.accessibilityLabel("关闭旅途详情")
+                        }.accessibilityLabel("返回我的旅途")
                             .accessibilityIdentifier("archive-detail-close").buttonStyle(.plain)
                     } else {
                         // Preserve navigation geometry without leaving a hidden UIKit button.
                         Color.clear.frame(width: 44, height: 44).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }.transaction { $0.animation = nil }
+            }.journeyBareBackground
+            ToolbarItem(placement: .topBarTrailing) {
+                if let trip = openedTrip, !closing {
+                    Button { editing = trip } label: {
+                        Image(systemName: "square.and.pencil").font(.system(size: 20, weight: .regular))
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(store.saving)
+                        .accessibilityLabel("编辑旅途").accessibilityIdentifier("journey-edit-trip")
+                }
             }.journeyBareBackground
         }
         .task(id: photoURLs) {
@@ -370,6 +380,7 @@ struct JourneyArchiveView: View {
             photos = photos.filter { urls.contains($0.key) }
         }
         .onPreferenceChange(ArchiveCardFrames.self) { if openedID == nil { cardFrames = $0 } }
+        .onPreferenceChange(ArchiveSeparatorFrame.self) { if openedID == nil { separatorFrame = $0 } }
         .onPreferenceChange(ArchiveHeadingFrame.self) { if openedID == nil, !$0.isEmpty { archiveHeadingFrame = $0 } }
         .onPreferenceChange(ArchiveDividerFrames.self) { if openedID == nil { dividerFrames = $0 } }
         .onAppear { if let trip = openedTrip { store.select(trip: trip, focus: false) } }
@@ -443,6 +454,19 @@ struct JourneyArchiveView: View {
                 VStack(spacing: 0) {
                     let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
+                        if index > 0, !topIDs.contains(trip.id), topIDs.contains(trips[index - 1].id) {
+                            Capsule().fill(Color(uiColor: .tertiaryLabel))
+                                .frame(width: 40, height: 2).frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .padding(.bottom, ArchiveStorage.packingReserve(viewportHeight: height,
+                                    enabled: !typeSize.isAccessibilitySize && !reduceMotion))
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                                .background(GeometryReader { proxy in
+                                    Color.clear.preference(key: ArchiveSeparatorFrame.self,
+                                        value: proxy.frame(in: .named("journey-archive")))
+                                })
+                                .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+                        }
                         let storageSlot = max(0, index - topIDs.count) + yearGroups.keys.filter { $0 < index }.count
                         if let group = yearGroups[index] {
                             JourneyArchiveYearCard(year: group.year, count: group.count)
@@ -491,35 +515,43 @@ struct JourneyArchiveView: View {
                         .accessibilityAction(named: "编辑旅途") { editing = trip }
                         .accessibilityAction(named: "删除旅途") { deleting = trip }
                         .padding(.bottom, isTop && index + 1 < trips.count
-                            ? 24 + (beforeStorage ? ArchiveStorage.packingReserve(viewportHeight: height,
-                                enabled: !typeSize.isAccessibilitySize && !reduceMotion) : 0) : 0)
+                            ? (beforeStorage ? 0 : 24) : 0)
                     }
+                }
+                if !independent.isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("收藏地点").font(.system(size: savedPlacesHeadingSize, weight: .semibold))
+                            .accessibilityAddTraits(.isHeader).accessibilityIdentifier("archive-saved-places-heading")
+                        ScrollView(.horizontal) {
+                            HStack(alignment: .top, spacing: 12) {
+                                ForEach(independent) { marker in
+                                    Button { store.selectedMarker = marker; independentDetail = marker } label: {
+                                        ArchiveSavedPlaceCard(marker: marker)
+                                    }.buttonStyle(.plain).accessibilityIdentifier("independent-marker-\(marker.id)")
+                                }
+                            }
+                        }.scrollIndicators(.hidden)
+                            .accessibilityIdentifier("archive-saved-places")
+                    }
+                    .padding(.top, trips.isEmpty ? 4 : 24)
+                    .opacity(detailVisible ? 0 : 1)
+                    .allowsHitTesting(openedID == nil)
                 }
                 ArchiveChatEntry(planner: planner, store: store, mapVisible: mapVisible)
                     .id("archive-chat-entry")
                     .overlay(alignment: .top) {
-                        if !trips.isEmpty {
+                        if !trips.isEmpty && independent.isEmpty {
                             Rectangle().fill(Color(uiColor: .separator).opacity(0.18))
                                 .frame(height: 0.5).offset(y: -16)
                                 .allowsHitTesting(false).accessibilityHidden(true)
                         }
                     }
-                    .padding(.top, trips.isEmpty ? 4 : trips.count == 1 ? 24 : 20)
+                    .padding(.top, !independent.isEmpty ? 4 : trips.isEmpty ? 4 : trips.count == 1 ? 24 : 20)
                     .opacity(detailVisible ? 0 : 1)
                     .allowsHitTesting(openedID == nil)
                 Spacer(minLength: 0)
                 VStack(spacing: 24) {
                     Color.clear.frame(height: trips.isEmpty ? 24 : 40).accessibilityHidden(true)
-                    if !independent.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("未加入行程").font(.headline)
-                            ForEach(independent) { marker in
-                                Button { store.selectedMarker = marker; independentDetail = marker } label: {
-                                    PlaceSelectionRow(marker: marker).fullRowActionLabel()
-                                }.buttonStyle(.plain).accessibilityIdentifier("independent-marker-\(marker.id)")
-                            }
-                        }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
-                    }
                     Button(action: onOpenSettings) {
                         Label("设置", systemImage: "gearshape")
                             .font(.subheadline).foregroundStyle(.secondary)
@@ -549,6 +581,7 @@ struct JourneyArchiveView: View {
 
     private func open(_ trip: Trip, index: Int, viewportHeight: CGFloat) {
         guard openedID == nil, let frame = cardFrames[trip.id] else { return }
+        transferSeparatorFrame = separatorFrame
         openingFrame = frame
         slotViewportHeight = viewportHeight
         let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
@@ -657,15 +690,66 @@ private struct JourneyArchiveYearCard: View {
     }
 }
 
+private struct ArchiveSavedPlaceCard: View {
+    let marker: Marker
+    @ScaledMetric(relativeTo: .body) private var width = 220
+    private var artworkBackground: Color {
+        let palette: [Color] = [.blue, .green, .orange, .pink, .teal, .yellow]
+        let seed = marker.id.utf8.reduce(UInt64(5381)) { ($0 &* 33) &+ UInt64($1) }
+        return palette[Int(seed % UInt64(palette.count))].opacity(0.16)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: 132)
+                .overlay {
+                    GeometryReader { geometry in
+                        DayPlaceArtwork(marker: marker, fallbackBackground: artworkBackground)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                    }
+                }.allowsHitTesting(false).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .top, spacing: 8) {
+                    PlaceIconView(emoji: marker.icon.emoji, size: 22)
+                    Text(marker.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let address = marker.content.address?.trimmingCharacters(in: .whitespacesAndNewlines), !address.isEmpty {
+                    Text(address).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                }
+            }.padding(14).frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(width: min(width, 320))
+        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 20))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .contentShape(RoundedRectangle(cornerRadius: 20))
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct ArchiveHeading: View {
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 30
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 40
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("我的旅途").font(.system(size: titleSize, weight: .bold)).accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("archive-page-title")
+            HStack(alignment: .center) {
+                Text("我的旅途").font(.system(size: titleSize, weight: .bold)).accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("archive-page-title")
+                Spacer(minLength: 12)
+                Image(systemName: "map").font(.system(size: 22, weight: .regular))
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("地图").accessibilityIdentifier("archive-map-icon")
+            }
             Text("旅の目的地は、まだ見ぬ地平線の向こうに")
                 .font(.caption).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ArchiveSeparatorFrame: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty { value = next }
     }
 }
 
@@ -887,6 +971,7 @@ private struct ArchiveTransferCard: Identifiable {
 // UIKit animates cached pixels; SwiftUI/List do no layout or blur work per frame.
 private struct ArchiveCardTransition: UIViewRepresentable {
     let heading: ArchiveTransferHeading?
+    let separatorFrame: CGRect
     let cards: [ArchiveTransferCard]
     let dividers: [ArchiveTransferDivider]
     let selectedID: String
@@ -951,6 +1036,13 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                 context.coordinator.dividerViews[divider.index] = view
             }
         }
+        if !separatorFrame.isEmpty {
+            let line = UIView(frame: CGRect(x: separatorFrame.midX - 20, y: separatorFrame.minY + 27, width: 40, height: 2))
+            line.backgroundColor = .tertiaryLabel
+            line.layer.cornerRadius = 1
+            container.addSubview(line)
+            context.coordinator.separatorView = line
+        }
         if let heading {
             let view = UIImageView(image: heading.image)
             view.frame = heading.frame
@@ -971,8 +1063,8 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         let currentBounds = currentLayer?.bounds ?? selected.bounds
         let currentPosition = currentLayer?.position ?? selected.layer.position
         let currentTransform = currentLayer?.transform ?? selected.layer.transform
-        let snapshots = Array(coordinator.views.values) + Array(coordinator.dividerViews.values) + [coordinator.headingView].compactMap { $0 }
-        let planes = Array(coordinator.planes.values) + Array(coordinator.dividerPlanes.values) + [coordinator.headingView].compactMap { $0 }
+        let snapshots = Array(coordinator.views.values) + Array(coordinator.dividerViews.values) + [coordinator.headingView, coordinator.separatorView].compactMap { $0 }
+        let planes = Array(coordinator.planes.values) + Array(coordinator.dividerPlanes.values) + [coordinator.headingView, coordinator.separatorView].compactMap { $0 }
         let planeTransforms = planes.map { $0.layer.presentation()?.transform ?? $0.layer.transform }
         let currentAlphas = snapshots.map { CGFloat($0.layer.presentation()?.opacity ?? $0.layer.opacity) }
         coordinator.animator?.stopAnimation(true)
@@ -1025,6 +1117,11 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             }
         }
         let moveRack: () -> Void = {
+            if let separator = coordinator.separatorView {
+                if reduceMotion { separator.alpha = expanded ? 0 : 1 }
+                separator.transform = CGAffineTransform(translationX: 0,
+                    y: expanded && !reduceMotion ? (separatorFrame.midY < card.frame.midY ? upperExit : max(0, height - lowerTop) + 252) : 0)
+            }
             if heading != nil {
                 if reduceMotion { coordinator.headingView?.alpha = expanded ? 0 : 1 }
                 coordinator.headingView?.transform = CGAffineTransform(translationX: 0,
@@ -1054,6 +1151,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
     }
     final class Coordinator {
         var headingView: UIImageView?
+        var separatorView: UIView?
         var planes: [String: UIView] = [:]
         var dividerPlanes: [Int: UIView] = [:]
         var views: [String: UIImageView] = [:]

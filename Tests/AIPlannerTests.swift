@@ -2,6 +2,23 @@ import XCTest
 @testable import MapAnNai
 
 final class AIPlannerTests: XCTestCase {
+    @MainActor func testTitleEventUpdatesRequestConversationNotActiveConversation() throws {
+        let planner = AIPlannerStore()
+        let request = AIConversation(), active = AIConversation()
+        planner.conversations = [request, active]
+        planner.activeID = active.id
+        let event = try JSONDecoder().decode(AIEvent.self, from: Data(#"{"type":"title","title":" 京都慢逛与小店 "}"#.utf8))
+        planner.updateConversationTitle(event.title, id: request.id)
+        XCTAssertEqual(planner.conversations[0].title, "京都慢逛与小店")
+        XCTAssertEqual(planner.conversation?.title, "新会话")
+        for title in [nil, "   ", String(repeating: "a", count: 61)] {
+            planner.updateConversationTitle(title, id: request.id)
+        }
+        planner.updateConversationTitle("不存在", id: UUID())
+        XCTAssertEqual(planner.conversations[0].title, "京都慢逛与小店")
+        XCTAssertTrue(planner.conversations[0].messages.isEmpty)
+    }
+
     func testToolLabelsTranslateKnownNamesAndPreserveUnknownNames() {
         XCTAssertEqual(AIToolLabel.text("search_places"), "搜索地点")
         XCTAssertEqual(AIToolLabel.text("plan_trip_day"), "规划当天行程")

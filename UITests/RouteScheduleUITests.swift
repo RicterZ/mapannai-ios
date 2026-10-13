@@ -1,6 +1,30 @@
 import XCTest
 
 final class RouteScheduleUITests: XCTestCase {
+    @MainActor func testVisitSaveScrollsWithContentAndNoteShowsFiveLines() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--transport-schedule-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(1)); trip.tap()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1)); day.tap()
+        let visit = app.buttons["route-0-schedule-demo-0"]
+        XCTAssertTrue(visit.waitForExistence(timeout: 5)); visit.tap()
+        let scroll = app.scrollViews["schedule-editor-scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        let save = scroll.buttons["schedule-save"]
+        XCTAssertTrue(save.exists, "Visit save must belong to the scrolling content")
+        XCTAssertGreaterThan(app.textFields["schedule-note"].frame.height, 120)
+        for _ in 0..<3 where !save.isHittable { scroll.swipeUp() }
+        XCTAssertTrue(save.isHittable)
+        let originalY = save.frame.minY
+        scroll.swipeDown()
+        XCTAssertGreaterThan(save.frame.minY, originalY + 20, "Save must not float above the scrolling page")
+    }
+
     @MainActor func testTransportEditorDesignAndCancelPreservesSchedule() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--transport-schedule-preview", "--route-distance-preview", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]

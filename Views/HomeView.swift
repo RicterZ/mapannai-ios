@@ -128,7 +128,7 @@ struct HomeView: View {
                 else { mapPage }
             }
                 .edgeAttachedPanel(isPresented: Binding(get: { !sidebar && (nativeJourneyPresented || store.placeSearchPresented) && (store.selectedMarker == nil || store.dayMapBrowsing || store.placeSearchPresented) && !(store.dayMapBrowsing && mapEditorActive) }, set: { if !store.placeSearchPresented { nativeJourneyPresented = $0 } }), detent: Binding(get: { store.placeSearchPresented ? searchDetent : store.dayMapBrowsing && store.selectedMarker != nil ? markerDetailDetent : sheetDetent }, set: { if store.placeSearchPresented { searchDetent = $0 } else if store.dayMapBrowsing && store.selectedMarker != nil { markerDetailDetent = $0 } else { sheetDetent = $0 } }),
-                    compactHeight: store.placeSearchPresented ? (store.searchDetailPlace != nil || store.draft != nil ? nil : 80 + geometry.safeAreaInsets.bottom) : store.dayMapBrowsing ? DayMapPresentation.contentHeight + max(0, geometry.safeAreaInsets.bottom - 16) : compactJourneyHeight,
+                    compactHeight: store.placeSearchPresented ? (store.searchDetailPlace != nil || store.draft != nil ? nil : 80 + geometry.safeAreaInsets.bottom) : store.dayMapBrowsing ? (store.selectedMarker != nil ? 80 : DayMapPresentation.contentHeight + max(0, geometry.safeAreaInsets.bottom - 16)) : compactJourneyHeight,
                     canDismiss: false, backgroundColor: store.placeSearchPresented || store.dayMapBrowsing ? .systemBackground : .systemGroupedBackground, animatesPresentation: !store.dayMapBrowsing || initialDayPanelReady, topContentInset: store.placeSearchPresented ? 24 : store.dayMapBrowsing ? 14 : 24, fullTopInset: store.placeSearchPresented || store.dayMapBrowsing ? 64 : 8, onHeightChange: { height in if store.dayMapBrowsing && !store.placeSearchPresented { if store.selectedMarker != nil { markerDetailHeight = height } else { visibleDayPanelHeight = height }; initialDayPanelReady = true } }, onMotionChange: { journeyPanelMoving = $0 }, onDismiss: { if mapEditorActive && store.draft != nil { mapDraftReady = true }; if !store.placeSearchPresented { nativeJourneyPresented = true } }) {
                     ZStack {
                       Group {
@@ -164,7 +164,8 @@ struct HomeView: View {
                           .allowsHitTesting(store.selectedMarker == nil)
                           .accessibilityHidden(store.selectedMarker != nil)
                           if let marker = store.selectedMarker {
-                              MarkerDetailView(store: store, marker: marker, edgeAttached: true, onClose: {
+                              MarkerDetailView(store: store, marker: marker, edgeAttached: true,
+                                compact: markerDetailDetent == .compact, onExpand: { markerDetailDetent = .half }, onClose: {
                                   restoreJourneyAfterMarker(); store.selectedMarker = nil
                               }, onNavigateItinerary: {
                                   expanded = true; markerReturnDetent = .half; markerReturnExpanded = true
@@ -369,12 +370,13 @@ struct HomeView: View {
         .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible) }
         .edgeAttachedPanel(isPresented: Binding(get: { (sidebar || !store.dayMapBrowsing) && !store.placeSearchPresented && store.selectedMarker != nil && store.draft == nil && !mapEditorActive }, set: {
             if !$0, store.draft == nil, !mapEditorActive { store.selectedMarker = nil; restoreJourneyAfterMarker() }
-        }), detent: $markerDetailDetent, compactHeight: 80, backgroundColor: .systemBackground, topContentInset: 14, onHeightChange: { markerDetailHeight = $0 }, onMotionChange: { markerPanelMoving = $0 }, onDismiss: {
+        }), detent: $markerDetailDetent, compactHeight: 80, canDismiss: false, backgroundColor: .systemBackground, topContentInset: 14, onHeightChange: { markerDetailHeight = $0 }, onMotionChange: { markerPanelMoving = $0 }, onDismiss: {
             if store.draft != nil { mapDraftReady = true }
             else { restoreJourneyAfterMarker() }
         }) {
             if let marker = store.selectedMarker {
-                MarkerDetailView(store: store, marker: marker, edgeAttached: !sidebar, onClose: {
+                MarkerDetailView(store: store, marker: marker, edgeAttached: !sidebar,
+                    compact: !sidebar && markerDetailDetent == .compact, onExpand: { markerDetailDetent = .half }, onClose: {
                     restoreJourneyAfterMarker()
                     store.selectedMarker = nil
                 }, onNavigateItinerary: {
@@ -399,12 +401,6 @@ struct HomeView: View {
                         set: { store.draftExpanded = $0 == .large }))
                     .presentationBackgroundInteraction(.enabled)
                     .presentationDragIndicator(.visible)
-            }
-        }
-        .onChange(of: markerDetailDetent) { _, detent in
-            if detent == .compact, store.selectedMarker != nil {
-                restoreJourneyAfterMarker()
-                store.selectedMarker = nil
             }
         }
         .onChange(of: store.selectedMarker?.id) { old, id in
@@ -658,10 +654,6 @@ struct HomeView: View {
                     } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44).contentShape(Rectangle()) }
                         .accessibilityLabel("返回旅途详情").accessibilityIdentifier("day-map-back")
                     Spacer()
-                    Button {
-                        editingTrip = store.trip
-                    } label: { Image(systemName: "square.and.pencil").frame(width: 44, height: 44).contentShape(Rectangle()) }
-                        .disabled(store.saving).accessibilityLabel("编辑旅途").accessibilityIdentifier("day-map-edit")
                 }.font(.system(size: 19, weight: .regular)).foregroundStyle(.primary).buttonStyle(.plain)
                     .padding(.horizontal, 16).padding(.top, 8)
             }

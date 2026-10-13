@@ -144,3 +144,30 @@ struct RouteOrderWrite {
         body = ["title": updated.title ?? "", "emoji": updated.emoji ?? "", "markerIds": updated.markerIds, "chains": updated.chains]
     }
 }
+
+/// A selection belongs to one occurrence in a frozen day snapshot, not the saved place.
+struct DayPlaceReference: Hashable {
+    let markerID: String
+    let routeIndex: Int?
+}
+extension TripDay {
+    var placeReferences: Set<DayPlaceReference> {
+        let routed = Set(chains.flatMap { $0 })
+        return Set(chains.enumerated().flatMap { index, ids in
+            ids.map { DayPlaceReference(markerID: $0, routeIndex: index) }
+        } + markerIds.filter { !routed.contains($0) }.map { DayPlaceReference(markerID: $0, routeIndex: nil) })
+    }
+    func removingReferences(_ references: Set<DayPlaceReference>, keepMembership: Bool = false) -> TripDay {
+        var result = self
+        let orders = chains.enumerated().map { index, ids in
+            ids.filter { !references.contains(DayPlaceReference(markerID: $0, routeIndex: index)) }
+        }
+        result.setRouteOrders(orders)
+        if !keepMembership {
+            let remaining = Set(orders.flatMap { $0 })
+            let removed = Set(references.map(\.markerID)).subtracting(remaining)
+            result.markerIds.removeAll { removed.contains($0) }
+        }
+        return result
+    }
+}

@@ -1,5 +1,20 @@
 import XCTest
 
+final class ArchiveSeparatorFrameTests: XCTestCase {
+    func testEmptySiblingPreferencesPreserveMeasuredSeparator() {
+        let measured = CGRect(x: 16, y: 318, width: 370, height: 104)
+        var frame = ArchiveSeparatorFrame.defaultValue
+        ArchiveSeparatorFrame.reduce(value: &frame, nextValue: { .zero })
+        ArchiveSeparatorFrame.reduce(value: &frame, nextValue: { measured })
+        ArchiveSeparatorFrame.reduce(value: &frame, nextValue: { .zero })
+        XCTAssertEqual(frame, measured)
+
+        var absent = ArchiveSeparatorFrame.defaultValue
+        ArchiveSeparatorFrame.reduce(value: &absent, nextValue: { .zero })
+        XCTAssertEqual(absent, .zero)
+    }
+}
+
 final class OptimisticDeletionTests: XCTestCase {
     @MainActor func testMapCreationOpensCreatedDetailOnlyAfterSuccessfulSave() async throws {
         let defaults = UserDefaults.standard
@@ -81,6 +96,23 @@ final class OptimisticDeletionTests: XCTestCase {
 @testable import MapAnNai
 
 final class CoreTests: XCTestCase {
+    func testSharedPlaceReferencesOnlyRemoveSelectedRoute() {
+        let day = TripDay(id: "day", tripId: "trip", date: "2026-10-13", markerIds: ["a", "b"], chains: [["a", "b"], ["a"]])
+        let reference = DayPlaceReference(markerID: "a", routeIndex: 1)
+        XCTAssertEqual(day.placeReferences.count, 3)
+        let deleted = day.removingReferences([reference])
+        XCTAssertEqual(deleted.chains, [["a", "b"]])
+        XCTAssertEqual(deleted.markerIds, ["a", "b"])
+        let unplanned = day.removingReferences([reference], keepMembership: true)
+        XCTAssertEqual(unplanned.chains, [["a", "b"]])
+        let all = deleted.removingReferences([DayPlaceReference(markerID: "a", routeIndex: 0)])
+        XCTAssertEqual(all.chains, [["b"]])
+        XCTAssertEqual(all.markerIds, ["b"])
+        let isolated = deleted.removingReferences([DayPlaceReference(markerID: "a", routeIndex: 0)], keepMembership: true)
+        XCTAssertEqual(isolated.markerIds, ["a", "b"])
+        XCTAssertTrue(isolated.placeReferences.contains(DayPlaceReference(markerID: "a", routeIndex: nil)))
+    }
+
     @MainActor func testRecognizedRouteLongPressSuppressesReleaseClick() {
         let store = AppStore(settings: Settings(), demo: true)
         XCTAssertTrue(store.canActivateRouteRow)

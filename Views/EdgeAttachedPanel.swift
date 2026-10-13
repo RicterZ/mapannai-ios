@@ -185,6 +185,8 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
         private var initialHeight: CGFloat = 0
         private var reportedHeight: CGFloat = 0
         private var verticalScroll: UIScrollView?
+        private var draggingHeader = false
+        private var pausedScrolls: [(scroll: UIScrollView, offset: CGPoint)] = []
         private let grabberArea = UIView()
         private let dimming = BackgroundTouchView()
         override var shouldRemovePresentersView: Bool { false }
@@ -239,7 +241,7 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             NotificationCenter.default.addObserver(self, selector: #selector(keyboard(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         }
         override func dismissalTransitionDidEnd(_ completed: Bool) {
-            if completed { dimming.removeFromSuperview(); grabberArea.removeFromSuperview(); NotificationCenter.default.removeObserver(self) }
+            if completed { restoreContentScrolling(); dimming.removeFromSuperview(); grabberArea.removeFromSuperview(); NotificationCenter.default.removeObserver(self) }
         }
         override func containerViewWillLayoutSubviews() {
             super.containerViewWillLayoutSubviews()
@@ -262,13 +264,16 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             presentedView?.bringSubviewToFront(grabberArea)
         }
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+            verticalScroll = nil
+            draggingHeader = false
             guard let pan = gesture as? UIPanGestureRecognizer, let view = presentedView else { return true }
             let velocity = pan.velocity(in: view)
             guard abs(velocity.y) > abs(velocity.x) else { return false }
             let point = pan.location(in: view)
             // Header buttons retain their taps; the central header remains draggable.
             if point.y <= 96 {
-                return point.y <= 24 || (point.x > 72 && point.x < view.bounds.width - 72)
+                draggingHeader = point.y <= 24 || (point.x > 72 && point.x < view.bounds.width - 72)
+                return draggingHeader
             }
             var target = view.hitTest(point, with: nil)
             while let current = target {
@@ -304,25 +309,47 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             }
         }
         @objc private func toggleHeight() {
-            let next: ItineraryDetent = detent == .full ? .half : .full
+            let next: ItineraryDetent = detent == .full || detent == .compact ? .half : .full
             coordinator?.value.detent = next
             setDetent(next, animated: true)
         }
         @objc private func close() { coordinator?.close() }
+        private func pauseContentScrolling(in view: UIView) {
+            if let scroll = view as? UIScrollView, scroll.isScrollEnabled,
+               !scroll.isPagingEnabled, scroll.contentSize.height > scroll.bounds.height {
+                pausedScrolls.append((scroll, scroll.contentOffset))
+                // Cancel the content pan so movement is applied only to the panel.
+                scroll.isScrollEnabled = false
+            }
+            for child in view.subviews { pauseContentScrolling(in: child) }
+        }
+        private func restoreContentScrolling() {
+            for (scroll, offset) in pausedScrolls {
+                scroll.setContentOffset(offset, animated: false)
+                scroll.isScrollEnabled = true
+            }
+            pausedScrolls = []
+        }
         @objc private func pan(_ gesture: UIPanGestureRecognizer) {
-            guard keyboardHeight == 0 else { return }
+            guard keyboardHeight == 0 else { restoreContentScrolling(); return }
             switch gesture.state {
             case .began:
+                if draggingHeader, let view = presentedView { pauseContentScrolling(in: view) }
+                else if let scroll = verticalScroll {
+                    pausedScrolls.append((scroll, CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top)))
+                    scroll.isScrollEnabled = false
+                }
                 coordinator?.value.onMotionChange(true)
                 if let current = presentedView?.layer.presentation()?.frame {
                     presentedView?.layer.removeAllAnimations(); presentedView?.frame = current
                 }
                 initialHeight = presentedView?.frame.height ?? frameOfPresentedViewInContainerView.height
             case .changed:
-                if let scroll = verticalScroll { scroll.contentOffset.y = -scroll.adjustedContentInset.top }
                 dragHeight = initialHeight - gesture.translation(in: containerView).y
                 layout(animated: false)
+                for (scroll, offset) in pausedScrolls { scroll.setContentOffset(offset, animated: false) }
             case .ended, .cancelled:
+                restoreContentScrolling()
                 verticalScroll = nil
                 let projected = (dragHeight ?? initialHeight) - gesture.velocity(in: containerView).y * 0.15
                 dragHeight = nil

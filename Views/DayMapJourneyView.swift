@@ -134,8 +134,6 @@ struct DayMapJourneyView: View {
 
                 }
                 Spacer(minLength: 0)
-                Button(action: onClose) { Image(systemName: "xmark").frame(width: 44, height: 44) }
-                    .accessibilityLabel("关闭地图").accessibilityIdentifier("close-map-workspace")
             }.foregroundStyle(.primary).buttonStyle(.plain).padding(.horizontal, 20)
             if let day = store.day, !stops.isEmpty {
                 GeometryReader { geometry in

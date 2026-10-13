@@ -1,14 +1,56 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
-    @MainActor func testEditingHidesRouteCountAndActions() {
+    @MainActor func testSavedPlaceCardsAboveChatAndOpenDetail() {
         let app = XCUIApplication()
-        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launchArguments = ["--demo", "--archive-preview", "--saved-places-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let heading = app.staticTexts["archive-saved-places-heading"]
+        for _ in 0..<5 where !heading.isHittable { app.swipeUp() }
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        XCTAssertEqual(heading.label, "收藏地点")
+        XCTAssertFalse(app.staticTexts["未加入行程"].exists)
+        let photoCard = app.buttons["independent-marker-demo-3"]
+        XCTAssertTrue(photoCard.isHittable)
+        XCTAssertGreaterThan(photoCard.frame.height, 200)
+        let chat = app.staticTexts["聊聊下一程"]
+        XCTAssertLessThan(heading.frame.minY, chat.frame.minY)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Home saved places cards"; attachment.lifetime = .keepAlways
+        add(attachment)
+        photoCard.tap()
+        XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testUnplannedUsesRoutePlaceLayoutWithoutSchedule() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--day-detail-style-preview", "--day-chain-layout-preview", "--inline-address-preview", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
         let trip = app.buttons["archive-trip-demo-trip"]
         XCTAssertTrue(trip.waitForExistence(timeout: 10))
-        RunLoop.current.run(until: Date().addingTimeInterval(0.9)); trip.tap()
-        let day = app.buttons["journey-day-day-2"]
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        trip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1)); day.tap()
+        let unplanned = app.buttons["day-marker-demo-3"].firstMatch
+        XCTAssertTrue(unplanned.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !unplanned.isHittable { app.swipeUp() }
+        XCTAssertTrue(unplanned.isHittable)
+        XCTAssertTrue(app.staticTexts["day-address-demo-3"].exists)
+        let cover = app.descendants(matching: .any)["day-cover-demo-3"].firstMatch
+        XCTAssertTrue(cover.exists)
+        XCTAssertEqual(cover.frame.height, 140, accuracy: 1)
+        XCTAssertGreaterThan(cover.frame.width, cover.frame.height)
+        XCTAssertFalse(app.buttons["day-schedule-demo-3"].exists)
+        XCTAssertEqual(unplanned.value as? String, "")
+    }
+
+    @MainActor func testEditingHidesRouteCountAndActions() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--trip-places-preview", "--day-chain-layout-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let day = app.buttons["journey-day-day-1"]
         XCTAssertTrue(day.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
         let heading = app.descendants(matching: .any)["route-heading-0"].firstMatch
@@ -18,6 +60,9 @@ final class JourneyCardStyleUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
         let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: heading.frame.midX, dy: heading.frame.midY))
         point.press(forDuration: 0.8)
+        XCTAssertFalse(app.buttons["day-edit-done"].exists)
+        app.buttons["route-actions-0"].tap()
+        app.buttons["编辑行程"].tap()
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         XCTAssertFalse(heading.label.contains("个地点"))
         XCTAssertFalse(app.buttons["route-actions-0"].exists)
@@ -29,12 +74,9 @@ final class JourneyCardStyleUITests: XCTestCase {
 
     @MainActor func testRouteHeadingIsDisplayOnlyAndAllowsScrolling() {
         let app = XCUIApplication()
-        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launchArguments = ["--demo", "--trip-places-preview", "--day-chain-layout-preview", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
-        let trip = app.buttons["archive-trip-demo-trip"]
-        XCTAssertTrue(trip.waitForExistence(timeout: 10))
-        RunLoop.current.run(until: Date().addingTimeInterval(0.9)); trip.tap()
-        let day = app.buttons["journey-day-day-2"]
+        let day = app.buttons["journey-day-day-1"]
         XCTAssertTrue(day.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.9)); day.tap()
         let heading = app.descendants(matching: .any)["route-heading-0"].firstMatch
@@ -51,7 +93,7 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertEqual(toggle.value as? String, "已收起")
         toggle.tap()
         XCTAssertEqual(toggle.value as? String, "已展开")
-        let title = app.buttons["route-0-marker-demo-3"].firstMatch
+        let title = app.buttons["route-0-marker-demo-1"].firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         RunLoop.current.run(until: Date().addingTimeInterval(0.4))
         let titleY = title.frame.minY
@@ -91,7 +133,8 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
         app.buttons["close-marker-detail"].tap()
         RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        coverPoint().press(forDuration: 0.8)
+        app.buttons["route-actions-0"].tap()
+        app.buttons["编辑行程"].tap()
         XCTAssertTrue(app.buttons["day-edit-done"].waitForExistence(timeout: 5))
         let selection = app.buttons["route-0-select-demo-3"]
         XCTAssertTrue(selection.waitForExistence(timeout: 3))

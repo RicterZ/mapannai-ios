@@ -72,7 +72,7 @@ struct ArchiveChatEntry: View {
         .edgeAttachedPanel(isPresented: $historyPresented, dimsBackground: true, backgroundColor: .systemBackground, onDismiss: {
             if resumeAfterHistory { resumeAfterHistory = false; planner.presented = true }
         }) {
-            AIConversationList(planner: planner, onClose: { historyPresented = false }) { resumeAfterHistory = true }
+            AIConversationList(planner: planner, store: store, onClose: { historyPresented = false }) { resumeAfterHistory = true }
         }
 
     }

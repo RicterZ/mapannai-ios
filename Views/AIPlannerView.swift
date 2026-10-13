@@ -182,12 +182,13 @@ struct AIPlannerView: View {
                 }.journeyBareBackground
             }
             .edgeAttachedPanel(isPresented: $historyPresented, dimsBackground: true, backgroundColor: .systemBackground) {
-                AIConversationList(planner: planner, onClose: { historyPresented = false })
+                AIConversationList(planner: planner, store: store, onClose: { historyPresented = false })
             }
-            .alert("清空本地会话？", isPresented: $resetConfirmation) {
-                Button("取消", role: .cancel) {}
-                Button("清空", role: .destructive) { planner.clearUnreadableHistory() }
-            } message: { Text("只移除本设备聊天记录，已保存的地点和行程不受影响。") }
+            .sheet(isPresented: $resetConfirmation) {
+                DeletionConfirmationView(store: store, title: "清空本地会话", message: "只移除本设备聊天记录，已保存的地点和行程不受影响。", kind: "ai-history", offersExclusiveMarkers: false, independentOfAPISaving: true) { _ in
+                    planner.clearUnreadableHistory()
+                }
+            }
         }
         .tint(Color(uiColor: .label))
         .simultaneousGesture(DragGesture(minimumDistance: 20).onEnded { value in
@@ -204,12 +205,10 @@ struct AIPlannerView: View {
                 configurationAlert = true
             }
         }
-        .alert("AI 尚未配置", isPresented: $configurationAlert) {
-            Button("取消", role: .cancel) {}
-            Button("前往设置", action: onOpenSettings)
-        } message: {
-            Text("请在应用设置中配置 AI API 和模型。你的输入已保留，配置后可继续发送。")
-        }
+        .appAlert(isPresented: $configurationAlert, title: "AI 尚未配置", symbol: "info.circle", message: "请在应用设置中配置 AI API 和模型。你的输入已保留，配置后可继续发送。", actions: [
+            AppAlertAction(title: "取消") { configurationAlert = false },
+            AppAlertAction(title: "前往设置") { configurationAlert = false; onOpenSettings() }
+        ])
         #if DEBUG
         .task {
             if store.demo && ProcessInfo.processInfo.arguments.contains("--ai-stream-preview") { await planner.previewStreamingReply() }
@@ -252,8 +251,8 @@ struct AIPlannerView: View {
                 Group {
                     if planner.busy {
                         Image(systemName: "stop.fill").font(.system(size: 11))
-                            .foregroundStyle(Color(uiColor: .systemBackground))
-                            .frame(width: 28, height: 28).background(Color.primary, in: Circle())
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28).background(Color.red, in: Circle())
                     } else { Image(systemName: "paperplane").font(.system(size: 20)).foregroundStyle(.secondary) }
                 }.frame(width: 44, height: 52).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(!planner.busy && !canSend)
@@ -310,6 +309,7 @@ private struct AIToolProcess: View {
 
 struct AIConversationList: View {
     @ObservedObject var planner: AIPlannerStore
+    @ObservedObject var store: AppStore
     var onClose: () -> Void
     var onSelect: () -> Void = {}
     @State private var deletingID: UUID?
@@ -358,17 +358,17 @@ struct AIConversationList: View {
         }.padding(.top, 8)
             .background { Color(uiColor: .systemBackground).ignoresSafeArea() }
             .tint(Color(uiColor: .label))
-            .alert("删除会话？", isPresented: Binding(get: { deletingID != nil }, set: { if !$0 { deletingID = nil } })) {
-                Button("取消", role: .cancel) { deletingID = nil }
+            .sheet(isPresented: Binding(get: { deletingID != nil }, set: { if !$0 { deletingID = nil } })) {
                 if let id = deletingID {
-                Button("删除", role: .destructive) {
-                    guard !planner.busy else { return }
-                    let previous = planner.activeID
-                    planner.activeID = id; planner.deleteConversation()
-                    if let previous, previous != id, planner.conversations.contains(where: { $0.id == previous }) { planner.activeID = previous }
-                    deletingID = nil
+                    DeletionConfirmationView(store: store, title: "删除会话", message: "只删除本设备聊天记录，保留已保存的地点和行程。", kind: "ai-conversation", offersExclusiveMarkers: false, independentOfAPISaving: true) { _ in
+                        guard !planner.busy else { return }
+                        let previous = planner.activeID
+                        planner.activeID = id; planner.deleteConversation()
+                        if let previous, previous != id, planner.conversations.contains(where: { $0.id == previous }) { planner.activeID = previous }
+                        deletingID = nil
+                    }
+                    .disabled(planner.busy)
                 }
-                }
-            } message: { Text("只删除本设备聊天记录，保留已保存的地点和行程。") }
+            }
     }
 }

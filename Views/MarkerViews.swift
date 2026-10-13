@@ -7,6 +7,8 @@ struct MarkerDetailView: View {
     let marker: Marker
     var edgeAttached = false
     var embedded = false
+    var compact = false
+    var onExpand: () -> Void = {}
     var searchPlace: Place?
     var onClose: () -> Void
     var onNavigateItinerary: () -> Void
@@ -32,19 +34,47 @@ struct MarkerDetailView: View {
     private var itineraries: [MarkerItinerary] { MarkerPresentation.itineraries(for: current.id, trips: store.trips) }
     var body: some View {
         detailContent
-            .alert("无法打开高德地图", isPresented: $navigationUnavailable) {
-                Button("取消", role: .cancel) {}
-                Button("打开系统地图") { Task { await MarkerPresentation.openAppleMaps(for: current, selectedItem: store.appleMapItem(for: current)) } }
-            } message: { Text("请确认已安装高德地图，或使用系统地图打开此地点。") }
+            .appAlert(isPresented: $navigationUnavailable, title: "无法打开高德地图", symbol: "map", message: "请确认已安装高德地图。也可以使用系统地图打开此地点。", actions: [
+                AppAlertAction(title: "取消") { navigationUnavailable = false },
+                AppAlertAction(title: "系统地图") {
+                    navigationUnavailable = false
+                    Task { await MarkerPresentation.openAppleMaps(for: current, selectedItem: store.appleMapItem(for: current)) }
+                }
+            ])
     }
     private var detailContent: some View {
-        Group {
-            if embedded { detailPage }
-            else { NavigationStack { detailPage } }
-        }.onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
+        ZStack(alignment: .top) {
+            Group {
+                if embedded { detailPage }
+                else { NavigationStack { detailPage } }
+            }
+            .opacity(compact ? 0 : 1)
+            .allowsHitTesting(!compact)
+            .accessibilityHidden(compact)
+            if compact { compactContent }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
             .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
             .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose))
     }
+    private var compactContent: some View {
+                    Button(action: onExpand) {
+                        HStack(spacing: 11) {
+                            PlaceIconView(emoji: current.icon.emoji, size: 28)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(current.title).font(.body.weight(.semibold)).lineLimit(1)
+                                if let address = current.content.address?.trimmingCharacters(in: .whitespacesAndNewlines), !address.isEmpty {
+                                    Text(address).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "chevron.up").font(.subheadline).foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                        }.padding(.horizontal, 20).frame(height: 66).padding(.top, 14)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).foregroundStyle(.primary)
+                        .accessibilityLabel("展开地点详情").accessibilityIdentifier("marker-compact-expand")
+    }
+
     private var detailPage: some View {
             detailScroll
             .toolbar(.hidden, for: .navigationBar)
@@ -57,18 +87,20 @@ struct MarkerDetailView: View {
                         embedded: true, onSaved: { editing = false }, onClosed: { editing = false })
                         .toolbar(.visible, for: .navigationBar)
                 }
-                .alert("从今日行程移除？", isPresented: $removingFromDay) {
-                    Button("取消", role: .cancel) { removalTarget = nil }
-                    Button("移除", role: .destructive) {
-                        if let target = removalTarget,
-                           store.removeDayPlacesInBackground([target.markerID], from: target.day) { onClose() }
-                        removalTarget = nil
-                    }.accessibilityIdentifier("confirm-remove-marker-from-day")
-                } message: { Text("仅从当前日期和当天路线中移除，地点收藏及其他日期的安排会保留。") }
-                .alert("删除地点？", isPresented: $deleting) {
-                    Button("取消", role: .cancel) {}
-                    Button("删除", role: .destructive) { if store.deleteMarker(current) { onClose() } }
-                } message: { Text("会从所有每日行程和路线中移除这个地点。") }
+                .sheet(isPresented: $removingFromDay, onDismiss: { removalTarget = nil }) {
+                    if let target = removalTarget {
+                        DeletionConfirmationView(store: store, title: "从今日行程移除", message: "仅从当前日期和当天所有路线中移除，地点收藏及其他日期的安排会保留。", kind: "marker-from-day", offersExclusiveMarkers: false, allowsQueuedWrites: true) { _ in
+                            if store.removeDayPlacesInBackground([target.markerID], from: target.day) { onClose() }
+                            removalTarget = nil
+                        }
+                    }
+                }
+                .sheet(isPresented: $deleting) {
+                    let target = current
+                    DeletionConfirmationView(store: store, title: "删除地点", message: "删除收藏，并从所有每日行程和路线中移除这个地点。", kind: "marker", offersExclusiveMarkers: false) { _ in
+                        if store.deleteMarker(target) { onClose() }
+                    }
+                }
     }
 
     private var detailScroll: some View {
@@ -99,9 +131,14 @@ struct MarkerDetailView: View {
                         }.clipShape(RoundedRectangle(cornerRadius: 8))
                             .allowsHitTesting(false)
                     }
+                    actionBar
+                    if !itineraries.isEmpty || hasNote {
+                        Divider().padding(.vertical, 4)
+                    }
                     if !itineraries.isEmpty {
-                        VStack(spacing: 0) {
-                            Divider().padding(.bottom, 6)
+                        VStack(alignment: .leading, spacing: 6) {
+                            JourneyEditorHeading(title: "已包含在如下行程中")
+                                .accessibilityIdentifier("marker-itineraries-heading")
                             ForEach(itineraries) { itinerary in
                                 Button {
                                     store.select(trip: itinerary.trip, day: itinerary.day, focus: false)
@@ -110,14 +147,16 @@ struct MarkerDetailView: View {
                                 } label: {
                                     HStack(spacing: 8) {
                                         VStack(alignment: .leading, spacing: 4) {
-                                            Text(itinerary.trip.name).lineLimit(1)
+                                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                                Text(itinerary.trip.name).lineLimit(1)
+                                                if targetDay?.id == itinerary.day.id && targetDay?.tripId == itinerary.trip.id {
+                                                    Text("（当前行程）").font(.caption).foregroundStyle(.secondary)
+                                                        .fixedSize()
+                                                        .accessibilityIdentifier("marker-in-current-day")
+                                                }
+                                            }
                                             Text("第\(itinerary.dayNumber)天 · " + itinerary.day.date.replacingOccurrences(of: "-", with: "/"))
                                                 .font(.caption).foregroundStyle(.secondary)
-                                        }
-                                        if targetDay?.id == itinerary.day.id && targetDay?.tripId == itinerary.trip.id {
-                                            Image(systemName: "checkmark").font(.caption.weight(.semibold))
-                                                .accessibilityLabel("当前行程日")
-                                                .accessibilityIdentifier("marker-in-current-day")
                                         }
                                         Spacer(minLength: 0)
                                         Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
@@ -128,9 +167,8 @@ struct MarkerDetailView: View {
                             }
                         }
                     }
-                    actionBar
                     if hasNote {
-                        Divider().padding(.vertical, 4)
+                        if !itineraries.isEmpty { Divider().padding(.vertical, 4) }
                         JourneyEditorHeading(title: "笔记")
                         HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight)
                             .frame(height: noteHeight).accessibilityIdentifier("marker-note")
@@ -146,40 +184,47 @@ struct MarkerDetailView: View {
             .ignoresSafeArea(.container, edges: .top)
     }
 
+    private var markerActionLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 16))
+    }
+
     private var actionBar: some View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     if let searchPlace, !store.isPlaceAdded(searchPlace) {
-                        JourneyActionGroup(compact: true) {
+                        markerActionLayout {
                             Button { store.prepareSearchPlaceAddition(searchPlace) } label: {
                                 Label(targetDay.map(addDayLabel) ?? (store.addPlaceTripID != nil ? "加入旅行" : "保存地点"), systemImage: "plus")
                             }.disabled(store.saving).accessibilityIdentifier("search-detail-add")
                         }
                     } else if searchPlace == nil, let day = targetDay, !day.markerIds.contains(current.id) {
-                        JourneyActionGroup(compact: true) {
+                        markerActionLayout {
                             Button {
                                 if store.addMarkerInBackground(current, to: day) { onClose() }
                             } label: { Label(addDayLabel(day), systemImage: "plus") }
                                 .disabled(store.saving).accessibilityIdentifier("add-marker-to-current-day")
                         }
                     }
-                    JourneyActionGroup(compact: true) {
-                        Button(action: navigate) { Label("导航", systemImage: "location").font(.caption.weight(.semibold)) }
+                    markerActionLayout {
+                        Button(action: navigate) { Label("导航", systemImage: "location").font(.subheadline).frame(minHeight: 44) }
                             .accessibilityIdentifier("marker-navigate").disabled(!current.coordinates.isValid)
-                        Button { editing = true } label: { Label("编辑", systemImage: "square.and.pencil").font(.caption.weight(.semibold)) }
+                        Button { editing = true } label: { Label("编辑", systemImage: "square.and.pencil").font(.subheadline).frame(minHeight: 44) }
                             .accessibilityIdentifier("edit-marker-detail")
                         if let day = targetDay, day.markerIds.contains(current.id) {
                             Button {
                                 removalTarget = (day, current.id); removingFromDay = true
-                            } label: { Label("从今日移除", systemImage: "calendar.badge.minus").font(.caption.weight(.semibold)) }
+                            } label: { Label("从今日移除", systemImage: "calendar.badge.minus").font(.subheadline).frame(minHeight: 44) }
                                 .disabled(store.saving).accessibilityIdentifier("remove-marker-from-current-day")
                         }
                         if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
                         Button(role: .destructive) { deleting = true } label: {
-                            Label("删除", systemImage: "trash").font(.caption.weight(.semibold)).foregroundStyle(.red)
+                            Label("删除", systemImage: "trash").font(.subheadline).foregroundStyle(.red).frame(minHeight: 44)
                         }.accessibilityLabel("删除地点").accessibilityIdentifier("marker-delete")
                     }
-                }.padding(.top, 4).padding(.bottom, 6)
+                }.buttonStyle(.plain).font(.subheadline)
+                    .padding(.top, 4).padding(.bottom, 6)
                 }
 
     private func addDayLabel(_ day: TripDay) -> String {
@@ -375,10 +420,14 @@ struct MarkerEditorView: View {
                 Button {
                     if embedded && hasChanges { confirmDiscard = true }
                     else { closeEditor() }
-                } label: { Image(systemName: embedded ? "chevron.left" : "xmark") }
+                } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(Color(uiColor: .label))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain)
                     .disabled(store.saving || uploading).accessibilityLabel("取消")
                     .accessibilityIdentifier("cancel-marker-editor")
-            }
+            }.journeyBareBackground
         }
         .fullScreenCover(isPresented: $noteEditorPresented) {
             NoteComposerPreview(placeName: draft.title, address: draft.address,
@@ -387,10 +436,10 @@ struct MarkerEditorView: View {
                 onSave: { html in draft.html = html })
         }
         .navigationBarBackButtonHidden(embedded)
-        .confirmationDialog("放弃修改？", isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button("放弃修改", role: .destructive) { closeEditor() }
-            Button("继续编辑", role: .cancel) {}
-        }
+        .appAlert(isPresented: $confirmDiscard, title: "放弃这次修改？", symbol: "square.and.pencil", message: "尚未保存的内容将被丢弃。已保存的地点和行程不会改变。", actions: [
+            AppAlertAction(title: "继续编辑") { confirmDiscard = false },
+            AppAlertAction(title: "放弃修改", destructive: true) { confirmDiscard = false; closeEditor() }
+        ])
         .onDisappear {
             if embedded, store.draft?.id == initial.id {
                 draft.html = rich.exportHTML(original: draft.html)
@@ -619,10 +668,10 @@ struct NoteComposerPreview: View {
                 }
             }
             .interactiveDismissDisabled(loadingPhotos)
-            .confirmationDialog("放弃修改？", isPresented: $discard) {
-                Button("放弃修改", role: .destructive) { dismiss() }
-                Button("继续编辑", role: .cancel) {}
-            }
+            .appAlert(isPresented: $discard, title: "放弃这次修改？", symbol: "square.and.pencil", message: "尚未保存的笔记将被丢弃。已保存的内容不会改变。", actions: [
+                AppAlertAction(title: "继续编辑") { discard = false },
+                AppAlertAction(title: "放弃修改", destructive: true) { discard = false; dismiss() }
+            ])
             .task {
                 if preview { photos = [samplePhoto(alternate: false), samplePhoto(alternate: true)] }
                 try? await Task.sleep(for: .milliseconds(400))

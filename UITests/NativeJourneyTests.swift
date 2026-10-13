@@ -2,6 +2,25 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
+    @MainActor func testMarkerHeaderDragDoesNotAlsoScrollContent() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--long-note-preview"]
+        app.launch()
+        let marker = app.buttons["map-marker-demo-1"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 10)); marker.tap()
+        let close = app.buttons["close-marker-detail"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        let panel = app.otherElements["edge-attached-panel"].firstMatch
+        let content = app.descendants(matching: .any)["marker-detail-content"].firstMatch
+        let offset = content.frame.minY - panel.frame.minY
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: panel.frame.midX, dy: panel.frame.minY + 25))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -220)))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        XCTAssertEqual(content.frame.minY - panel.frame.minY, offset, accuracy: 5)
+        XCTAssertTrue(close.exists)
+    }
+
     @MainActor func testJourneyDayOverviewAndReturn() {
         let app = XCUIApplication(); app.launchArguments = ["--demo"]; app.launch()
         let back = app.buttons["journey-back"]
@@ -228,8 +247,8 @@ final class NativeJourneyTests: XCTestCase {
         row.press(forDuration: 0.7)
         XCTAssertTrue(app.buttons["删除地点"].waitForExistence(timeout: 5))
         app.buttons["删除地点"].tap()
-        XCTAssertTrue(app.alerts["删除地点？"].waitForExistence(timeout: 5))
-        app.alerts["删除地点？"].buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["confirm-delete-marker"].waitForExistence(timeout: 5))
+        app.buttons["cancel-delete-marker"].tap()
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
         XCTAssertTrue(app.navigationBars["地点"].waitForExistence(timeout: 5))
         app.buttons["close-marker-detail"].tap()

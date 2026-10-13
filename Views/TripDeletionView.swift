@@ -22,12 +22,21 @@ struct DayDeletionView: View {
     }
 }
 
+struct DeletionConfirmationChoice: Identifiable {
+    let id: String
+    let title: String
+    let action: () -> Void
+}
+
 struct DeletionConfirmationView: View {
     @ObservedObject var store: AppStore
     let title: String
     let message: String
     let kind: String
     var offersExclusiveMarkers = true
+    var choices: [DeletionConfirmationChoice] = []
+    var allowsQueuedWrites = false
+    var independentOfAPISaving = false
     let action: (Bool) -> Void
     @State private var contentHeight: CGFloat = 220
     @State private var bottomSafeArea: CGFloat = 0
@@ -48,6 +57,18 @@ struct DeletionConfirmationView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Divider()
+                ForEach(choices) { choice in
+                    Button(role: .destructive) {
+                        deleting = true
+                        dismiss()
+                        choice.action()
+                    } label: {
+                        Text(choice.title).font(.body.weight(.medium))
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).foregroundStyle(.red)
+                        .accessibilityIdentifier("delete-\(kind)-\(choice.id)")
+                }
                 if offersExclusiveMarkers {
                 Button { deleteExclusiveMarkers.toggle() } label: {
                     HStack(alignment: .top, spacing: 12) {
@@ -71,6 +92,7 @@ struct DeletionConfirmationView: View {
                             .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
                     }.buttonStyle(.plain)
                         .accessibilityIdentifier("cancel-delete-\(kind)")
+                    if choices.isEmpty {
                     Button(role: .destructive) {
                         deleting = true
                         let includeMarkers = deleteExclusiveMarkers
@@ -80,10 +102,11 @@ struct DeletionConfirmationView: View {
                         Text(title).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
                             .foregroundStyle(.white).background(Color.red, in: Capsule())
                     }.buttonStyle(.plain).accessibilityIdentifier("confirm-delete-\(kind)")
+                    }
                 }
             }
             .padding(24)
-            .disabled(deleting || store.saving)
+            .disabled(deleting || (!independentOfAPISaving && (choices.isEmpty && !allowsQueuedWrites ? store.saving : !store.canEditItinerary)))
             .fixedSize(horizontal: false, vertical: true)
             .background {
                 GeometryReader { proxy in
@@ -119,54 +142,65 @@ private struct JourneyErrorPresentation: ViewModifier {
     let enabled: Bool
     @State private var resumeAfterDismiss = false
     func body(content: Content) -> some View {
-        content.sheet(isPresented: Binding(get: { enabled && store.errorMessage != nil },
-            set: { if !$0 && enabled { store.errorMessage = nil } }), onDismiss: {
+        content.appAlert(isPresented: Binding(get: { enabled && store.errorMessage != nil },
+            set: { if !$0 && enabled { store.errorMessage = nil } }), title: "未能完成操作", symbol: "exclamationmark.triangle", message: store.errorMessage ?? "", onDismiss: {
                 if resumeAfterDismiss { resumeAfterDismiss = false; store.resumeFailedSave() }
-            }) {
-                JourneyErrorPanel(message: store.errorMessage ?? "", canResume: store.canResumeFailedSave) {
-                    resumeAfterDismiss = $0
-                    store.errorMessage = nil
-                }
-            }
+            }, actions: [AppAlertAction(title: "知道了") { store.errorMessage = nil }] + (store.canResumeFailedSave ? [
+                AppAlertAction(title: "继续编辑") { resumeAfterDismiss = true; store.errorMessage = nil }
+            ] : []))
     }
 }
 
-private struct JourneyErrorPanel: View {
+struct AppAlertAction {
+    let title: String
+    var destructive = false
+    let action: () -> Void
+}
+struct AppAlertCard: View {
+    let title: String
+    let symbol: String
     let message: String
-    let canResume: Bool
-    let close: (Bool) -> Void
-    @State private var height: CGFloat = 280
+    let actions: [AppAlertAction]
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            contents
-            ScrollView { contents }
-        }
-        .presentationDetents([.height(height)])
-        .presentationBackground(Color(uiColor: .systemBackground))
-        .presentationDragIndicator(.hidden)
-    }
-    private var contents: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Image(systemName: "exclamationmark.circle").font(.title2).foregroundStyle(.secondary)
-            Text("未能完成操作").font(.title2.weight(.semibold))
-            Text(message).font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
-                Button { close(false) } label: {
-                    Text("知道了").frame(maxWidth: .infinity, minHeight: 52)
-                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
-                }.buttonStyle(.plain)
-                if canResume {
-                    Button { close(true) } label: {
-                        Text("继续编辑").frame(maxWidth: .infinity, minHeight: 52)
-                            .foregroundStyle(Color(uiColor: .systemBackground))
-                            .background(Color(uiColor: .label), in: Capsule())
+        VStack(spacing: 0) {
+            VStack(spacing: 16) {
+                Text(title).font(.system(size: 19, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .overlay(alignment: .leading) {
+                        Image(systemName: symbol).font(.system(size: 20))
+                            .foregroundStyle(.secondary).offset(x: -30).accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, 30).frame(maxWidth: .infinity)
+                    .accessibilityAddTraits(.isHeader)
+                Text(message).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(24)
+            Divider()
+            HStack(spacing: 0) {
+                ForEach(actions.indices, id: \.self) { index in
+                    if index > 0 { Divider().frame(height: 48) }
+                    Button(action: actions[index].action) {
+                        Text(actions[index].title).font(.body.weight(index == actions.count - 1 ? .semibold : .regular))
+                            .foregroundStyle(actions[index].destructive ? Color.red : Color(uiColor: .systemBlue))
+                            .frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
-            }.font(.body.weight(.medium))
-        }.padding(24).accessibilityIdentifier("journey-error-panel")
-            .background(GeometryReader { proxy in
-                Color.clear.onAppear { height = proxy.size.height }
-                    .onChange(of: proxy.size.height) { _, value in height = value }
-            })
+            }
+        }.background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 22))
+            .clipShape(RoundedRectangle(cornerRadius: 22)).frame(maxWidth: 340)
+            .accessibilityIdentifier("app-alert-card")
+    }
+}
+extension View {
+    func appAlert(isPresented: Binding<Bool>, title: String, symbol: String, message: String,
+                  onDismiss: @escaping () -> Void = {}, actions: [AppAlertAction]) -> some View {
+        fullScreenCover(isPresented: isPresented, onDismiss: onDismiss) {
+            ZStack {
+                Color.black.opacity(0.18).ignoresSafeArea()
+                AppAlertCard(title: title, symbol: symbol, message: message, actions: actions).padding(24)
+            }.presentationBackground(.clear)
+        }
+
     }
 }

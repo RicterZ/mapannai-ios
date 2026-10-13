@@ -58,7 +58,7 @@ struct RouteScheduleEditor: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("备注").font(.subheadline).foregroundStyle(.secondary)
                         TextField(request.isTransport ? "站台、集合点或其他提醒" : "入口、预约或其他提醒", text: $note, axis: .vertical)
-                            .lineLimit(2...5)
+                            .lineLimit(request.isTransport ? 2...5 : 5...8)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
@@ -72,6 +72,7 @@ struct RouteScheduleEditor: View {
                             .font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
                             .accessibilityIdentifier("schedule-clear")
                     }
+                    saveButton
                 }.font(.body).padding(.horizontal, 24).padding(.vertical, 16)
                     .frame(maxWidth: 560).frame(maxWidth: .infinity)
             }
@@ -95,10 +96,6 @@ struct RouteScheduleEditor: View {
                         .accessibilityLabel("取消").accessibilityIdentifier("schedule-cancel").disabled(submitting)
                 }.journeyBareBackground
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                JourneyEditorSubmit(title: "保存安排", enabled: !submitting && !store.saving,
-                    identifier: "schedule-save", background: Color(uiColor: .systemBackground)) { save(clear: false) }
-            }
             .onAppear {
                 mode = leg?.mode ?? .walking; serviceNumber = leg?.serviceNumber ?? ""
                 let start = request.isTransport ? leg?.startTime : stop.startTime
@@ -113,6 +110,10 @@ struct RouteScheduleEditor: View {
             }
         }
         .interactiveDismissDisabled(submitting)
+    }
+    private var saveButton: some View {
+        JourneyEditorSubmit(title: "保存安排", enabled: !submitting && !store.saving,
+            identifier: "schedule-save", background: Color(uiColor: .systemBackground)) { save(clear: false) }
     }
     private var endpoints: some View {
         HStack(spacing: 16) {
@@ -201,12 +202,14 @@ struct TransportArtwork: View {
 struct ItineraryNote: View {
     let text: String
     var allowsExpansion = true
+    var collapsedLineLimit = 2
     @State private var expanded = false
     @State private var fullHeight: CGFloat = 0
     @State private var collapsedHeight: CGFloat = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(text).font(.footnote).foregroundStyle(.secondary).lineLimit(expanded ? nil : 2)
+            Text(text).font(.footnote).foregroundStyle(.secondary).lineLimit(expanded ? nil : collapsedLineLimit)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
@@ -214,7 +217,7 @@ struct ItineraryNote: View {
                         .hidden().accessibilityHidden(true)
                 }
                 .background {
-                    Text(text).font(.footnote).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    Text(text).font(.footnote).lineLimit(collapsedLineLimit).fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { collapsedHeight = $0 }
                         .hidden().accessibilityHidden(true)
                 }

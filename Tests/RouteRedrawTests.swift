@@ -13,6 +13,21 @@ private actor NoRouteRequests: MapServices {
 }
 
 final class RouteRedrawTests: XCTestCase {
+    func testDayDistancesPreloadFromCacheWithoutSelectingDay() async throws {
+        let processor = RouteProcessing()
+        let cache = RouteCache(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let a = Coordinate(latitude: 31, longitude: 121), b = Coordinate(latitude: 31.01, longitude: 121.02)
+        let markers = [Marker(id: "a", coordinates: a, content: MarkerContent(id: "a", markdownContent: "")),
+                       Marker(id: "b", coordinates: b, content: MarkerContent(id: "b", markdownContent: ""))]
+        let days = ["first", "next"].map { TripDay(id: $0, tripId: "trip", date: "2026-10-01", markerIds: ["a", "b"], chains: [["a", "b"]]) }
+        let route = PlannedRoute(path: [RoutePoint(lat: a.latitude, lng: a.longitude), RoutePoint(lat: b.latitude, lng: b.longitude)], distance: 850, duration: nil)
+        await cache.put(route, key: RouteCache.key(a, b, mode: nil, provider: .amap, server: "https://test.invalid"))
+        let distances = try await processor.cachedDistances(days: days, markers: markers, cache: cache, provider: .amap, server: "https://test.invalid")
+        XCTAssertEqual(distances, ["first|0|1|a|b": 850, "next|0|1|a|b": 850])
+        let otherServer = try await processor.cachedDistances(days: days, markers: markers, cache: cache, provider: .amap, server: "https://other.invalid")
+        XCTAssertTrue(otherServer.isEmpty)
+    }
+
     @MainActor func testReturningFromDayPublishesCachedGeometryWithoutTemporaryCurves() async throws {
         let settings = Settings(); let originalPlanning = settings.planning
         settings.planning = true

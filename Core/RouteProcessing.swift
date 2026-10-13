@@ -8,6 +8,22 @@ struct RouteSegment {
 
 /// Pure value snapshots enter this actor; UIKit/SwiftUI and store mutations never do.
 actor RouteProcessing {
+    func cachedDistances(days: [TripDay], markers: [Marker], cache: RouteCache,
+                         provider: MapServiceProvider, server: String) async throws -> [String: Double] {
+        let segments = try build(days: days, markers: markers, selectedTrip: nil, previous: [], preserve: false)
+        var distances: [String: Double] = [:]
+        for segment in segments {
+            try Task.checkCancellation()
+            let key = RouteCache.key(segment.origin, segment.destination, mode: segment.display.transportMode,
+                                     provider: provider, server: server)
+            if let route = await cache.get(key), !route.isFallback,
+               let distance = route.distance, distance.isFinite, distance >= 0 {
+                distances[segment.display.id] = distance
+            }
+        }
+        return distances
+    }
+
     func build(days: [TripDay], markers: [Marker], selectedTrip: Trip?, previous: [DisplayRoute], preserve: Bool, planning: Bool = false) throws -> [RouteSegment] {
         assert(!Thread.isMainThread, "Route building must stay off the UI thread")
         let lookup = Dictionary(markers.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })

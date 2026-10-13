@@ -99,14 +99,16 @@ enum AIToolLabel {
 
 struct AIEvent: Decodable {
     var type: String
+    var title: String?
     var text: String?
     var name: String?
     var message: AIMessage?
     var error: String?
-    enum CodingKeys: String, CodingKey { case type, text, name, message }
+    enum CodingKeys: String, CodingKey { case type, title, text, name, message }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         type = try c.decode(String.self, forKey: .type)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
         text = try c.decodeIfPresent(String.self, forKey: .text)
         name = try c.decodeIfPresent(String.self, forKey: .name)
         if type == "error" { error = try c.decode(String.self, forKey: .message) }
@@ -379,6 +381,7 @@ actor AIHistoryRepository {
     private func receive(_ event: AIEvent, id: UUID, revision: UUID, store: AppStore?) {
         guard generation == revision, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         switch event.type {
+        case "title": updateConversationTitle(event.title, id: id)
         case "delta": partial += event.text ?? ""; status = "正在回复…"
         case "status": status = event.name.map { "正在调用 · " + AIToolLabel.text($0) } ?? "正在处理行程…"
         case "message":
@@ -389,6 +392,13 @@ actor AIHistoryRepository {
         case "changed": if let store { queueRefresh(store: store, ids: []) }
         default: break
         }
+    }
+    func updateConversationTitle(_ title: String?, id: UUID) {
+        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty, title.count <= 60,
+              let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[index].title = title
+        persist()
     }
     private func queueRefresh(store: AppStore, ids: [String]) {
         needsRefresh = true; createdIDs += ids
