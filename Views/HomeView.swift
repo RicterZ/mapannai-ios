@@ -316,7 +316,14 @@ struct HomeView: View {
                 .onChange(of: proxy.size) { _, size in
                     journeyAvailableHeight = size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
-                .onChange(of: cameraInsets) { _, insets in store.mapViewportInsets = insets }
+                .onChange(of: cameraInsets) { _, insets in
+                    // Keep interactive panel heights out of AppStore's global view updates.
+                    guard !store.dayMapBrowsing || !journeyPanelMoving else { return }
+                    if store.mapViewportInsets != insets { store.mapViewportInsets = insets }
+                }
+                .onChange(of: journeyPanelMoving) { _, moving in
+                    if !moving, store.mapViewportInsets != cameraInsets { store.mapViewportInsets = cameraInsets }
+                }
                 .onChange(of: store.routeSelectionRequest) { _, _ in
                     expanded = true
                     if !layout.usesSidebar {
