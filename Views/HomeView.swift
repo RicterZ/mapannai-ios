@@ -136,12 +136,18 @@ struct HomeView: View {
                         ZStack(alignment: .top) {
                           ZStack(alignment: .top) {
                             if let trip = store.trip, let day = store.day {
+                              GeometryReader { panelGeometry in
+                                let halfHeight = (geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom) * 0.5
+                                let detailHeight = max(panelGeometry.size.height, halfHeight - 14 - panelGeometry.safeAreaInsets.bottom)
                                 NavigationStack {
                                     DayDetailPage(store: store, trip: trip, day: day, showsNavigation: false,
                                         closeIdentifier: "map-day-close", mapIdentifier: "map-day-map",
                                         onClose: { setJourneyDetent(.compact) }, onMap: { setJourneyDetent(.compact) })
                                 }
+                                // Keep the paged lists at half height while the panel clips toward compact.
+                                .frame(height: detailHeight, alignment: .top)
                                 .fullScreenCover(item: $editingTrip) { TripEditorView(store: store, trip: $0) }
+                              }
                                 .opacity(dayDetailProgress)
                                 .allowsHitTesting(dayDetailProgress > 0.5)
                                 .accessibilityHidden(dayDetailProgress < 0.5)
