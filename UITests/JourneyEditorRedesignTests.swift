@@ -248,7 +248,7 @@ final class JourneyEditorRedesignTests: XCTestCase {
         XCTAssertFalse(app.navigationBars["我的旅途"].exists)
         let year = app.descendants(matching: .any)["archive-year-2025"].firstMatch
         XCTAssertTrue(year.exists)
-        XCTAssertFalse(app.buttons["archive-year-2025"].exists)
+        XCTAssertTrue(app.buttons["archive-year-2025"].exists)
         let topCard = app.buttons["archive-trip-demo-trip"]
         XCTAssertGreaterThanOrEqual(year.frame.minY - topCard.frame.maxY, 23)
         capture("我的旅途 · 页内标题与年度叠卡")

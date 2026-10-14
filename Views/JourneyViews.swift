@@ -267,6 +267,9 @@ struct JourneyArchiveView: View {
     @State private var editing: Trip?
     @State private var deleting: Trip?
     @State private var independentDetail: Marker?
+    @State private var expandedYear: Int?
+    @Namespace private var yearExpansion
+    @State private var yearScroll = ArchiveYearScrollState()
 
     private var openedTrip: Trip? { trips.first { $0.id == openedID } }
     private var independent: [Marker] {
@@ -382,6 +385,15 @@ struct JourneyArchiveView: View {
                                 .contentShape(Rectangle())
                         }.accessibilityLabel("返回我的旅途")
                             .accessibilityIdentifier("archive-detail-close").buttonStyle(.plain)
+                    } else if expandedYear != nil {
+                        Button {
+                            yearScroll.pendingOffset = yearScroll.originalOffset
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) { expandedYear = nil }
+                        } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 20, weight: .regular))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel("返回我的旅途")
+                            .accessibilityIdentifier("archive-year-close")
                     } else {
                         // Preserve navigation geometry without leaving a hidden UIKit button.
                         Color.clear.frame(width: 44, height: 44).allowsHitTesting(false).accessibilityHidden(true)
@@ -480,6 +492,46 @@ struct JourneyArchiveView: View {
                             .accessibilityIdentifier("empty-archive-create")
                     }.padding(.horizontal, 8)
                 }
+                if let expandedYear {
+                    let yearTrips = trips.filter { Int($0.startDate.prefix(4)) == expandedYear }
+                        .sorted { $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate > $1.startDate }
+                    VStack(alignment: .leading, spacing: 24) {
+                        JourneyArchiveYearCard(year: expandedYear, count: yearTrips.count)
+                            .frame(height: 204)
+                            .matchedGeometryEffect(id: "year-\(expandedYear)", in: yearExpansion)
+                            .background(GeometryReader { proxy in
+                                Color.clear.preference(key: ArchiveDividerFrames.self,
+                                    value: [0: proxy.frame(in: .named("journey-archive"))])
+                            })
+                        Capsule().fill(Color(uiColor: .tertiaryLabel)).frame(width: 40, height: 2)
+                            .frame(maxWidth: .infinity).padding(.vertical, 4)
+                        ForEach(yearTrips) { trip in
+                            let index = trips.firstIndex { $0.id == trip.id } ?? 0
+                            Button { open(trip, index: index, viewportHeight: height) } label: {
+                                JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
+                                    .frame(height: 204)
+                                    .matchedGeometryEffect(id: trip.id, in: yearExpansion)
+                            }
+                            .buttonStyle(ArchiveCardButtonStyle())
+                            .background(GeometryReader { proxy in
+                                Color.clear.preference(key: ArchiveCardFrames.self,
+                                    value: [trip.id: proxy.frame(in: .named("journey-archive"))])
+                            })
+                            .overlay {
+                                ArchiveContextInteraction(
+                                    preview: JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
+                                        .frame(width: min(608, max(1, cardFrames[trip.id]?.width ?? 340)), height: 204),
+                                    onOpen: { open(trip, index: index, viewportHeight: height) },
+                                    onEdit: { editing = trip }, onDelete: { deleting = trip })
+                                    .accessibilityHidden(true)
+                            }
+                            .accessibilityIdentifier("archive-trip-\(trip.id)")
+                            .accessibilityAction(named: "编辑旅途") { editing = trip }
+                            .accessibilityAction(named: "删除旅途") { deleting = trip }
+                        }
+                    }
+                    .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+                } else {
                 VStack(spacing: 0) {
                     let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
                     ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
@@ -498,7 +550,17 @@ struct JourneyArchiveView: View {
                         }
                         let storageSlot = max(0, index - topIDs.count) + yearGroups.keys.filter { $0 < index }.count
                         if let group = yearGroups[index] {
-                            JourneyArchiveYearCard(year: group.year, count: group.count)
+                            Button {
+                                yearScroll.originalOffset = yearScroll.scrollView?.contentOffset
+                                yearScroll.pendingOffset = CGPoint(x: 0, y: -(yearScroll.scrollView?.adjustedContentInset.top ?? 0))
+                                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) { expandedYear = group.year }
+                            } label: {
+                                JourneyArchiveYearCard(year: group.year, count: group.count)
+                                    .matchedGeometryEffect(id: "year-\(group.year)", in: yearExpansion)
+                            }
+                            .buttonStyle(.plain)
+                                .accessibilityIdentifier("archive-year-\(group.year)")
+                                .accessibilityHint("展开这一年的旅途")
                                 .frame(height: 204)
                                 .visualEffect { content, proxy in
                                     content.rotation3DEffect(.radians(ArchiveStorage.angle(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, baseMidY: proxy.frame(in: .named("journey-archive")).midY - CGFloat(storageSlot) * 88, enabled: !typeSize.isAccessibilitySize && !reduceMotion)), axis: (x: 1, y: 0, z: 0), perspective: proxy.size.width / 1000)
@@ -518,6 +580,7 @@ struct JourneyArchiveView: View {
                         Button { open(trip, index: index, viewportHeight: height) } label: {
                             JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
                                 .frame(height: 204)
+                                .matchedGeometryEffect(id: trip.id, in: yearExpansion)
                                 .visualEffect { content, proxy in
                                     content.rotation3DEffect(.radians(ArchiveStorage.angle(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, baseMidY: proxy.frame(in: .named("journey-archive")).midY - CGFloat(storageSlot + (yearGroups[index] == nil ? 0 : 1)) * 88, enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion)), axis: (x: 1, y: 0, z: 0), perspective: proxy.size.width / 1000)
                                         .offset(y: ArchiveStorage.packingOffset(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion))
@@ -546,6 +609,7 @@ struct JourneyArchiveView: View {
                         .padding(.bottom, isTop && index + 1 < trips.count
                             ? (beforeStorage ? 0 : 24) : 0)
                     }
+                }
                 }
                 if !independent.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
@@ -592,6 +656,7 @@ struct JourneyArchiveView: View {
                     .animation(reduceMotion ? .linear(duration: 0.15) :
                         .timingCurve(0.16, 0.86, 0.28, 1, duration: detailVisible ? 0.60 : 0.30), value: detailVisible)
             }.background(ArchiveKeyboardDismissal())
+                .background(ArchiveYearScrollAccess(state: yearScroll, expanded: expandedYear != nil))
                 .frame(minHeight: max(0, height - 44), alignment: .top)
                 .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 24).frame(maxWidth: 640).frame(maxWidth: .infinity)
         }.modifier(ArchiveDetailScrollEdges())
@@ -612,18 +677,24 @@ struct JourneyArchiveView: View {
         guard openedID == nil, let frame = cardFrames[trip.id] else { return }
         // A later animation completion must not overwrite an early day selection.
         store.select(trip: trip, focus: false)
-        transferSeparatorFrame = separatorFrame
+        transferSeparatorFrame = expandedYear == nil ? separatorFrame : .zero
         openingFrame = frame
         slotViewportHeight = viewportHeight
         let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
         transferCards = trips.enumerated().compactMap { position, value in
-            cardFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, number: number(for: value), frame: $0,
-                photo: coverPhoto(value), isTop: topIDs.contains(value.id)) }
+            guard expandedYear == nil || Int(value.startDate.prefix(4)) == expandedYear else { return nil }
+            return cardFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, number: number(for: value), frame: $0,
+                photo: coverPhoto(value), isTop: expandedYear != nil || topIDs.contains(value.id)) }
         }
+        if let expandedYear, let frame = dividerFrames[0] {
+            transferDividers = [ArchiveTransferDivider(index: 0, frame: frame, year: expandedYear,
+                count: transferCards.count, isFlat: true)]
+        } else {
         transferDividers = dividerFrames.compactMap { position, frame in
             yearGroups[position].map { group in
                 ArchiveTransferDivider(index: position, frame: frame, year: group.year, count: group.count)
             }
+        }
         }
         assert(!archiveHeadingFrame.isEmpty, "Archive heading geometry must be ready before opening a card")
         let renderer = ImageRenderer(content: ArchiveHeading()
@@ -669,6 +740,35 @@ struct JourneyArchiveView: View {
         cardInList = false
         detailVisible = false
         initialDayID = nil
+    }
+}
+
+private final class ArchiveYearScrollState {
+    weak var scrollView: UIScrollView?
+    var originalOffset: CGPoint?
+    var pendingOffset: CGPoint?
+}
+
+private struct ArchiveYearScrollAccess: UIViewRepresentable {
+    let state: ArchiveYearScrollState
+    let expanded: Bool
+    func makeUIView(context: Context) -> UIView { UIView() }
+    func updateUIView(_ view: UIView, context: Context) {
+        DispatchQueue.main.async {
+            var ancestor = view.superview
+            while let current = ancestor {
+                if let scroll = current as? UIScrollView {
+                    state.scrollView = scroll
+                    if let offset = state.pendingOffset {
+                        state.pendingOffset = nil
+                        scroll.superview?.layoutIfNeeded()
+                        scroll.setContentOffset(offset, animated: false)
+                    }
+                    break
+                }
+                ancestor = current.superview
+            }
+        }
     }
 }
 
@@ -808,6 +908,7 @@ private struct ArchiveTransferDivider {
     let frame: CGRect
     let year: Int
     let count: Int
+    var isFlat = false
 }
 
 private struct ArchiveCardFrames: PreferenceKey {
@@ -1062,7 +1163,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                 container.addSubview(plane)
                 plane.addSubview(view)
                 context.coordinator.dividerPlanes[divider.index] = plane
-                view.layer.transform = ArchiveStorage.transform(enabled: !typeSize.isAccessibilitySize && !reduceMotion, midY: divider.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
+                view.layer.transform = ArchiveStorage.transform(enabled: !divider.isFlat && !typeSize.isAccessibilitySize && !reduceMotion, midY: divider.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
                 context.coordinator.dividerViews[divider.index] = view
             }
         }

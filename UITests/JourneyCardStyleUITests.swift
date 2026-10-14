@@ -1,6 +1,33 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testYearUnfoldsFullCardsAndDetailReturnsToYear() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview"]
+        app.launch()
+        let year = app.buttons["archive-year-2025"]
+        XCTAssertTrue(year.waitForExistence(timeout: 8))
+        for _ in 0..<4 where !year.isHittable { app.swipeUp() }
+        let originalY = year.frame.minY
+        year.tap()
+        let back = app.buttons["archive-year-close"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        let first = app.buttons["archive-trip-year-2025-a"]
+        let second = app.buttons["archive-trip-year-2025-b"]
+        expectation(for: NSPredicate { _, _ in
+            first.exists && second.exists && abs(first.frame.height - 204) < 2 &&
+                abs(second.frame.height - 204) < 2 && second.frame.minY >= first.frame.maxY + 23
+        }, evaluatedWith: first)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["archive-trip-demo-trip"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Year unfolded"; attachment.lifetime = .keepAlways
+        add(attachment)
+        back.tap()
+        expectation(for: NSPredicate { _, _ in year.exists && abs(year.frame.minY - originalY) < 3 }, evaluatedWith: year)
+        waitForExpectations(timeout: 5)
+    }
+
     @MainActor func testJourneyPhotoCarouselSwitchesOnHorizontalSwipe() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview"]

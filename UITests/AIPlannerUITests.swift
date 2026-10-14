@@ -14,7 +14,7 @@ final class AIPlannerUITests: XCTestCase {
         app.scrollViews.firstMatch.swipeUp()
         let divider = app.descendants(matching: .any)["archive-year-2026"].firstMatch
         XCTAssertTrue(divider.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["archive-year-2026"].exists)
+        XCTAssertTrue(app.buttons["archive-year-2026"].exists)
         let beforeDivider = top
         let afterDivider = next
         XCTAssertEqual(divider.frame.minY - beforeDivider.frame.maxY, 24, accuracy: 1)
