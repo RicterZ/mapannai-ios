@@ -10,6 +10,8 @@ struct JourneyDaysContents: View {
     var archiveNumber: Int? = nil
     var archiveHeaderVisible = true
     var archiveContentVisible = true
+    var initialDayID: String? = nil
+    var initialDayScrollReady = false
     var archivePhoto: UIImage? = nil
     var onArchiveHeaderFrame: (CGRect) -> Void = { _ in }
     private var unscheduledPlaces: [Marker] {
@@ -22,11 +24,14 @@ struct JourneyDaysContents: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editing = false
     @State private var deletion: TripDay?
+    @State private var pendingInitialDayID: String?
+    @State private var initialDayScrollInitialized = false
     var body: some View {
         let days = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
         let cover = archiveColorIndex == nil ? nil : JourneyDaySummary.cover(trip: trip, markers: store.markers)
         let summaries = JourneyDaySummary.chapters(days: days, markers: store.markers,
             excludingPhotos: Set([cover].compactMap { $0 }))
+        ScrollViewReader { reader in
         List {
             if let archiveColorIndex {
                 Section {
@@ -65,7 +70,6 @@ struct JourneyDaysContents: View {
                         })
                 }.buttonStyle(.plain).disabled(day.id.hasPrefix("pending-day-"))
                     .accessibilityIdentifier("journey-day-\(day.id)")
-                    .contextMenu { dayActions(day) }
                 Menu { dayActions(day) } label: {
                     Image(systemName: "ellipsis").font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -75,6 +79,8 @@ struct JourneyDaysContents: View {
                 .accessibilityLabel("第\(index + 1)天的操作")
                 .accessibilityIdentifier("journey-day-menu-\(day.id)")
                 }
+
+                    .id(day.id)
 
                     .listRowInsets(EdgeInsets(top: 16, leading: 4, bottom: 16, trailing: 4))
                     .listRowSeparator(.hidden)
@@ -140,7 +146,24 @@ struct JourneyDaysContents: View {
             .scrollContentBackground(.hidden)
             .background(archiveColorIndex == nil ? Color(uiColor: .systemBackground) : Color.clear)
             .listSectionSpacing(8)
-            .onPreferenceChange(NativeDayFrames.self) { nativeDayFrames = $0 }
+            .onPreferenceChange(NativeDayFrames.self) {
+                nativeDayFrames = $0
+            }
+            .onAppear {
+                guard !initialDayScrollInitialized else { return }
+                initialDayScrollInitialized = true
+                pendingInitialDayID = initialDayID
+            }
+            .onChange(of: initialDayScrollReady) { _, ready in
+                guard ready, let target = pendingInitialDayID else { return }
+                pendingInitialDayID = nil
+                // The card handoff follows layout; List resolves lazy rows by their stable IDs.
+                var transaction = Transaction(); transaction.disablesAnimations = true
+                withTransaction(transaction) { reader.scrollTo(target, anchor: .top) }
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 1).onChanged { _ in
+                pendingInitialDayID = nil
+            })
             .sensoryFeedback(.selection, trigger: targetedDayID) { _, newValue in newValue != nil }
             .background(NativePlaceListDrop(frames: nativeDayFrames, prefix: "trip-place/" + trip.id + "/", onTarget: { targetedDayID = $0 }) { id, dayID in
                 if let day = trip.days.first(where: { $0.id == dayID }) {
@@ -155,6 +178,7 @@ struct JourneyDaysContents: View {
             .sheet(item: $deletion) { day in
                 DayDeletionView(store: store, day: day)
             }
+        }
     }
     @ViewBuilder private func dayActions(_ day: TripDay) -> some View {
         Button("编辑", systemImage: "pencil") {
@@ -210,7 +234,6 @@ struct JourneyArchiveView: View {
     @Binding var path: [JourneyDestination]
     let mapVisible: Bool
     var onOpenSettings: () -> Void
-    var onOpenMap: (Trip?) -> Void
     var onSelect: (Trip, TripDay?) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -236,6 +259,7 @@ struct JourneyArchiveView: View {
     @State private var photos: [URL: UIImage] = [:]
     @State private var archiveHeadingFrame = CGRect.zero
     @State private var transferHeading: ArchiveTransferHeading?
+    @State private var initialDayID: String?
     @State private var creating = false
     @State private var editing: Trip?
     @State private var deleting: Trip?
@@ -279,6 +303,8 @@ struct JourneyArchiveView: View {
                         JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, archiveColorIndex: openingIndex, archiveNumber: number(for: trip),
                             archiveHeaderVisible: cardInList,
                             archiveContentVisible: detailVisible,
+                            initialDayID: initialDayID,
+                            initialDayScrollReady: cardInList && !closing,
                             archivePhoto: coverPhoto(trip) ?? transferCards.first { $0.id == trip.id }?.photo,
                             onArchiveHeaderFrame: {
                                 let origin = geometry.frame(in: .global).origin
@@ -419,13 +445,13 @@ struct JourneyArchiveView: View {
         ScrollViewReader { scroll in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                ArchiveHeading(onOpenMap: { onOpenMap(trips.first) })
+                ArchiveHeading()
                     .background(GeometryReader { proxy in
                         Color.clear.preference(key: ArchiveHeadingFrame.self,
                             value: proxy.frame(in: .named("journey-archive")))
                     })
                     .opacity(openedID == nil || !transitionStarted ? 1 : 0)
-                if trips.isEmpty && store.hasLoadedJourneySnapshot {
+                if trips.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         ZStack(alignment: .top) {
                             ForEach(0..<3) { index in
@@ -603,6 +629,7 @@ struct JourneyArchiveView: View {
         renderer.scale = displayScale
         transferHeading = renderer.uiImage.map { ArchiveTransferHeading(image: $0, frame: archiveHeadingFrame) }
         openingIndex = index
+        initialDayID = JourneyArchiveOrdering.initialDayID(for: trip, today: JourneyArchiveOrdering.localDay())
         closing = false
         transitionStarted = true
         cardInList = false
@@ -637,6 +664,7 @@ struct JourneyArchiveView: View {
         destinationFrame = headerGeometry.frame
         cardInList = false
         detailVisible = false
+        initialDayID = nil
     }
 }
 
@@ -729,19 +757,13 @@ private struct ArchiveSavedPlaceCard: View {
 }
 
 private struct ArchiveHeading: View {
-    var onOpenMap: (() -> Void)? = nil
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 40
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center) {
                 Text("我的旅途").font(.system(size: titleSize, weight: .bold)).accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("archive-page-title")
-                Spacer(minLength: 12)
-                Button { onOpenMap?() } label: {
-                    Image(systemName: "map").font(.system(size: 22, weight: .regular))
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                    .accessibilityLabel("地图").accessibilityIdentifier("archive-map-icon")
+
             }
             Text("旅の目的地は、まだ見ぬ地平線の向こうに")
                 .font(.caption).foregroundStyle(.secondary)
@@ -1175,6 +1197,19 @@ struct JourneyArchiveYearGroup: Equatable {
 }
 
 enum JourneyArchiveOrdering {
+    static func localDay(at date: Date = .now, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    static func initialDayID(for trip: Trip, today: String) -> String? {
+        trip.days.sorted { $0.id < $1.id }.first(where: { $0.date == today })?.id
+    }
+
     static func numberedIDs(_ trips: [Trip]) -> [String] {
         trips.sorted { $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate < $1.startDate }.map(\.id)
     }

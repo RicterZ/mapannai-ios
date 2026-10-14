@@ -46,6 +46,28 @@ final class RouteScheduleTests: XCTestCase {
         XCTAssertEqual(store.displayRoutes.first?.distance, 500)
         XCTAssertEqual(store.displayRoutes.first?.id, "geometry")
     }
+    @MainActor func testEditorDistancesUsePlanningCacheWithoutPublishingMapGeometry() async throws {
+        let settings = Settings(), previous = settings.planning
+        settings.planning = true
+        defer { settings.planning = previous }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = EditorDistanceService()
+        let store = AppStore(settings: settings, demo: false, services: service, routeCache: RouteCache(directory: directory))
+        let day = try JSONDecoder().decode(TripDay.self, from: Data(json.utf8))
+        store.markers = ["a", "b"].enumerated().map { index, id in
+            Marker(id: id, coordinates: Coordinate(latitude: 31 + Double(index) * 0.01, longitude: 121),
+                content: MarkerContent(id: id, markdownContent: ""))
+        }
+        var distances: [String: Double] = [:]
+        await store.planEditingDistances(for: day) { distances = $0 }
+        XCTAssertEqual(distances.values.first, 850)
+        XCTAssertTrue(store.displayRoutes.isEmpty)
+        await store.planEditingDistances(for: day) { distances = $0 }
+        let calls = await service.calls
+        XCTAssertEqual(calls, 1)
+    }
+
     private static func body(_ request: URLRequest) -> Data {
         if let data = request.httpBody { return data }
         guard let stream = request.httpBodyStream else { return Data() }
@@ -58,4 +80,14 @@ final class RouteScheduleTests: XCTestCase {
         return data
     }
 
+}
+
+private actor EditorDistanceService: MapServices {
+    var calls = 0
+    func search(_ query: String, bounds: SearchBounds?) async throws -> [Place] { [] }
+    func details(at coordinate: Coordinate) async throws -> Place { throw AppError.message("Unused") }
+    func route(_ origin: Coordinate, _ destination: Coordinate, mode: TransportMode?) async throws -> PlannedRoute {
+        calls += 1
+        return PlannedRoute(path: [RoutePoint(lat: origin.latitude, lng: origin.longitude), RoutePoint(lat: destination.latitude, lng: destination.longitude)], distance: 850, duration: nil)
+    }
 }

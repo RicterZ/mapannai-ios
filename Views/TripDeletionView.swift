@@ -197,7 +197,7 @@ extension View {
                   onDismiss: @escaping () -> Void = {}, actions: [AppAlertAction]) -> some View {
         fullScreenCover(isPresented: isPresented, onDismiss: onDismiss) {
             ZStack {
-                Color.black.opacity(0.18).ignoresSafeArea()
+                Color.clear.ignoresSafeArea()
                 AppAlertCard(title: title, symbol: symbol, message: message, actions: actions).padding(24)
             }.presentationBackground(.clear)
         }

@@ -70,7 +70,7 @@ enum RouteScheduleText {
         [time, duration.map(Self.duration)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
-struct RouteScheduleRequest: Identifiable {
+struct RouteScheduleRequest: Identifiable, Hashable {
     var id = UUID()
     let day: TripDay
     let route: RouteChain

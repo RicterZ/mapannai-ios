@@ -12,21 +12,44 @@ struct AIConfigurationSection: View {
     @State private var error: String?
     @State private var saved = false
     var body: some View {
-        Section {
-            TextField("https://api.openai.com/v1", text: $draft.baseUrl)
-                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                .accessibilityIdentifier("ai-api-url")
-            SecureField("API Key", text: $draft.apiKey)
-                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-api-key")
-            TextField("模型名称", text: $draft.model)
-                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("ai-model")
+        VStack(alignment: .leading, spacing: 12) {
+            if showsHeading { Text("AI 助手").font(.title3.weight(.semibold)) }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("API 地址").font(.footnote).foregroundStyle(.secondary)
+                TextField("https://api.openai.com/v1", text: $draft.baseUrl)
+                    .textContentType(.URL).keyboardType(.URL)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityLabel("AI API 地址").accessibilityIdentifier("ai-api-url")
+                    .frame(minHeight: 32)
+            }.padding(.vertical, 4)
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("API Key").font(.footnote).foregroundStyle(.secondary)
+                SecureField("输入 API Key", text: $draft.apiKey)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityLabel("AI API Key").accessibilityIdentifier("ai-api-key")
+                    .frame(minHeight: 32)
+            }.padding(.vertical, 4)
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("模型").font(.footnote).foregroundStyle(.secondary)
+                TextField("模型名称", text: $draft.model)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityLabel("AI 模型").accessibilityIdentifier("ai-model")
+                    .frame(minHeight: 32)
+            }.padding(.vertical, 4)
             Button(saved ? "已保存" : "保存 AI 配置") {
                 do { try planner.saveConfiguration(draft); error = nil; saved = true }
                 catch { self.error = error.localizedDescription }
-            }.disabled(planner.busy).accessibilityIdentifier("ai-save-configuration")
+            }
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(Color(uiColor: .systemBackground))
+            .background(Color(uiColor: .label), in: Capsule())
+            .buttonStyle(.plain).disabled(planner.busy)
+            .opacity(planner.busy ? 0.5 : 1)
+            .accessibilityIdentifier("ai-save-configuration").padding(.top, 8)
             if let error { Text(error).foregroundStyle(.red).font(.footnote) }
-        } header: {
-            if showsHeading { Text("AI 助手") }
         }
         .onAppear { draft = planner.configuration }
         .onChange(of: draft) { _, _ in saved = false }

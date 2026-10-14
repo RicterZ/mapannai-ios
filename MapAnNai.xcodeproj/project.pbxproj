@@ -71,6 +71,7 @@
 		7F2EFC410862C24918A5DEE5 /* AIMessageMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = A262662E6BA41D29BEFD1710 /* AIMessageMarkdown.swift */; };
 		81D2A13FCBC6BA2FA6E9F026 /* JourneyDaySummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152C7C7104728A4E3FF7DD19 /* JourneyDaySummaryTests.swift */; };
 		820E0ED4AE6E2330AA685E65 /* TripDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB8D50F9FB8E05601301E564 /* TripDeletionView.swift */; };
+		86EC4FE087DDA25E2998E99A /* ItineraryVisualTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E4750B828078F6B6A9F965B /* ItineraryVisualTests.swift */; };
 		88BDD700EE8AEA131E92D93A /* JourneyCircleButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDDA121FFD3C16E1FD7287B /* JourneyCircleButtonStyle.swift */; };
 		8ACAB632ABC3011A72B69678 /* JourneySwitchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37628FCCBC95361BF34534F /* JourneySwitchingTests.swift */; };
 		8D220614F0AEA12467FDEF08 /* ArchiveChatEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F120DDA67261A84FB9EE3349 /* ArchiveChatEntry.swift */; };
@@ -168,6 +169,7 @@
 		09E543F803BEDC2629C60388 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		0B62253EAC3829164040323C /* SearchMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchMapTests.swift; sourceTree = "<group>"; };
 		0E1101856C18590877C951E1 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
+		0E4750B828078F6B6A9F965B /* ItineraryVisualTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryVisualTests.swift; sourceTree = "<group>"; };
 		152C7C7104728A4E3FF7DD19 /* JourneyDaySummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyDaySummaryTests.swift; sourceTree = "<group>"; };
 		1579B0865582F6FFBD7E34E0 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		184D7AD5A43DD29A4BC180FA /* RouteSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSelectionTests.swift; sourceTree = "<group>"; };
@@ -472,6 +474,7 @@
 				E3CEB28B9AC73D1B3F6747FB /* IPadBackButtonTests.swift */,
 				455D902A90E28E3E96034F8D /* IPadDetailTests.swift */,
 				1967E749797AC413790F093E /* ItineraryScrollTests.swift */,
+				0E4750B828078F6B6A9F965B /* ItineraryVisualTests.swift */,
 				6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */,
 				3A22977B4FF9EFC08FDD71BC /* JourneyCardStyleUITests.swift */,
 				56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */,
@@ -768,6 +771,7 @@
 				EA7A0398EDDD1A5DFFE220EF /* IPadDetailTests.swift in Sources */,
 				27733094231AD19C78C10729 /* InteractionTests.swift in Sources */,
 				40D75353D7FB6F3862F2FA5B /* ItineraryScrollTests.swift in Sources */,
+				86EC4FE087DDA25E2998E99A /* ItineraryVisualTests.swift in Sources */,
 				D35081C38CB650DFA49D2085 /* JourneyBackgroundTests.swift in Sources */,
 				3B66453DF93AF300DB24AA9E /* JourneyCardStyleUITests.swift in Sources */,
 				C4D5DDD576313DAB75D72D1E /* JourneyEditingActionsTests.swift in Sources */,

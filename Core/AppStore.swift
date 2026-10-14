@@ -1534,6 +1534,38 @@ struct DayEditorDraft: Identifiable {
         }
     }
 
+    /// Plan only this editor snapshot; never publish editor geometry to the map.
+    func planEditingDistances(for day: TripDay, publish: ([String: Double]) -> Void) async {
+        let revision = connectionRevision
+        let services = mapServices, provider = mapConfiguration.directionsProvider
+        let server = settings.baseURL, snapshotMarkers = markers
+        let planning = settings.planning && !demo
+        guard let segments = try? await routeProcessing.build(days: [day], markers: snapshotMarkers,
+            selectedTrip: nil, previous: [], preserve: false, planning: planning) else { return }
+        var distances: [String: Double] = [:]
+        for segment in segments {
+            guard !Task.isCancelled, connectionRevision == revision else { return }
+            let key = RouteCache.key(segment.origin, segment.destination, mode: segment.display.transportMode,
+                provider: provider, server: server)
+            do {
+                var route = await routeCache.get(key)
+                if route == nil && planning {
+                    route = try await services.route(segment.origin, segment.destination, mode: segment.display.transportMode)
+                    try Task.checkCancellation()
+                    guard connectionRevision == revision else { return }
+                    if let route { await routeCache.put(route, key: key) }
+                }
+                guard !Task.isCancelled, connectionRevision == revision else { return }
+                if let route, !route.isFallback, let distance = route.distance, distance.isFinite, distance > 0 {
+                    distances[segment.display.id] = distance
+                    publish(distances)
+                }
+            } catch {
+                if Task.isCancelled || connectionRevision != revision { return }
+            }
+        }
+    }
+
     func cachedRouteDistances(for days: [TripDay]) async throws -> [String: Double] {
         try await routeProcessing.cachedDistances(days: days, markers: markers, cache: routeCache,
             provider: mapConfiguration.directionsProvider, server: settings.baseURL)
@@ -1692,6 +1724,17 @@ struct DayEditorDraft: Identifiable {
             tripID = nil; dayID = nil
         }
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--today-chapter-preview") {
+            let calendar = Calendar.current
+            let days = (-8...3).map { offset in
+                TripDay(id: "today-preview-\(offset)", tripId: "today-trip",
+                    date: JourneyArchiveOrdering.localDay(at: calendar.date(byAdding: .day, value: offset, to: .now)!),
+                    markerIds: [], chains: [])
+            }
+            trips = [Trip(id: "today-trip", name: "今日章节测试", startDate: days.first!.date,
+                endDate: days.last!.date, days: days)]
+            tripID = nil; dayID = nil
+        }
         if ProcessInfo.processInfo.arguments.contains("--year-archive-preview") {
             trips += [("year-2025-a", "2025-11-02", "京都 · 秋色"),
                       ("year-2025-b", "2025-05-10", "海边的周末"),

@@ -4,6 +4,7 @@ import SwiftUI
 struct RouteScheduleEditor: View {
     @ObservedObject var store: AppStore
     let request: RouteScheduleRequest
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var mode: TransportMode = .walking
@@ -17,34 +18,45 @@ struct RouteScheduleEditor: View {
     private var leg: ChainLeg? { request.isTransport ? request.route.leg(at: request.position) : nil }
     private var stop: ChainStop { request.route.stops[request.position] }
     var body: some View {
-        NavigationStack {
+        Group {
+            if embedded { editorContent }
+            else { NavigationStack { editorContent } }
+        }.interactiveDismissDisabled(submitting)
+    }
+    private var editorContent: some View {
+        Group {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     endpoints
                     if request.isTransport {
                         transportModes
-                        Divider()
                         HStack(spacing: 16) {
-                            Text("线路 / 车次").foregroundStyle(.secondary)
+                            Text("线路 / 车次")
                             TextField("选填", text: $serviceNumber)
                                 .multilineTextAlignment(.trailing)
                                 .accessibilityIdentifier("schedule-service")
-                        }.frame(minHeight: 44)
+                        }.frame(minHeight: 44).padding(.top, 12)
+                            .overlay(alignment: .bottom) { Divider() }
                     }
-                    Divider()
-                    VStack(spacing: 16) {
+                    if !request.isTransport { Divider() }
+                    VStack(spacing: 0) {
                         HStack(spacing: 12) {
-                            Toggle(request.isTransport ? "出发时间" : "游览时间", isOn: $timeEnabled)
-                                .labelsHidden().accessibilityLabel(request.isTransport ? "设置出发时间" : "设置游览时间")
-                                .accessibilityIdentifier("schedule-time-toggle")
                             Text(request.isTransport ? "出发时间" : "游览时间")
                             Spacer(minLength: 0)
                             if timeEnabled {
                                 DatePicker("时间", selection: $time, displayedComponents: .hourAndMinute)
                                     .labelsHidden().environment(\.locale, Locale(identifier: "zh_CN"))
                                     .accessibilityIdentifier("schedule-time")
-                            } else { Text("未设置").foregroundStyle(.tertiary) }
-                        }
+                            } else {
+                                Button("未设置") { timeEnabled = true }.foregroundStyle(.secondary)
+                                    .accessibilityIdentifier("schedule-time-toggle")
+                            }
+                            Menu {
+                                Button(timeEnabled ? "清除时间" : "设置时间") { timeEnabled.toggle() }
+                            } label: { Image(systemName: "clock").font(.footnote).foregroundStyle(.primary) }
+                                .accessibilityLabel("时间选项")
+                        }.frame(minHeight: 58)
+                        Divider()
                         HStack(spacing: 8) {
                             Text(request.isTransport ? "预计时长" : "游玩时长")
                             Spacer(minLength: 12)
@@ -52,13 +64,13 @@ struct RouteScheduleEditor: View {
                                 .multilineTextAlignment(.trailing).frame(width: 72)
                                 .accessibilityIdentifier("schedule-duration")
                             Text("分钟").foregroundStyle(.secondary)
-                        }.frame(minHeight: 44)
+                        }.frame(minHeight: 58)
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
                         Text("备注").font(.subheadline).foregroundStyle(.secondary)
                         TextField(request.isTransport ? "站台、集合点或其他提醒" : "入口、预约或其他提醒", text: $note, axis: .vertical)
-                            .lineLimit(request.isTransport ? 2...5 : 5...8)
+                            .lineLimit(5...8)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
@@ -72,8 +84,7 @@ struct RouteScheduleEditor: View {
                             .font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
                             .accessibilityIdentifier("schedule-clear")
                     }
-                    saveButton
-                }.font(.body).padding(.horizontal, 24).padding(.vertical, 16)
+                }.font(.subheadline).padding(.horizontal, 24).padding(.vertical, 16)
                     .frame(maxWidth: 560).frame(maxWidth: .infinity)
             }
             .accessibilityIdentifier("schedule-editor-scroll")
@@ -85,15 +96,20 @@ struct RouteScheduleEditor: View {
             .toolbarBackground(Color(uiColor: .systemBackground), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
+                if !embedded { ToolbarItem(placement: .topBarLeading) {
+                    Button { goBack() } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 20, weight: .regular))
                             .foregroundStyle(Color(uiColor: .label))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain)
-                        .accessibilityLabel("取消").accessibilityIdentifier("schedule-cancel").disabled(submitting)
+                        .accessibilityLabel("返回").accessibilityIdentifier("schedule-cancel").disabled(submitting)
+                }.journeyBareBackground }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save(clear: false) }
+                        .disabled(submitting || store.saving)
+                        .accessibilityIdentifier("schedule-save")
                 }.journeyBareBackground
             }
             .onAppear {
@@ -111,20 +127,19 @@ struct RouteScheduleEditor: View {
         }
         .interactiveDismissDisabled(submitting)
     }
-    private var saveButton: some View {
-        JourneyEditorSubmit(title: "保存安排", enabled: !submitting && !store.saving,
-            identifier: "schedule-save", background: Color(uiColor: .systemBackground)) { save(clear: false) }
+    private func goBack() {
+        dismiss()
     }
     private var endpoints: some View {
         HStack(spacing: 16) {
-            Text(request.fromTitle).frame(maxWidth: .infinity, alignment: .leading)
+            Text(request.fromTitle)
             if let to = request.toTitle {
                 Image(systemName: "arrow.right").font(.subheadline.weight(.regular))
                     .foregroundStyle(.tertiary).accessibilityHidden(true)
-                Text(to).frame(maxWidth: .infinity, alignment: .trailing)
+                Text(to)
             }
         }.font(request.isTransport ? .headline : .title2.weight(.semibold))
-            .lineLimit(2).padding(.vertical, 8)
+            .lineLimit(2).frame(maxWidth: .infinity, alignment: request.isTransport ? .center : .leading).padding(.vertical, 8)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(request.toTitle.map { "从\(request.fromTitle)到\($0)" } ?? request.fromTitle)
     }
@@ -139,8 +154,8 @@ struct RouteScheduleEditor: View {
                     }.frame(maxWidth: .infinity, minHeight: 64)
                         .foregroundStyle(mode == option ? Color(uiColor: .label) : Color(uiColor: .secondaryLabel))
                         .background(mode == option ? Color(uiColor: .quaternarySystemFill) : .clear,
-                            in: RoundedRectangle(cornerRadius: 16))
-                        .contentShape(RoundedRectangle(cornerRadius: 16))
+                            in: RoundedRectangle(cornerRadius: 10))
+                        .contentShape(RoundedRectangle(cornerRadius: 10))
                 }.buttonStyle(.plain).accessibilityLabel(option.label)
                     .accessibilityAddTraits(mode == option ? .isSelected : [])
                     .accessibilityIdentifier("schedule-mode-\(option.rawValue)")
@@ -172,7 +187,7 @@ struct RouteScheduleEditor: View {
         } else { key = "stops"; fields["stopId"] = stop.id }
         submitting = true
         Task {
-            if await store.saveRouteSchedule(request, patch: [key: [fields]]) { dismiss() }
+            if await store.saveRouteSchedule(request, patch: [key: [fields]]) { goBack() }
             else { error = store.errorMessage ?? "保存失败，请重试" }
             submitting = false
         }
@@ -233,34 +248,69 @@ struct RouteTransportRow: View {
     let leg: ChainLeg?
     let distance: String?
     let tint: Color
+    var editing = true
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
+        Group {
+        if editing || leg != nil || distance != nil {
         HStack(alignment: .center, spacing: 4) {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 if let leg { TransportArtwork(mode: leg.mode) }
-                else { Image(systemName: "arrow.down").foregroundStyle(.secondary) }
-                Text([leg?.mode.label ?? "无交通安排", leg?.serviceNumber].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.footnote.weight(.semibold)).foregroundStyle(.primary)
+                else { Image(systemName: "plus").foregroundStyle(editing ? Color.accentColor : .secondary) }
+                Text([leg?.mode.label ?? (editing ? "安排交通" : "交通"), distance].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.footnote).foregroundStyle(editing && leg == nil ? Color.accentColor : .primary)
+                if let leg, let service = leg.serviceNumber, !service.isEmpty {
+                    Text(service).font(.caption.weight(.medium)).lineLimit(1)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .foregroundStyle(leg.mode.itineraryColor)
+                        .background(leg.mode.itineraryColor.opacity(0.16), in: Capsule())
+                        .accessibilityIdentifier("transport-service-tag")
+                }
             }
-            let metadata = [leg?.startTime.map { $0 + " 出发" }, leg?.durationMinutes.map { "计划 " + RouteScheduleText.duration($0) }, distance]
+            let metadata = [leg?.startTime.map { $0 + " 出发" }, leg?.durationMinutes.map { "计划 " + RouteScheduleText.duration($0) }]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary).monospacedDigit() }
             if let note = leg?.note, !note.isEmpty { ItineraryNote(text: note, allowsExpansion: false) }
         }.frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.right")
+                if editing { Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 20, height: 28)
                     .contentShape(Rectangle())
+                }
         }.padding(12)
-            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            .background(editing && leg == nil ? Color.clear : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                if editing && leg == nil {
+                    RoundedRectangle(cornerRadius: 8).strokeBorder(Color(uiColor: .separator), style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
+                }
+            }
             .contentShape(Rectangle())
-        }.buttonStyle(.plain)
-            .accessibilityLabel("编辑交通安排")
+        }
+        }
+            .contentShape(Rectangle())
+            .onTapGesture { if editing { action() } }
+            .accessibilityLabel(editing ? "编辑交通安排" : "交通安排")
             .accessibilityIdentifier("transport-edit")
-            .accessibilityAction(named: "编辑交通安排", action)
-            .padding(.leading, 33).padding(.top, 4).padding(.bottom, 12)
+            .accessibilityAction(named: "编辑交通安排") { if editing { action() } }
+            .padding(.leading, editing ? 0 : 33).padding(.top, editing ? 8 : 4).padding(.bottom, 12)
+    }
+}
+
+extension TransportMode {
+    var itineraryColor: Color {
+        switch self {
+        case .walking: .green
+        case .cycling: .mint
+        case .driving: .blue
+        case .taxi: .orange
+        case .bus: .teal
+        case .subway: .indigo
+        case .train: .brown
+        case .flight: .cyan
+        case .ferry: .purple
+        case .other: .gray
+        }
     }
 }

@@ -32,6 +32,23 @@ final class JourneySnapshotReadinessTests: XCTestCase {
 }
 
 final class ArchiveSeparatorFrameTests: XCTestCase {
+    func testTodayUsesDeviceTimeZoneNotUTCDay() {
+        let date = Date(timeIntervalSince1970: 1791937800)
+        XCTAssertNotEqual(JourneyArchiveOrdering.localDay(at: date, timeZone: TimeZone(secondsFromGMT: 14 * 3600)!),
+                          JourneyArchiveOrdering.localDay(at: date, timeZone: TimeZone(secondsFromGMT: -12 * 3600)!))
+    }
+
+    func testInitialDayTargetsExactDateIncludingEmptyDay() {
+        let today = "2026-10-14"
+        let day = TripDay(id: "today", tripId: "ongoing", date: today, markerIds: [], chains: [])
+        let ongoing = Trip(id: "ongoing", name: "Ongoing", startDate: "2026-10-10", endDate: "2026-10-18", days: [day])
+        let completed = Trip(id: "completed", name: "Completed", startDate: "2026-10-01", endDate: "2026-10-13", days: [TripDay(id: "past", tripId: "completed", date: "2026-10-13", markerIds: [], chains: [])])
+        let future = Trip(id: "future", name: "Future", startDate: "2026-10-15", endDate: "2026-10-18", days: [TripDay(id: "future-day", tripId: "future", date: "2026-10-15", markerIds: [], chains: [])])
+        XCTAssertEqual(JourneyArchiveOrdering.initialDayID(for: ongoing, today: today), "today")
+        XCTAssertNil(JourneyArchiveOrdering.initialDayID(for: completed, today: today))
+        XCTAssertNil(JourneyArchiveOrdering.initialDayID(for: future, today: today))
+    }
+
     func testEmptySiblingPreferencesPreserveMeasuredSeparator() {
         let measured = CGRect(x: 16, y: 318, width: 370, height: 104)
         var frame = ArchiveSeparatorFrame.defaultValue

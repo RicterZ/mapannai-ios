@@ -93,6 +93,8 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             super.viewDidLoad()
             addChild(hosting)
             hosting.view.backgroundColor = .clear
+            hosting.view.insetsLayoutMarginsFromSafeArea = false
+            hosting.view.setContentHuggingPriority(.defaultLow, for: .vertical)
             hosting.view.frame = view.bounds
             hosting.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             view.addSubview(hosting.view)
@@ -222,6 +224,7 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             if coordinator?.value.dimsBackground == true { dimming.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(close))) }
             containerView.insertSubview(dimming, at: 0)
             presentedViewController.additionalSafeAreaInsets.top = detent == .compact ? 0 : (coordinator?.value.topContentInset ?? 24)
+            presentedViewController.view.insetsLayoutMarginsFromSafeArea = false
             presentedView.layer.cornerRadius = 28
             presentedView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
             presentedView.layer.cornerCurve = .continuous; presentedView.clipsToBounds = true

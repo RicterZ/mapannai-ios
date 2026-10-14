@@ -1,6 +1,43 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testOpeningTripScrollsToEmptyTodayAndReopeningRepeats() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--today-chapter-preview"]
+        app.launch()
+        let card = app.buttons["archive-trip-today-trip"]
+        for _ in 0..<2 {
+            XCTAssertTrue(card.waitForExistence(timeout: 8))
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
+            let today = app.buttons["journey-day-today-preview-0"]
+            let located = NSPredicate { _, _ in
+                today.exists && today.isHittable && today.frame.minY < 230 && today.frame.minY > 60
+            }
+            expectation(for: located, evaluatedWith: today)
+            waitForExpectations(timeout: 8)
+            XCTAssertFalse(app.buttons["day-detail-page-today-preview-0"].exists)
+            let later = app.buttons["journey-day-today-preview-2"]
+            app.swipeUp(velocity: .slow)
+            XCTAssertTrue(later.isHittable)
+            var lastFrame = later.frame
+            var stableSince = Date.now
+            let settled = NSPredicate { _, _ in
+                let frame = later.frame
+                if frame != lastFrame { lastFrame = frame; stableSince = .now }
+                return Date.now.timeIntervalSince(stableSince) > 1
+            }
+            expectation(for: settled, evaluatedWith: later)
+            waitForExpectations(timeout: 8)
+            _ = app.screenshot()
+            let shifted = later.frame.minY
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            _ = app.screenshot()
+            XCTAssertEqual(later.frame.minY, shifted, accuracy: 5)
+            app.buttons["archive-detail-close"].tap()
+        }
+    }
+
     @MainActor func testSavedPlaceCardsAboveChatAndOpenDetail() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--saved-places-preview", "-AppleLanguages", "(zh-Hans)"]
@@ -299,17 +336,19 @@ final class JourneyCardStyleUITests: XCTestCase {
         app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview"]
         app.launch()
         let cover = app.buttons["archive-trip-demo-trip"]
-        XCTAssertTrue(cover.waitForExistence(timeout: 5)); cover.tap()
+        XCTAssertTrue(cover.waitForExistence(timeout: 5))
+        cover.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         let first = app.buttons["journey-day-day-1"]
         XCTAssertTrue(first.waitForExistence(timeout: 5)); sleep(1)
-        first.swipeRight()
-        app.buttons["编辑"].tap()
-        XCTAssertTrue(app.navigationBars["编辑"].waitForExistence(timeout: 3))
-        attach(app, "Day editor from right swipe")
-        app.buttons["取消"].tap()
         first.press(forDuration: 1)
+        XCTAssertFalse(app.buttons["编辑"].exists)
+        XCTAssertFalse(app.textFields["day-editor-title"].exists)
+        // A plain button can open the day on release; return before testing its menu.
+        if app.buttons["day-map-back"].exists { app.buttons["day-map-back"].tap() }
+        app.buttons["journey-day-menu-day-1"].tap()
         app.buttons["编辑"].tap()
-        XCTAssertTrue(app.navigationBars["编辑"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["day-editor-title"].waitForExistence(timeout: 3))
+        attach(app, "Day editor from ellipsis menu")
         app.buttons["取消"].tap()
         let add = app.buttons["journey-add-day"]
         for _ in 0..<6 where !add.isHittable { app.swipeUp() }
