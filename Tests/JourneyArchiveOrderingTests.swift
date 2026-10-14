@@ -16,6 +16,20 @@ final class JourneyArchiveOrderingTests: XCTestCase {
             size: CGSize(width: 392, height: 800))
         XCTAssertEqual(clip.minY, 114)
         XCTAssertEqual(clip.maxY, 800)
+        let scrolledClip = ArchiveYearMotion.cardClip(heading: CGRect(x: 16, y: -250, width: 360, height: 70),
+            size: CGSize(width: 392, height: 800))
+        XCTAssertEqual(scrolledClip.minY, -156)
+        XCTAssertEqual(scrolledClip.maxY, 800)
+        let farHeading = CGRect(x: 16, y: -2000, width: 360, height: 70)
+        let visibleHeading = ArchiveYearMotion.visibleHeading(farHeading)
+        XCTAssertEqual(visibleHeading.maxY, -24)
+        XCTAssertEqual(ArchiveYearMotion.cardClip(heading: visibleHeading, size: CGSize(width: 392, height: 800)).minY, 0)
+        let onscreenHeading = CGRect(x: 16, y: 20, width: 360, height: 70)
+        XCTAssertEqual(ArchiveYearMotion.visibleHeading(onscreenHeading), onscreenHeading)
+        let screenHeading = ArchiveYearMotion.visibleHeading(farHeading, screenTop: -106)
+        XCTAssertEqual(screenHeading.maxY, -130)
+        XCTAssertEqual(ArchiveYearMotion.cardClip(heading: screenHeading,
+            size: CGSize(width: 392, height: 800)).minY, -106)
     }
     private func trip(_ id: String, _ start: String, _ end: String? = nil) -> Trip {
         Trip(id: id, name: id, startDate: start, endDate: end ?? start, days: [])

@@ -272,6 +272,7 @@ struct JourneyArchiveView: View {
     @State private var yearReady = false
     @State private var yearMotion: ArchiveYearMotion?
     @State private var yearViewportSize = CGSize.zero
+    @State private var yearScreenTop: CGFloat = 0
 
     private var openedTrip: Trip? { trips.first { $0.id == openedID } }
     private var independent: [Marker] {
@@ -312,7 +313,10 @@ struct JourneyArchiveView: View {
                         .opacity(yearReady && yearMotion == nil ? 1 : 0)
                         .allowsHitTesting(yearReady && yearMotion == nil && openedID == nil)
                         .accessibilityHidden(!yearReady || yearMotion != nil || openedID != nil)
-                        .task(id: year) { await prepareYearOpening(year, size: geometry.size) }
+                        .task(id: year) {
+                            await prepareYearOpening(year, size: geometry.size,
+                                screenTop: -geometry.frame(in: .global).minY)
+                        }
                 }
                 if let motion = yearMotion {
                     ArchiveYearTransition(motion: motion, reduceMotion: reduceMotion) {
@@ -717,8 +721,9 @@ struct JourneyArchiveView: View {
         .accessibilityIdentifier("archive-year-list")
     }
 
-    @MainActor private func prepareYearOpening(_ year: Int, size: CGSize) async {
+    @MainActor private func prepareYearOpening(_ year: Int, size: CGSize, screenTop: CGFloat) async {
         yearViewportSize = size
+        yearScreenTop = screenTop
         var previous = ArchiveYearLayout()
         var stableFrames = 0
         // Wait for real destination layout, not for an estimated scroll offset or a fixed delay.
@@ -788,9 +793,11 @@ struct JourneyArchiveView: View {
             tile(id: "year-\(group.year)", image: image, targetImage: targetImage, home: home, flat: flat, order: Double(index) + 0.5)
         }
         guard let heading = archiveImage(ArchiveHeading(), width: archiveHeadingFrame.width, height: archiveHeadingFrame.height) else { return nil }
+        let homeHeading = ArchiveYearMotion.visibleHeading(archiveHeadingFrame, screenTop: yearScreenTop)
+        let flatHeading = ArchiveYearMotion.visibleHeading(yearLayout.heading, screenTop: yearScreenTop)
         return ArchiveYearMotion(size: yearViewportSize, tiles: tiles, heading: heading,
-            sourceHeading: returning ? yearLayout.heading : archiveHeadingFrame,
-            destinationHeading: returning ? archiveHeadingFrame : yearLayout.heading,
+            sourceHeading: returning ? flatHeading : homeHeading,
+            destinationHeading: returning ? homeHeading : flatHeading,
             sourceSeparator: returning ? yearLayout.separator : CGRect(x: separatorFrame.midX - 20, y: separatorFrame.minY + 27, width: 40, height: 2),
             destinationSeparator: returning ? CGRect(x: separatorFrame.midX - 20, y: separatorFrame.minY + 27, width: 40, height: 2) : yearLayout.separator,
             returning: returning)

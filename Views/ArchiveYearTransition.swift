@@ -56,8 +56,15 @@ struct ArchiveYearMotion {
     let destinationSeparator: CGRect
     let returning: Bool
 
+    static func visibleHeading(_ frame: CGRect, screenTop: CGFloat = 0) -> CGRect {
+        // Stop as soon as the heading and its following gap clear the viewport top.
+        let minimumY = screenTop - 24 - frame.height
+        return CGRect(x: frame.minX, y: max(minimumY, frame.minY), width: frame.width, height: frame.height)
+    }
+
     static func cardClip(heading: CGRect, size: CGSize) -> CGRect {
-        let top = min(size.height, max(0, heading.maxY + 24))
+        // Match the live ScrollView's safe-area overflow when its heading is offscreen.
+        let top = min(size.height, max(-204, heading.maxY + 24))
         return CGRect(x: 0, y: top, width: size.width, height: max(0, size.height - top))
     }
 }
@@ -71,10 +78,12 @@ struct ArchiveYearTransition: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView {
         let root = UIView(frame: CGRect(origin: .zero, size: motion.size))
-        root.backgroundColor = .systemGroupedBackground
+        root.backgroundColor = .clear
         root.isUserInteractionEnabled = false
-        root.clipsToBounds = true
+        // The shared SwiftUI mask owns the safe-area boundary, as it does for the live list.
+        root.clipsToBounds = false
         let rack = UIView()
+        rack.backgroundColor = .clear
         rack.clipsToBounds = true
         let sourceClip = ArchiveYearMotion.cardClip(heading: motion.sourceHeading, size: motion.size)
         rack.frame = sourceClip
@@ -107,7 +116,9 @@ struct ArchiveYearTransition: UIViewRepresentable {
         root.addSubview(heading)
 
         let animator = UIViewPropertyAnimator(duration: reduceMotion ? 0.15 : 0.45,
-            timingParameters: UICubicTimingParameters(controlPoint1: CGPoint(x: 0.2, y: 0.75), controlPoint2: CGPoint(x: 0.3, y: 1)))
+            timingParameters: UICubicTimingParameters(
+                controlPoint1: CGPoint(x: 0.2, y: 0.75),
+                controlPoint2: CGPoint(x: 0.3, y: 1)))
         if reduceMotion {
             root.alpha = 0
             rack.frame = ArchiveYearMotion.cardClip(heading: motion.destinationHeading, size: motion.size)
