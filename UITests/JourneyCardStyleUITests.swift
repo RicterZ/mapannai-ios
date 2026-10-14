@@ -8,6 +8,9 @@ final class JourneyCardStyleUITests: XCTestCase {
         let year = app.buttons["archive-year-2025"]
         XCTAssertTrue(year.waitForExistence(timeout: 8))
         for _ in 0..<4 where !year.isHittable { app.swipeUp() }
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.65))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -100)))
+        _ = app.screenshot()
         let originalY = year.frame.minY
         year.tap()
         let back = app.buttons["archive-year-close"]
@@ -20,9 +23,17 @@ final class JourneyCardStyleUITests: XCTestCase {
         }, evaluatedWith: first)
         waitForExpectations(timeout: 5)
         XCTAssertFalse(app.buttons["archive-trip-demo-trip"].exists)
+        XCTAssertFalse(app.buttons["archive-settings"].exists)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Year unfolded"; attachment.lifetime = .keepAlways
         add(attachment)
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: 0.01)
+        let detailBack = app.buttons["archive-detail-close"]
+        XCTAssertTrue(detailBack.waitForExistence(timeout: 5))
+        detailBack.tap()
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        expectation(for: NSPredicate { _, _ in first.isHittable }, evaluatedWith: first)
+        waitForExpectations(timeout: 5)
         back.tap()
         expectation(for: NSPredicate { _, _ in year.exists && abs(year.frame.minY - originalY) < 3 }, evaluatedWith: year)
         waitForExpectations(timeout: 5)

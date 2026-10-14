@@ -2,6 +2,21 @@ import XCTest
 @testable import MapAnNai
 
 final class JourneyArchiveOrderingTests: XCTestCase {
+    func testYearBrowseIncludesTopAndSortsNewestFirstWithStableTies() {
+        let values = [trip("old", "2025-01-01"), trip("b", "2025-12-01"),
+                      trip("a", "2025-12-01"), trip("other", "2026-01-01")]
+        XCTAssertEqual(JourneyArchiveOrdering.trips(in: 2025, from: values).map(\.id), ["a", "b", "old"])
+        XCTAssertTrue(JourneyArchiveOrdering.trips(in: 2024, from: values).isEmpty)
+    }
+
+    func testYearPoseUsesDrawingBoundsAndClipProtectsHeading() {
+        let pose = ArchiveYearPose(slot: CGRect(x: 16, y: 300, width: 360, height: 88))
+        XCTAssertEqual(pose.frame, CGRect(x: 16, y: 300, width: 360, height: 204))
+        let clip = ArchiveYearMotion.cardClip(heading: CGRect(x: 16, y: 20, width: 360, height: 70),
+            size: CGSize(width: 392, height: 800))
+        XCTAssertEqual(clip.minY, 114)
+        XCTAssertEqual(clip.maxY, 800)
+    }
     private func trip(_ id: String, _ start: String, _ end: String? = nil) -> Trip {
         Trip(id: id, name: id, startDate: start, endDate: end ?? start, days: [])
     }
