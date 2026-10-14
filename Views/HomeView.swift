@@ -24,6 +24,7 @@ struct HomeView: View {
     @State private var journeyPath: [JourneyDestination] = []
     @State private var journeyNavigationWidth: CGFloat = 0
     @State private var visibleDayPanelHeight: CGFloat = 0
+    @State private var settledDayDetailHeight: CGFloat = 0
     @State private var sheetDetent: ItineraryDetent = .half
     @State private var routeReturnDetent: ItineraryDetent?
     @State private var journeyPanelMoving = true
@@ -157,8 +158,15 @@ struct HomeView: View {
                                         onClose: { setJourneyDetent(.compact) }, onMap: { setJourneyDetent(.compact) })
                                 }
                                 .ignoresSafeArea(.container, edges: .bottom)
-                                // Keep the paged lists at half height while the panel clips toward compact.
-                                .frame(height: detailHeight, alignment: .top)
+                                // Clip during panel motion without resizing List and correcting its offset every frame.
+                                .frame(height: journeyPanelMoving && settledDayDetailHeight > 0 ? settledDayDetailHeight : detailHeight, alignment: .top)
+                                .onAppear { settledDayDetailHeight = detailHeight }
+                                .onChange(of: detailHeight) { _, height in
+                                    if !journeyPanelMoving { settledDayDetailHeight = height }
+                                }
+                                .onChange(of: journeyPanelMoving) { _, moving in
+                                    if !moving { settledDayDetailHeight = detailHeight }
+                                }
                                 .fullScreenCover(item: $editingTrip) { TripEditorView(store: store, trip: $0) }
                               }
                                 .opacity(dayDetailProgress)
