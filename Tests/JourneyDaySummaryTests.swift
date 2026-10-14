@@ -16,11 +16,25 @@ final class JourneyDaySummaryTests: XCTestCase {
         XCTAssertEqual(summary.unplannedPlaces, ["D"])
         XCTAssertEqual(summary.coverURL?.host, "example.invalid")
         XCTAssertEqual(summary.coverTitle, "B")
+        XCTAssertEqual(summary.photos.map(\.title), ["B"])
         XCTAssertEqual(summary.timing, "0项时间安排"); XCTAssertNil(summary.transport)
         day.chains = []
         XCTAssertTrue(JourneyDaySummary(day: day, index: 0, markers: markers).routePreviews.isEmpty)
         XCTAssertEqual(JourneyDaySummary(day: day, index: 0, markers: markers).unplannedPlaces, ["D", "C", "B", "A"])
         XCTAssertEqual(JourneyDaySummary(day: day, index: 0, markers: markers).places, "D · C · B · A")
+    }
+    func testDayPhotoStripFollowsRouteOrderAndDeduplicatesURLs() {
+        var places = markers
+        places[0].content.headerImage = "https://example.invalid/a.jpg"
+        places[1].content.headerImage = "https://example.invalid/b.jpg"
+        places[2].content.headerImage = "https://example.invalid/a.jpg"
+        places[3].content.headerImage = "https://example.invalid/d.jpg"
+        let day = TripDay(id: "d", tripId: "t", date: "2026-10-01", markerIds: ["d", "c", "b", "a"], chains: [["c", "a"], ["b"]])
+        let summary = JourneyDaySummary(day: day, index: 0, markers: places)
+        XCTAssertEqual(summary.photos.map(\.title), ["C", "B", "D"])
+        XCTAssertEqual(Set(summary.photos.map(\.url)).count, 3)
+        XCTAssertEqual(JourneyDaySummary(day: day, index: 0, markers: places,
+            excludingPhotos: [URL(string: "https://example.invalid/a.jpg")!]).photos.map(\.title), ["B", "D"])
     }
     func testChaptersSkipCoverAndPreviouslySelectedPhotos() {
         var places = markers

@@ -20,6 +20,7 @@ struct JourneyDaysContents: View {
         return store.markers.filter { ids.contains($0.id) }
     }
     @State private var nativeDayFrames: [String: CGRect] = [:]
+    @State private var photoTitles: [String: String] = [:]
     @State private var targetedDayID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editing = false
@@ -60,16 +61,18 @@ struct JourneyDaysContents: View {
                 Section {
                 ZStack(alignment: .topTrailing) {
                 Button {
+                    pendingInitialDayID = nil
                     if let onSelectDay { onSelectDay(day) }
                     else { store.select(trip: trip, day: day); store.beginDayMapBrowsing() }
                 } label: {
-                    dayRow(day, index: index, summary: summaries[index])
+                    dayRow(day, index: index, summary: summaries[index]) { photoTitles[day.id] = $0 }
                         .contentShape(Rectangle())
                         .background(GeometryReader { geometry in
                             Color.clear.preference(key: NativeDayFrames.self, value: [day.id: geometry.frame(in: .global)])
                         })
                 }.buttonStyle(.plain).disabled(day.id.hasPrefix("pending-day-"))
                     .accessibilityIdentifier("journey-day-\(day.id)")
+                    .accessibilityValue(photoTitles[day.id] ?? "")
                 Menu { dayActions(day) } label: {
                     Image(systemName: "ellipsis").font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -161,7 +164,7 @@ struct JourneyDaysContents: View {
                 var transaction = Transaction(); transaction.disablesAnimations = true
                 withTransaction(transaction) { reader.scrollTo(target, anchor: .top) }
             }
-            .simultaneousGesture(DragGesture(minimumDistance: 1).onChanged { _ in
+            .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { _ in
                 pendingInitialDayID = nil
             })
             .sensoryFeedback(.selection, trigger: targetedDayID) { _, newValue in newValue != nil }
@@ -213,9 +216,9 @@ struct JourneyDaysContents: View {
         return true
     }
 
-    private func dayRow(_ day: TripDay, index: Int, summary: JourneyDaySummary) -> some View {
+    private func dayRow(_ day: TripDay, index: Int, summary: JourneyDaySummary, onPhotoSelection: @escaping (String) -> Void) -> some View {
         JourneyDayCardContent(day: day, index: index, summary: summary,
-            loadPhotos: archiveColorIndex == nil || archiveHeaderVisible)
+            loadPhotos: archiveColorIndex == nil || archiveHeaderVisible, onPhotoSelection: onPhotoSelection)
             .contentShape(Rectangle())
     }
 
@@ -317,7 +320,7 @@ struct JourneyArchiveView: View {
                             .modifier(ArchiveDetailScrollEdges())
                             .scrollContentBackground(.hidden)
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
-                            .allowsHitTesting(cardInList)
+                            .allowsHitTesting(detailVisible && !closing)
                             .zIndex(Double(openingIndex))
                             .task(id: trip.id) { await beginTransition(trip) }
                         if transitionStarted {
@@ -326,7 +329,6 @@ struct JourneyArchiveView: View {
                                 expanded: detailVisible, handedOff: cardInList, reduceMotion: reduceMotion) {
                                     if detailVisible && !closing {
                                         cardInList = true
-                                        store.select(trip: trip, focus: false)
                                     } else if closing {
                                         var transaction = Transaction(); transaction.disablesAnimations = true
                                         withTransaction(transaction) {
@@ -608,6 +610,8 @@ struct JourneyArchiveView: View {
 
     private func open(_ trip: Trip, index: Int, viewportHeight: CGFloat) {
         guard openedID == nil, let frame = cardFrames[trip.id] else { return }
+        // A later animation completion must not overwrite an early day selection.
+        store.select(trip: trip, focus: false)
         transferSeparatorFrame = separatorFrame
         openingFrame = frame
         slotViewportHeight = viewportHeight

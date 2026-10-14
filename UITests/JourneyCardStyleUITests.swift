@@ -1,6 +1,50 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testJourneyPhotoCarouselSwitchesOnHorizontalSwipe() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 8))
+        trip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
+        let day = app.buttons["journey-day-day-2"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5))
+        for _ in 0..<4 where day.frame.minY > 300 { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(day.isHittable)
+        let initialTitle = day.value as? String
+        XCTAssertNotNil(initialTitle)
+        XCTAssertFalse(initialTitle?.isEmpty ?? true)
+        Thread.sleep(forTimeInterval: 2)
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/mapannai-carousel-before.png"))
+        print("Carousel day frame: \(day.frame), title: \(initialTitle ?? "nil")")
+        let center = day.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        center.press(forDuration: 0.05, thenDragTo: center.withOffset(CGVector(dx: -130, dy: 2)))
+        let changed = NSPredicate { _, _ in day.value as? String != initialTitle }
+        expectation(for: changed, evaluatedWith: day)
+        waitForExpectations(timeout: 4)
+        XCTAssertFalse(app.buttons["day-detail-date-day-2"].exists)
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/mapannai-carousel-after.png"))
+        center.press(forDuration: 0.05, thenDragTo: center.withOffset(CGVector(dx: 130, dy: 2)))
+        expectation(for: NSPredicate { _, _ in day.value as? String == initialTitle }, evaluatedWith: day)
+        waitForExpectations(timeout: 4)
+    }
+
+    @MainActor func testFirstDayTapWithSmallFingerMovementOpensDetail() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--today-chapter-preview"]
+        app.launch()
+        let card = app.buttons["archive-trip-today-trip"]
+        XCTAssertTrue(card.waitForExistence(timeout: 8))
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
+        let today = app.buttons["journey-day-today-preview-0"]
+        XCTAssertTrue(today.waitForExistence(timeout: 5))
+        let point = today.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5))
+        point.press(forDuration: 0.05, thenDragTo: point.withOffset(CGVector(dx: 2, dy: 2)))
+        XCTAssertTrue(app.buttons["day-detail-date-today-preview-0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["phone-itinerary-panel"].exists)
+    }
+
     @MainActor func testOpeningTripScrollsToEmptyTodayAndReopeningRepeats() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--today-chapter-preview"]

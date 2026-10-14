@@ -1643,6 +1643,7 @@ struct DayEditorDraft: Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--journey-card-style-preview") {
             // Read-only fixture; photos come from the developer's local preview server.
             markers[0].content.headerImage = "http://localhost:8766/tokyo.jpg"
+            markers[4].content.headerImage = "http://localhost:8766/park.jpg"
             markers[3].content.headerImage = "http://localhost:8766/street.jpg"
             trips[0].days[1].title = nil
             let summaryIDs = ["demo-2", "demo-3", "demo-4", "demo-0", "demo-1"]
