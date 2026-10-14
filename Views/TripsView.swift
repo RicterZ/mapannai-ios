@@ -45,6 +45,7 @@ struct DayDetailPage: View {
                 ForEach(days) { date in
                     DayContentsView(store: store, day: date, cachedDistances: cachedDistances, showsDaySummary: true, showsEditingAction: false, showsEditingDone: false, editingPlaces: $editingPlaces)
                         .listStyle(.insetGrouped).scrollContentBackground(.hidden)
+                        .ignoresSafeArea(.container, edges: .bottom)
                         .contentMargins(.top, 8, for: .scrollContent)
                         .background(Color(uiColor: .systemBackground))
                         .accessibilityIdentifier("day-detail-page-" + date.id)
@@ -224,6 +225,7 @@ struct DayEditingDoneButton: View {
 
 struct DayContentsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .title2) private var dayTitleSize: CGFloat = 24
     @ObservedObject var store: AppStore
     let day: TripDay
     var cachedDistances: [String: Double] = [:]
@@ -253,10 +255,11 @@ struct DayContentsView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 5) {
                         if let title = day.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text(title).font(.title2.weight(.semibold)).foregroundStyle(.primary)
+                            Text(title).font(.system(size: dayTitleSize, weight: .semibold)).foregroundStyle(.primary)
                         }
                         Text("\(day.markerIds.count) 个地点 · \(day.chains.count) 条路线").font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 16)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 12))
                     .accessibilityIdentifier("day-detail-summary")
@@ -634,6 +637,7 @@ struct DayContentsView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, minHeight: 44)
+                        .padding(.leading, 16)
                         .contentShape(Rectangle())
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("route-heading-\(index)")
@@ -747,10 +751,9 @@ private struct RoutePlaceSelectionButton: View {
         routeIndex.map { "route-\($0)" } ?? "day"
     }
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var titleHeight: CGFloat = 0
-    @State private var titleLineHeight: CGFloat = 0
-    @State private var displayedTitleHeight: CGFloat = 0
-    private var titleUsesLargeType: Bool { titleLineHeight > 0 && titleHeight <= titleLineHeight * 1.25 }
+    @ScaledMetric(relativeTo: .body) private var identityHeight: CGFloat = 36
+    @ScaledMetric(relativeTo: .caption2) private var addressHeight: CGFloat = 14
+    private var informationHeight: CGFloat { identityHeight + 6 + addressHeight }
     var body: some View {
         VStack(spacing: 0) {
         if showsIdentity { HStack(alignment: editing ? .center : .top, spacing: 9) {
@@ -781,37 +784,34 @@ private struct RoutePlaceSelectionButton: View {
             } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
-                    PlaceIconView(emoji: marker.icon.emoji, size: displayedTitleHeight > 0 ? displayedTitleHeight : 36)
-                        .frame(width: displayedTitleHeight > 0 ? displayedTitleHeight : 36,
-                               height: displayedTitleHeight > 0 ? displayedTitleHeight : 36, alignment: .top)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(marker.title).font(editing ? .system(.body, design: .default).weight(.semibold) : (titleUsesLargeType ? .title2.weight(.semibold) : .subheadline.weight(.semibold))).foregroundStyle(.primary)
-                            .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .center, spacing: 8) {
+                            PlaceIconView(emoji: marker.icon.emoji, size: editing ? 24 : identityHeight)
+                                .frame(width: editing ? 24 : identityHeight, height: editing ? 24 : identityHeight)
+                            Group {
+                                if editing {
+                                    Text(marker.title).font(.body.weight(.semibold)).lineLimit(2)
+                                } else {
+                                    Text(marker.title).font(.system(size: 18, weight: .semibold))
+                                        .lineLimit(1).truncationMode(.tail)
+                                        .frame(height: identityHeight, alignment: .leading)
+                                }
+                            }
+                            .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { displayedTitleHeight = $0 }
-                            .background {
-                                if !editing {
-                                    Text(marker.title).font(.subheadline.weight(.semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                                        .hidden().onGeometryChange(for: CGFloat.self) { $0.size.height } action: { titleHeight = $0 }
-                                }
-                            }
-                            .background {
-                                if !editing {
-                                    Text("Ag").font(.subheadline.weight(.semibold)).fixedSize()
-                                        .hidden().onGeometryChange(for: CGFloat.self) { $0.size.height } action: { titleLineHeight = $0 }
-                                }
-                            }
                             .accessibilityAddTraits(.isButton)
                             .accessibilityIdentifier("\(accessibilityPrefix)-marker-\(marker.id)").accessibilityValue(ordinal)
                             .accessibilityAction(named: "编辑行程", editPlaces)
+                        }
                         if !editing, let address = marker.content.address, !address.isEmpty {
                             Text(address).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                                .frame(height: addressHeight, alignment: .leading)
                                 .accessibilityIdentifier("\(accessibilityPrefix)-address-\(marker.id)")
                         }
-                        if !editing && typeSize.isAccessibilitySize { scheduleButton.hidden().allowsHitTesting(false) }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    if !editing && !typeSize.isAccessibilitySize { scheduleButton.hidden().allowsHitTesting(false).layoutPriority(1) }
+                    }.frame(maxWidth: .infinity, minHeight: editing ? 0 : informationHeight, alignment: .topLeading)
+                    if !editing && !typeSize.isAccessibilitySize { scheduleButton.layoutPriority(1) }
                 }
+                if !editing && typeSize.isAccessibilitySize { scheduleButton }
                 if !editing {
                     if marker.content.headerImage.flatMap(imageURL) != nil {
                         Color.clear.frame(height: 140)
@@ -832,9 +832,6 @@ private struct RoutePlaceSelectionButton: View {
             }
             .contentShape(Rectangle())
             }.buttonStyle(DayPlaceUnhighlightedButtonStyle())
-            .overlay(alignment: .topTrailing) {
-                if !editing { scheduleButton }
-            }
         } }
             if editing, showsSchedule, let stop {
                 Button(action: editSchedule) {
@@ -876,7 +873,7 @@ private struct RoutePlaceSelectionButton: View {
                     }
                 }.monospacedDigit().fixedSize()
                     .padding(.horizontal, 10).padding(.vertical, 8)
-                    .frame(minWidth: 44, minHeight: 44, alignment: .topTrailing)
+                    .frame(minWidth: 44, minHeight: informationHeight, alignment: .center)
                     .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
                     .contentShape(Rectangle())
             }.allowsHitTesting(false).accessibilityLabel("游览安排")

@@ -81,6 +81,9 @@ final class JourneyCardStyleUITests: XCTestCase {
         XCTAssertGreaterThan(cover.frame.width, cover.frame.height)
         XCTAssertFalse(app.buttons["day-schedule-demo-3"].exists)
         XCTAssertEqual(unplanned.value as? String, "")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Inline address layout review"; screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     @MainActor func testEditingHidesRouteCountAndActions() {
