@@ -121,6 +121,11 @@ struct JourneyDaysContents: View {
                 }
             }
             Section {
+                if !store.demo {
+                    Link("天气数据：Open-Meteo", destination: TripWeatherService.attributionURL)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
                 JourneyActionGroup(compact: true) {
                     if !unscheduledPlaces.isEmpty || !store.demo {
                         Button { store.beginAddingPlace(tripID: trip.id) } label: {
@@ -217,8 +222,12 @@ struct JourneyDaysContents: View {
     }
 
     private func dayRow(_ day: TripDay, index: Int, summary: JourneyDaySummary, onPhotoSelection: @escaping (String) -> Void) -> some View {
-        JourneyDayCardContent(day: day, index: index, summary: summary,
-            loadPhotos: archiveColorIndex == nil || archiveHeaderVisible, onPhotoSelection: onPhotoSelection)
+        let memberIDs = Set(day.chains.flatMap { $0 } + day.markerIds)
+        return JourneyDayCardContent(day: day, index: index, summary: summary,
+            loadPhotos: archiveColorIndex == nil || archiveHeaderVisible, onPhotoSelection: onPhotoSelection,
+            weatherCoordinate: TripWeatherLocation.representative(store.markers.filter {
+                memberIDs.contains($0.id)
+            }.map { TripWeatherLocation.Point(id: $0.id, coordinate: $0.coordinates) }), loadWeather: !store.demo)
             .contentShape(Rectangle())
     }
 

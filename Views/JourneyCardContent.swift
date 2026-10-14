@@ -1,5 +1,6 @@
 import SwiftUI
 import ImageIO
+import CoreLocation
 
 struct JourneyDayPhoto: Identifiable, Equatable {
     let url: URL
@@ -238,6 +239,9 @@ struct JourneyDayCardContent: View {
     let summary: JourneyDaySummary
     var loadPhotos = true
     var onPhotoSelection: (String) -> Void = { _ in }
+    var weatherCoordinate: Coordinate? = nil
+    var loadWeather = true
+    @State private var dayWeather: TripDayWeather?
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var photo: UIImage?
     @State private var loadedURL: URL?
@@ -291,7 +295,12 @@ struct JourneyDayCardContent: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
+            .background {
+                if let code = dayWeather?.weatherCode, let style = JourneyWeatherStyle(code: code) {
+                    JourneyWeatherBackground(style: style)
+                } else { Color(uiColor: .systemBackground) }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(.primary)
@@ -304,6 +313,32 @@ struct JourneyDayCardContent: View {
             if summary.photos.count > 1, summary.photos.indices.contains(selectedPhotoIndex) {
                 onPhotoSelection(summary.photos[selectedPhotoIndex].title)
             }
+        }
+        .task(id: "\(day.date)|\(String(describing: weatherCoordinate))|\(loadWeather)") {
+            dayWeather = nil
+            guard loadWeather, let coordinate = weatherCoordinate else { return }
+            let cached = await TripWeatherService.shared.cachedWeather(for: day.date, at: coordinate)
+            guard !Task.isCancelled else { return }
+            dayWeather = cached
+            // Exclude clearly distant dates before requesting destination time-zone metadata.
+            let nearWindow = [-86400.0, 0, 86400].contains {
+                TripWeatherService.isInForecastWindow(day.date, now: Date.now.addingTimeInterval($0), timeZone: .current)
+            }
+            guard nearWindow else { return }
+            do {
+                let storedZone = await TripWeatherService.shared.cachedTimeZone(at: coordinate)
+                let zone: TimeZone
+                if let storedZone { zone = storedZone }
+                else {
+                    let placemarks = try await CLGeocoder().reverseGeocodeLocation(
+                        CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+                    guard let destinationZone = placemarks.first?.timeZone else { return }
+                    zone = destinationZone
+                }
+                let result = try await TripWeatherService.shared.forecast(for: day.date, at: coordinate, timeZone: zone)
+                try Task.checkCancellation()
+                if let result, result != dayWeather { dayWeather = result }
+            } catch { /* Weather is optional; leave the original white card on failure. */ }
         }
         .task(id: loadPhotos ? summary.coverURL : nil) {
             guard loadPhotos, let url = summary.coverURL else { return }
