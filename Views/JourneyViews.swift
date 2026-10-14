@@ -667,6 +667,7 @@ struct JourneyArchiveView: View {
                         Color.clear.preference(key: ArchiveYearLayout.self,
                             value: ArchiveYearLayout(heading: proxy.frame(in: .named("journey-archive"))))
                     })
+                    .opacity(openedID == nil || !transitionStarted ? 1 : 0)
                 VStack(spacing: 24) {
                     JourneyArchiveYearCard(year: year, count: values.count).frame(height: 204)
                         .background(GeometryReader { proxy in
