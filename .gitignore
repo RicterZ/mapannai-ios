@@ -11,3 +11,4 @@ Screenshots/
 Config/Local.xcconfig
 
 dist/
+output/
