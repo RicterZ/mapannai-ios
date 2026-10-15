@@ -65,8 +65,7 @@ struct JourneyDaysContents: View {
                     if let onSelectDay { onSelectDay(day) }
                     else { store.select(trip: trip, day: day); store.beginDayMapBrowsing() }
                 } label: {
-                    // Ablation B: keep photo/carousel behavior, freeze title feedback to the page.
-                    dayRow(day, index: index, summary: summaries[index]) { _ in }
+                    dayRow(day, index: index, summary: summaries[index]) { photoTitles[day.id] = $0 }
                         .contentShape(Rectangle())
                         .background(GeometryReader { geometry in
                             Color.clear.preference(key: NativeDayFrames.self, value: [day.id: geometry.frame(in: .global)])
