@@ -264,6 +264,7 @@ struct JourneyDayCardContent: View {
                 Text(theme).font(.title2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Group {
             if summary.photos.count > 1 {
                 JourneyPhotoCarousel(photos: summary.photos, loadPhotos: loadPhotos, selectedIndex: $selectedPhotoIndex)
             } else if summary.coverURL != nil {
@@ -284,6 +285,10 @@ struct JourneyDayCardContent: View {
                         .opacity(displayPhoto != nil && (loadedURL == summary.coverURL || cachedPhoto != nil) ? 1 : 0)
                 }
             }
+            }
+            .anchorPreference(key: WeatherPhotoBounds.self, value: .bounds) {
+                summary.coverURL != nil || summary.photos.count > 1 ? $0 : nil
+            }
             if summary.count == 0 {
                 Text("还没有安排地点").font(.subheadline).foregroundStyle(.secondary)
             } else {
@@ -295,10 +300,12 @@ struct JourneyDayCardContent: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background {
+            .backgroundPreferenceValue(WeatherPhotoBounds.self) { bounds in
+                GeometryReader { geometry in
                 if let code = dayWeather?.weatherCode, let style = JourneyWeatherStyle(code: code) {
-                    JourneyWeatherBackground(style: style)
+                    JourneyWeatherBackground(style: style, skyTop: bounds.map { geometry[$0].maxY } ?? 0)
                 } else { Color(uiColor: .systemBackground) }
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
@@ -376,6 +383,13 @@ struct JourneyDayCardContent: View {
         formatter.dateFormat = "MM/dd·EEE"
         return formatter
     }()
+}
+
+private struct WeatherPhotoBounds: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        if let next = nextValue() { value = next }
+    }
 }
 
 /// A preview, not a second full itinerary: keep separate routes and unordered members distinct.
