@@ -282,13 +282,17 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             }
             var target = view.hitTest(point, with: nil)
             while let current = target {
-                if let scroll = current as? UIScrollView, scroll.contentSize.height > scroll.bounds.height {
+                if let scroll = current as? UIScrollView, Self.scrollsVertically(scroll) {
                     if velocity.y > 0 && scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 { verticalScroll = scroll; return true }
                     return false
                 }
                 target = current.superview
             }
             return false
+        }
+        /// Short lists still bounce vertically; compare against List bounds, not the visible panel height.
+        private static func scrollsVertically(_ scroll: UIScrollView) -> Bool {
+            !scroll.isPagingEnabled && (scroll.alwaysBounceVertical || scroll.contentSize.height > scroll.bounds.height)
         }
         func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             other is UIPanGestureRecognizer
@@ -319,8 +323,7 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
         }
         @objc private func close() { coordinator?.close() }
         private func pauseContentScrolling(in view: UIView) {
-            if let scroll = view as? UIScrollView, scroll.isScrollEnabled,
-               !scroll.isPagingEnabled, scroll.contentSize.height > scroll.bounds.height {
+            if let scroll = view as? UIScrollView, scroll.isScrollEnabled, Self.scrollsVertically(scroll) {
                 pausedScrolls.append((scroll, scroll.contentOffset))
                 // Cancel the content pan so movement is applied only to the panel.
                 scroll.isScrollEnabled = false
@@ -334,7 +337,23 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             }
             pausedScrolls = []
         }
+        #if DEBUG
+        private let dragTrace = PanelDragTrace()
+        #endif
         @objc private func pan(_ gesture: UIPanGestureRecognizer) {
+            #if DEBUG
+            let tracing = PanelDragTrace.enabled && presentedView != nil
+            if tracing, let view = presentedView {
+                if gesture.state == .began { dragTrace.begin(root: view) }
+                dragTrace.event("pan-\(gesture.state.rawValue)-pre ty=\(Int(gesture.translation(in: containerView).y)) header=\(draggingHeader) handoff=\(verticalScroll != nil)")
+            }
+            defer {
+                if tracing {
+                    dragTrace.event("pan-\(gesture.state.rawValue)-post")
+                    if gesture.state == .ended || gesture.state == .cancelled { dragTrace.end() }
+                }
+            }
+            #endif
             guard keyboardHeight == 0 else { restoreContentScrolling(); return }
             switch gesture.state {
             case .began:
@@ -403,3 +422,74 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
     }
 }
 private extension Notification.Name { static let edgePanelDismissed = Notification.Name("MapAnNai.edgePanelDismissed") }
+
+#if DEBUG
+/// `--panel-drag-trace`: prints panel and scroll geometry on every pan event and every frame it changes.
+private final class PanelDragTrace: NSObject {
+    static let enabled = ProcessInfo.processInfo.arguments.contains("--panel-drag-trace")
+    private weak var root: UIView?
+    private var scrolls: [UIScrollView] = []
+    private var link: CADisplayLink?
+    private var start: CFTimeInterval = 0
+    private var last: [String] = []
+    private var frameIndex = 0
+
+    func begin(root: UIView) {
+        end()
+        self.root = root
+        start = CACurrentMediaTime()
+        frameIndex = 0
+        scrolls = []
+        collect(root)
+        print("[PanelDrag] begin scrolls=\(scrolls.count)")
+        for (index, scroll) in scrolls.enumerated() {
+            print("[PanelDrag]   #\(index) \(type(of: scroll)) paging=\(scroll.isPagingEnabled) bounceV=\(scroll.alwaysBounceVertical) size=\(Int(scroll.contentSize.width))x\(Int(scroll.contentSize.height)) bounds=\(Int(scroll.bounds.width))x\(Int(scroll.bounds.height))")
+        }
+        last = snapshot()
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+    func event(_ name: String) {
+        guard root != nil else { return }
+        let now = snapshot()
+        print(String(format: "[PanelDrag] %7.1fms %@ %@", (CACurrentMediaTime() - start) * 1000, name, now.joined(separator: " | ")))
+        last = now
+    }
+    func end() {
+        link?.invalidate(); link = nil
+        if root != nil { print("[PanelDrag] end") }
+        root = nil; scrolls = []
+    }
+    @objc private func tick() {
+        frameIndex += 1
+        let now = snapshot()
+        guard now != last else { return }
+        print(String(format: "[PanelDrag] %7.1fms frame%d %@", (CACurrentMediaTime() - start) * 1000, frameIndex, now.joined(separator: " | ")))
+        last = now
+        if frameIndex > 360 { end() }
+    }
+    private func collect(_ view: UIView) {
+        if let scroll = view as? UIScrollView, scroll.window != nil { scrolls.append(scroll) }
+        for child in view.subviews { collect(child) }
+    }
+    private func snapshot() -> [String] {
+        guard let root else { return [] }
+        let panel = root.layer.presentation()?.frame ?? root.frame
+        var parts = ["panel y=\(fmt(panel.minY)) h=\(fmt(panel.height))"]
+        for (index, scroll) in scrolls.enumerated() where scroll.window != nil {
+            let origin = scroll.convert(CGPoint.zero, to: root)
+            guard origin.x > -root.bounds.width / 2, origin.x < root.bounds.width / 2 else { continue }
+            var part = "#\(index) y=\(fmt(origin.y)) h=\(fmt(scroll.bounds.height)) off=\(fmt(scroll.contentOffset.y)) inset=\(fmt(scroll.adjustedContentInset.top)) insetB=\(fmt(scroll.adjustedContentInset.bottom)) en=\(scroll.isScrollEnabled ? 1 : 0) pan=\(scroll.panGestureRecognizer.state.rawValue)"
+            if let list = scroll as? UICollectionView,
+               let cell = list.visibleCells.min(by: { $0.frame.minY < $1.frame.minY }) {
+                part += " cell=\(fmt(cell.convert(CGPoint.zero, to: root).y))"
+            }
+            parts.append(part)
+        }
+        return parts
+    }
+    private func fmt(_ value: CGFloat) -> String { String(format: "%.1f", value) }
+}
+#endif

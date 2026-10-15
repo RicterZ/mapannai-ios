@@ -160,7 +160,9 @@ struct HomeView: View {
                             if let trip = store.trip, let day = store.day {
                               GeometryReader { panelGeometry in
                                 let halfHeight = (geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom) * 0.5
-                                let detailHeight = max(panelGeometry.size.height, halfHeight - 14 - panelGeometry.safeAreaInsets.bottom)
+                                // Include the bottom safe area: an ignoresSafeArea extension past a frozen frame
+                                // shrinks while the panel moves and resizes the paged TabView.
+                                let detailHeight = max(panelGeometry.size.height + panelGeometry.safeAreaInsets.bottom, halfHeight - 14)
                                 NavigationStack {
                                     DayDetailPage(store: store, trip: trip, day: day, showsNavigation: false,
                                         closeIdentifier: "map-day-close", mapIdentifier: "map-day-map",
