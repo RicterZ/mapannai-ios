@@ -94,6 +94,7 @@ struct JourneyDaySummary {
         Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
     fileprivate static func cover(trip: Trip, lookup: [String: Place]) -> URL? {
+        if let selected = trip.coverImage.flatMap(imageURL) { return selected }
         let ids = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
             .flatMap { $0.chains.flatMap { $0 } + $0.markerIds } + (trip.markerIds ?? [])
         return ids.lazy.compactMap { lookup[$0]?.headerImage.flatMap(imageURL) }.first
@@ -326,13 +327,16 @@ struct JourneyDayCardContent: View {
                         .overlay {
                             if let photo = displayPhoto, loadedURL == summary.coverURL || cachedPhoto != nil {
                                 GeometryReader { geometry in
+                                    let inset: CGFloat = 8
                                     Image(uiImage: photo).resizable().scaledToFill()
+                                        .frame(width: max(1, geometry.size.width - inset * 2),
+                                               height: max(1, geometry.size.height - inset * 2))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .shadow(color: .black.opacity(0.16), radius: 6, x: 0, y: 2)
                                         .frame(width: geometry.size.width, height: geometry.size.height)
-                                        .clipped()
                                 }
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
                         .accessibilityHidden(true)
                     Text(summary.coverTitle ?? "").font(.caption2).foregroundStyle(.secondary)
                         .opacity(displayPhoto != nil && (loadedURL == summary.coverURL || cachedPhoto != nil) ? 1 : 0)

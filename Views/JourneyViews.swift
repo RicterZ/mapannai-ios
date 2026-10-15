@@ -134,7 +134,7 @@ struct JourneyDaysContents: View {
                         Button { editing = true } label: {
                             Label("编辑旅途", systemImage: "pencil")
                         }
-                            .disabled(store.saving).accessibilityIdentifier("journey-edit-trip")
+                            .accessibilityIdentifier("journey-edit-trip")
                     }
                 }.listRowBackground(Color.clear).listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -222,12 +222,10 @@ struct JourneyDaysContents: View {
     }
 
     private func dayRow(_ day: TripDay, index: Int, summary: JourneyDaySummary, onPhotoSelection: @escaping (String) -> Void) -> some View {
-        let memberIDs = Set(day.chains.flatMap { $0 } + day.markerIds)
         return JourneyDayCardContent(day: day, index: index, summary: summary,
             loadPhotos: archiveColorIndex == nil || archiveHeaderVisible, onPhotoSelection: onPhotoSelection,
-            weatherPoints: store.markers.filter {
-                memberIDs.contains($0.id)
-            }.map { TripWeatherLocation.Point(id: $0.id, coordinate: $0.coordinates) }, loadWeather: !store.demo)
+            weatherPoints: TripWeatherLocation.points(day: day, trip: trip, markers: store.markers),
+            loadWeather: !store.demo)
             .contentShape(Rectangle())
     }
 
@@ -443,7 +441,7 @@ struct JourneyArchiveView: View {
                     Button { editing = trip } label: {
                         Image(systemName: "square.and.pencil").font(.system(size: 20, weight: .regular))
                             .frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).disabled(store.saving)
+                    }.buttonStyle(.plain)
                         .accessibilityLabel("编辑旅途").accessibilityIdentifier("journey-edit-trip")
                 }
             }.journeyBareBackground

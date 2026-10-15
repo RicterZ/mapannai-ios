@@ -7,6 +7,16 @@ enum TripWeatherLocation {
         let coordinate: Coordinate
     }
 
+    static func points(day: TripDay, trip: Trip, markers: [Marker]) -> [Point] {
+        let ids = Set(day.markerIds + day.chains.flatMap { $0 })
+        if !ids.isEmpty {
+            return markers.filter { ids.contains($0.id) }.map { Point(id: $0.id, coordinate: $0.coordinates) }
+        }
+        guard let first = trip.selectedDestinations.first, first.isValid else { return [] }
+        return [Point(id: "destination/" + first.coordinateKey,
+            coordinate: Coordinate(latitude: first.latitude, longitude: first.longitude))]
+    }
+
     static func representative(_ input: [Point], radiusMeters: Double = 30_000) -> Coordinate? {
         guard radiusMeters.isFinite, radiusMeters > 0 else { return nil }
         var seen = Set<String>()

@@ -1,8 +1,25 @@
 import Foundation
 
 enum Coordinates {
+    private static let regions: [[Double]] = [
+        [79.446200,49.220400,96.330000,42.889900], [109.687200,54.141500,135.000200,39.374200],
+        [73.124600,42.889900,124.143255,29.529700], [82.968400,29.529700,97.035200,26.718600],
+        [97.025300,29.529700,124.367395,20.414096], [107.975793,20.414096,111.744104,17.871542]
+    ]
+    private static let exclusions: [[Double]] = [
+        [119.921265,25.398623,122.497559,21.785006], [101.865200,22.284000,106.665000,20.098800],
+        [106.452500,21.542200,108.051000,20.487800], [109.032300,55.817500,119.127000,50.325700],
+        [127.456800,55.817500,137.022700,49.557400], [131.266200,44.892200,137.022700,42.569200],
+        [73.124600,35.398637,77.948114,29.529700]
+    ]
+
     static func inChina(_ p: Coordinate) -> Bool {
-        (72.004...137.8347).contains(p.longitude) && (0.8293...55.8271).contains(p.latitude)
+        guard p.longitude.isFinite, p.latitude.isFinite else { return false }
+        // Same approximate service region as the web client, not an exact border.
+        func contains(_ r: [Double]) -> Bool {
+            p.longitude >= r[0] && p.longitude <= r[2] && p.latitude >= r[3] && p.latitude <= r[1]
+        }
+        return regions.contains(where: contains) && !exclusions.contains(where: contains)
     }
     static func gcj(_ p: Coordinate) -> Coordinate {
         guard inChina(p) else { return p }

@@ -18,6 +18,11 @@ final class TripCreationTests: XCTestCase {
         let result = app.buttons["trip-destination-result-0"]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         capture(app, "New trip destination results")
+        search.typeText("\n")
+        XCTAssertTrue(search.exists)
+        XCTAssertEqual(search.value as? String, "京都")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertTrue(result.exists)
         result.tap()
         XCTAssertTrue(app.buttons["trip-destination-remove-0"].exists)
         search.tap(); search.typeText("东京")

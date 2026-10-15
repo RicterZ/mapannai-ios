@@ -42,6 +42,17 @@ struct AIMessage: Codable, Equatable {
         try c.encodeIfPresent(name, forKey: .name)
     }
 
+    var interactionSummary: String? {
+        guard role == "tool", ["ask_choice", "ask_datetime", "preview_itinerary"].contains(name ?? ""),
+              let data = content?.data(using: .utf8),
+              let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        switch result["status"] as? String {
+        case "selected": return result["summary"] as? String ?? "已提交选择"
+        case "timed_out": return "超时未选择，AI 暂拟"
+        case "unsupported": return "当前客户端不支持，请文字补充"
+        default: return nil
+        }
+    }
     var createdMarkerIDs: [String] {
         guard role == "tool", ["create_marker", "plan_trip_day"].contains(name ?? ""),
               let bytes = content?.data(using: .utf8),
@@ -80,6 +91,7 @@ struct AIMessage: Codable, Equatable {
 enum AIToolLabel {
     static func text(_ name: String) -> String {
         let labels = [
+            "ask_choice": "选择偏好", "ask_datetime": "选择日期时间", "preview_itinerary": "预览行程",
             "change_title": "修改会话标题", "list_markers": "查看已收藏地点",
             "create_marker": "收藏地点", "update_marker": "更新地点", "delete_marker": "删除地点",
             "search_places": "搜索地点", "search_place": "搜索地点", "get_place_details": "查询地点详情",
@@ -99,15 +111,17 @@ enum AIToolLabel {
 
 struct AIEvent: Decodable {
     var type: String
+    var prompt: AIInteractionPrompt?
     var title: String?
     var text: String?
     var name: String?
     var message: AIMessage?
     var error: String?
-    enum CodingKeys: String, CodingKey { case type, title, text, name, message }
+    enum CodingKeys: String, CodingKey { case type, title, text, name, message, prompt }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         type = try c.decode(String.self, forKey: .type)
+        prompt = try c.decodeIfPresent(AIInteractionPrompt.self, forKey: .prompt)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         text = try c.decodeIfPresent(String.self, forKey: .text)
         name = try c.decodeIfPresent(String.self, forKey: .name)
@@ -127,6 +141,7 @@ struct AIContext: Codable {
     }
 }
 struct AIRequest: Encodable {
+    var supportsInteractions = true
     var settings: AIConfiguration
     var messages: [AIMessage]
     var context: AIContext
@@ -181,6 +196,7 @@ struct AIConversation: Codable, Identifiable {
     var id = UUID()
     var title = "新会话"
     var messages: [AIMessage] = []
+    var interactions: [AIInteractionRecord]? = nil
 }
 actor AIHistoryRepository {
     private var revisions: [String: Int] = [:]
@@ -211,6 +227,11 @@ actor AIHistoryRepository {
     @Published var configuration = AIConfiguration()
     @Published var conversations: [AIConversation] = []
     @Published var activeID: UUID?
+    @Published private(set) var interaction: AIInteractionPrompt?
+    @Published private(set) var interactionSubmitting = false
+    @Published private(set) var interactionSubmitted = false
+    @Published private(set) var interactionError: String?
+    private var interactionTask: Task<Void, Never>?
     @Published var partial = ""
     @Published var status = ""
     @Published var error: String?
@@ -279,6 +300,7 @@ actor AIHistoryRepository {
         conversations.removeAll { $0.id == activeID }; activeID = conversations.first?.id; persist()
     }
     func stop() {
+        clearInteraction()
         preservePartialReply()
         endBackgroundExecution()
         task?.cancel(); task = nil; generation = UUID()
@@ -328,6 +350,7 @@ actor AIHistoryRepository {
             guard generation == revision else { return }
             preservePartialReply()
             endBackgroundExecution()
+            clearInteraction()
             busy = false; task = nil; partial = ""
             queueRefresh(store: store, ids: []) // Includes partial writes and unexpected disconnects.
         }
@@ -381,16 +404,68 @@ actor AIHistoryRepository {
     private func receive(_ event: AIEvent, id: UUID, revision: UUID, store: AppStore?) {
         guard generation == revision, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         switch event.type {
+        case "interaction":
+            clearInteraction(); interaction = event.prompt; status = "等待你的选择…"
+            if let prompt = event.prompt {
+                if conversations[index].interactions == nil { conversations[index].interactions = [] }
+                conversations[index].interactions?.append(AIInteractionRecord(id: prompt.id, input: prompt.input, messageIndex: conversations[index].messages.count))
+                persist()
+            }
         case "title": updateConversationTitle(event.title, id: id)
         case "delta": partial += event.text ?? ""; status = "正在回复…"
         case "status": status = event.name.map { "正在调用 · " + AIToolLabel.text($0) } ?? "正在处理行程…"
         case "message":
             guard let message = event.message else { return }
+            if message.role == "tool" {
+                if let prompt = interaction, message.name == prompt.input.kind,
+                   let data = message.content?.data(using: .utf8),
+                   let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   result["status"] as? String == "selected", let value = result["selection"],
+                   let bytes = try? JSONSerialization.data(withJSONObject: value),
+                   let selection = try? JSONDecoder().decode(AIInteractionSelection.self, from: bytes) {
+                    updateInteractionRecord(prompt.id) { $0.selection = selection }
+                }
+                clearInteraction()
+            }
             if message.role == "assistant" { partial = "" }
             conversations[index].messages.append(message); persist()
             if let store, !message.createdMarkerIDs.isEmpty { queueRefresh(store: store, ids: message.createdMarkerIDs) }
         case "changed": if let store { queueRefresh(store: store, ids: []) }
         default: break
+        }
+    }
+    private func updateInteractionRecord(_ id: String, update: (inout AIInteractionRecord) -> Void) {
+        for index in conversations.indices {
+            if let record = conversations[index].interactions?.firstIndex(where: { $0.id == id }) {
+                update(&conversations[index].interactions![record]); persist(); return
+            }
+        }
+    }
+    private func clearInteraction() {
+        if let prompt = interaction {
+            updateInteractionRecord(prompt.id) { $0.ended = true }
+        }
+        interactionTask?.cancel(); interactionTask = nil
+        interaction = nil; interactionSubmitting = false; interactionSubmitted = false; interactionError = nil
+    }
+    func submitInteraction(_ selection: AIInteractionSelection, store: AppStore) {
+        guard busy, let prompt = interaction, !interactionSubmitting, !interactionSubmitted else { return }
+        do { try prompt.validate(selection) } catch { interactionError = error.localizedDescription; return }
+        let revision = generation
+        let service = AIPlannerService(client: store.api)
+        interactionSubmitting = true; interactionError = nil
+        interactionTask = Task {
+            do {
+                try await service.submitInteraction(prompt, selection: selection)
+                guard generation == revision, interaction?.id == prompt.id else { return }
+                updateInteractionRecord(prompt.id) { $0.selection = selection }
+                interactionSubmitted = true
+            } catch {
+                guard generation == revision, interaction?.id == prompt.id, !Task.isCancelled else { return }
+                interactionError = error.localizedDescription
+            }
+            guard generation == revision, interaction?.id == prompt.id else { return }
+            interactionSubmitting = false; interactionTask = nil
         }
     }
     func updateConversationTitle(_ title: String?, id: UUID) {

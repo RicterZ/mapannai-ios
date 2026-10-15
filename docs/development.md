@@ -438,3 +438,21 @@ Trip day cards query Open-Meteo using the spherical mean of the largest 30km-rad
 Archive detail rows keep their native List layout. A noninteractive UIKit probe locates each cell content view and applies a keyed Core Animation `transform.translation.y` animation: 28pt, 0.3 seconds ease-in/ease-out on entrance. The independent archive header is not translated. SwiftUI retains the opacity transition. Late attachment during entrance starts from the translated position; settled newly attached cells do not replay entrance. Reduced Motion skips translation, and dismantling clears the owned animation and translation. Real images, carousel shadows, weather and initial day scrolling remain enabled. Hibiki build 382 was manually reported smooth after photo/height ablation; no Instruments frame-time conclusion is claimed.
 
 旅途封面不参与每日章节照片排除：封面选中的照片仍可出现在当天卡片中；日内及跨日期照片继续按展示顺序去重。
+
+编辑旅途的“封面图”沿用“旅行日期”标题样式，三列正方形预览覆盖旅途直接成员及各日成员/路线引用的有效地点封面；未手选使用自动首图，无地点照片展示中性空状态。选择沿用 PUT trips/:id 的 coverImage URL，恢复自动选择发送 null；编辑乐观更新，失败回滚并保留封面草稿。旅途封面渲染优先有效 coverImage，否则使用原自动首图；日照片不受影响。
+
+旅途编辑入口和有效表单的保存按钮不依赖全局 saving 禁用。连续旅途编辑同步提交本地状态后立即关闭，复用行程写队列串行请求；旧响应仅在本地仍是对应提交快照时合并日期，全部写完才刷新。队列失败按逆序回滚，保留最近编辑草稿以便恢复；新建旅途仍保留原防重复提交预留。
+
+新旅途目的地搜索结果通过 TextField 下方的浮动中性背景菜单展示，相对输入框向左扩展24pt，右边缘跟随输入框，不覆盖左侧搜索图标中心，不占用表单布局；最多224pt高、可独立滚动，失焦或选择后收起，错误与重试在同一菜单内。沿用400ms防抖、取消过时搜索、既有省市接口和多目的地选择。
+
+目的地搜索字段使用 UITextField，Return delegate 返回 false，不提交查询、不收起键盘、不触发焦点切换；搜索仍由输入变化防抖驱动。
+
+编辑旅途复用创建时的目的地搜索与多选，回填 destinations（兼容旧 destination），编辑允许空列表以兼容旧旅行。保存校验最多20项、有效坐标及重复项，PUT提交 destinations（空数组显式清空），同步乐观更新 destinations/destination；失败回滚并保留目的地草稿。
+
+当天成员及路线标点均为空时，天气位置使用旅途 selectedDestinations 的第一项目的地（兼容旧单项 destination），不对多个目的地聚类；无目的地保持白色。有标点但数据未加载或坐标无效时不降级到目的地，避免临时位置切换。沿用现有天气接口与缓存。
+
+## AI interaction cards
+
+Chat requests declare `supportsInteractions: true`. NDJSON `interaction` events contain an ephemeral prompt ID/token, epoch-millisecond deadline and typed input (`ask_choice`, `ask_datetime`, `preview_itinerary`). Native inline cards submit the selected value to the authenticated `POST /api/ai/interactions`; the original chat stream remains open. Time/date values are Gregorian destination-local wall time without UTC conversion. Selection validation, duplicate submission guards, server deadlines and HTTP 409 expiry are handled without replaying requests. Stop, connection changes, tool results and stream termination clear the prompt and cancel pending submission; generation/prompt identity reject stale callbacks. Prompt tokens are never persisted; sanitized card inputs, message positions and confirmed selections persist separately in conversation history and are never sent as chat messages. Historical cards cannot resubmit. Cards reuse TripRangeCalendar for single/range dates and show no countdown or timeout-duration copy. The server deadline remains authoritative; extending it to 60 seconds requires a server update. Unsupported inputs offer text fallback. Preview approval is not write authorization.
+
+`Coordinates.inChina` shares the web client's six approximate service-region rectangles and seven exclusion rectangles, with finite-coordinate validation. The predicate gates GCJ conversion, not API provider selection; server-selected providers remain unchanged. This is an approximate service region, not an exact border.

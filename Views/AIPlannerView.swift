@@ -71,6 +71,11 @@ struct AIPlannerView: View {
     private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && planner.ready && configurationReady }
     private var messages: [AIMessage] { planner.conversation?.messages ?? [] }
 
+    private func interactionCard(_ record: AIInteractionRecord) -> some View {
+        AIInteractionCard(prompt: planner.interaction?.id == record.id ? planner.interaction! : record.prompt,
+                          planner: planner, store: store, record: record).id(record.id)
+    }
+
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
@@ -96,6 +101,9 @@ struct AIPlannerView: View {
                                     .font(.body).foregroundStyle(.secondary).padding(.top, 28)
                             }
                             ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
+                                ForEach(planner.conversation?.interactions?.filter { $0.messageIndex == index } ?? []) { record in
+                                    interactionCard(record)
+                                }
                                 if message.role == "user", let content = message.content, !content.isEmpty {
                                     HStack {
                                         Spacer(minLength: 40)
@@ -121,6 +129,9 @@ struct AIPlannerView: View {
                             }
                             if !planner.partial.isEmpty {
                                 assistant(planner.partial, width: min(720, geometry.size.width) - 40, copy: false)
+                            }
+                            ForEach(planner.conversation?.interactions?.filter { $0.messageIndex >= messages.count } ?? []) { record in
+                                interactionCard(record)
                             }
                             if planner.busy {
                                 HStack(spacing: 8) {
@@ -320,6 +331,9 @@ private struct AIToolProcess: View {
                     Label(AIToolLabel.text(call.function.name) + (result == nil ? " · 结果待确认" : " · 已返回结果"),
                           systemImage: result == nil ? "ellipsis" : "checkmark")
                         .font(.caption).foregroundStyle(.secondary)
+                    if let summary = result?.interactionSummary {
+                        Text(summary).font(.caption).foregroundStyle(.secondary)
+                    }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
             }.padding(.top, 8)

@@ -75,7 +75,7 @@ final class AIPlannerTests: XCTestCase {
             messages: [AIMessage(role: "user", content: "安排东京三天"), AIMessage(role: "assistant", content: nil)],
             context: AIContext(localDate: "2026-10-01", tripId: nil, dayId: nil))
         let value = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
-        XCTAssertEqual(Set(value.keys), ["settings", "messages", "context"])
+        XCTAssertEqual(Set(value.keys), ["settings", "messages", "context", "supportsInteractions"])
         let messages = try XCTUnwrap(value["messages"] as? [[String: Any]])
         XCTAssertEqual(messages[0]["role"] as? String, "user")
         XCTAssertTrue(messages[1]["content"] is NSNull)
@@ -177,5 +177,33 @@ extension AIPlannerTests {
         AIStreamProtocol.status = 401
         do { try await service.stream(request) { _ in }; XCTFail("Must reject authentication failure") }
         catch { XCTAssertTrue(error.localizedDescription.contains("token")) }
+    }
+}
+
+extension AIPlannerTests {
+    func testInteractionSubmissionUsesExistingAuthenticatedEndpoint() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [AIStreamProtocol.self]
+        let service = AIPlannerService(client: APIClient(baseURL: "https://map.invalid", token: "map-token"), sessionConfiguration: config)
+        let data = Data(#"{"id":"prompt","token":"ephemeral-test","deadline":2000000000000,"input":{"kind":"ask_choice","question":"偏好","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}],"multiple":false,"maxSelections":1}}"#.utf8)
+        let prompt = try JSONDecoder().decode(AIInteractionPrompt.self, from: data)
+        AIStreamProtocol.payload = Data()
+        AIStreamProtocol.status = 204
+        AIStreamProtocol.inspect = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://map.invalid/api/ai/interactions")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer map-token")
+        }
+        defer { AIStreamProtocol.inspect = nil; AIStreamProtocol.status = 200 }
+        try await service.submitInteraction(prompt, selection: .choices(["a"]))
+        AIStreamProtocol.status = 409
+        do {
+            try await service.submitInteraction(prompt, selection: .choices(["a"]))
+            XCTFail("Expired interaction must fail")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("已结束")) }
+        let request = AIRequest(settings: AIConfiguration(), messages: [], context: AIContext(localDate: "2026-10-15", tripId: nil, dayId: nil))
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        XCTAssertEqual(json?["supportsInteractions"] as? Bool, true)
+        XCTAssertEqual(AIMessage(role: "tool", content: #"{"status":"timed_out"}"#, name: "ask_choice").interactionSummary, "超时未选择，AI 暂拟")
     }
 }

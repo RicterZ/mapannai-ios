@@ -18,6 +18,7 @@ struct TripCreationView: View {
     @ScaledMetric(relativeTo: .body) private var compactInputSize = 17
     @FocusState private var nameFocused: Bool
     @State private var name = ""
+    @State private var coverImage: String?
     @State private var emoji = "✈️"
     @State private var destinations: [TripDestination] = []
     @State private var range = TripDateRange()
@@ -46,7 +47,7 @@ struct TripCreationView: View {
     private var compact: Bool { nameFocused || calendarVisible }
     private var minimumDays: Int { trip?.minimumEditableDayCount ?? 1 }
     private var canCreate: Bool {
-        (trip != nil || (!destinations.isEmpty && destinations.count <= 20 && destinations.allSatisfy(\.isValid))) && range.dayCount >= minimumDays && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && range.isValid && !store.saving && !submitted
+        (trip != nil || !destinations.isEmpty) && destinations.count <= 20 && destinations.allSatisfy(\.isValid) && range.dayCount >= minimumDays && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && range.isValid && !submitted
     }
     private var pageColor: Color { Color(uiColor: .systemBackground) }
 
@@ -62,14 +63,16 @@ struct TripCreationView: View {
             navigation
             ScrollView {
                 VStack(alignment: .leading, spacing: compact ? 18 : 28) {
-                    if trip == nil {
                     TripDestinationPicker(settings: store.settings, demo: store.demo, selection: $destinations,
                         compact: compact, onSearchFocus: { nameFocused = false; calendarVisible = false })
-                        .frame(height: calendarVisible ? 0 : nil).clipped()
+                        .frame(height: calendarVisible ? 0 : nil)
+                        .opacity(calendarVisible ? 0 : 1)
+                        .allowsHitTesting(!calendarVisible)
                         .accessibilityHidden(calendarVisible)
-                    }
+                        .zIndex(10)
                     identity
                     dates
+                    if trip != nil { coverPicker }
                     if let error { Text(error).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("trip-create-error") }
                 }
                 .padding(.horizontal, 20)
@@ -99,9 +102,11 @@ struct TripCreationView: View {
             guard !initialized else { return }
             initialized = true
             if let initial {
+                coverImage = initial.coverImage
                 name = initial.name; emoji = initial.emoji; destinations = initial.destinations
                 range = TripDateRange(savedStart: initial.start, savedEnd: initial.end)
             } else if let trip {
+                coverImage = trip.coverImage
                 name = trip.name; emoji = trip.emoji ?? "✈️"; destinations = trip.selectedDestinations
                 range = TripDateRange(savedStart: .fromDay(trip.startDate), savedEnd: .fromDay(trip.endDate))
             }
@@ -196,6 +201,56 @@ struct TripCreationView: View {
         }
     }
 
+    private var coverPlaces: [Marker] {
+        guard let trip else { return [] }
+        let ids = Set((trip.markerIds ?? []) + trip.days.flatMap { $0.markerIds + $0.chains.flatMap { $0 } })
+        return store.markers.filter { ids.contains($0.id) && $0.content.headerImage.flatMap(imageURL) != nil }
+            .sorted { $0.id < $1.id }
+    }
+
+    private var coverPicker: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                heading("封面图")
+                Spacer()
+                Button {
+                    coverImage = TripCoverSelection.toggled(current: coverImage,
+                        firstPhoto: coverPlaces.first?.content.headerImage)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: coverImage == nil ? "checkmark.circle.fill" : "circle")
+                        Text("自动选择")
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(coverImage == nil ? .primary : .secondary)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("trip-cover-auto")
+                    .accessibilityAddTraits(coverImage == nil ? .isSelected : [])
+            }
+            if coverPlaces.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "photo").font(.system(size: 28, weight: .light))
+                    Text("旅途内暂无地点封面图").font(.subheadline)
+                    Text("为地点添加封面后，可在这里选择").font(.caption)
+                }
+                .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 28)
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                    ForEach(coverPlaces) { marker in
+                        Button { coverImage = marker.content.headerImage } label: {
+                            TripCoverThumbnail(url: marker.content.headerImage.flatMap(imageURL),
+                                selected: coverImage == marker.content.headerImage)
+                        }.buttonStyle(.plain).accessibilityLabel(marker.title)
+                            .accessibilityAddTraits(coverImage == marker.content.headerImage ? .isSelected : [])
+                            .accessibilityIdentifier("trip-cover-" + marker.id)
+                    }
+                }
+            }
+        }
+    }
+
     private var dates: some View {
         VStack(alignment: .leading, spacing: 14) {
             if !nameFocused { heading("旅行日期") }
@@ -251,15 +306,17 @@ struct TripCreationView: View {
     private func create() {
         guard canCreate else { return }
         let value = TripSaveDraft(id: initial?.id ?? UUID(), trip: trip,
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines), start: range.apiStart, end: range.apiEnd, emoji: emoji, destinations: destinations)
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines), start: range.apiStart, end: range.apiEnd, emoji: emoji, destinations: destinations, coverImage: coverImage)
         if store.saveTripInBackground(value) {
             submitted = true; nameFocused = false; dismiss()
         } else { error = store.errorMessage }
     }
 }
 
-private struct TripRangeCalendar: View {
+struct TripRangeCalendar: View {
     @Binding var range: TripDateRange
+    var singleDate = false
+    var showsFooter = true
     let onDone: () -> Void
     @State private var month: Date = .now
     private var calendar: Calendar { range.calendar }
@@ -294,6 +351,7 @@ private struct TripRangeCalendar: View {
                     else { Color.clear.frame(height: 44).accessibilityHidden(true) }
                 }
             }
+            if showsFooter {
             HStack(alignment: .center) {
                 Text(range.choosingEnd ? "再选结束日期；同一天也可。" : "选择出发日期，再选择结束日期。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -301,6 +359,7 @@ private struct TripRangeCalendar: View {
                 Button("完成", action: onDone).font(.subheadline.weight(.semibold))
                     .frame(minWidth: 44, minHeight: 44).buttonStyle(.plain)
                     .accessibilityIdentifier("trip-range-done")
+            }
             }
         }.padding(.horizontal, 14).padding(.bottom, 12)
             .onAppear { month = calendar.dateInterval(of: .month, for: range.start)?.start ?? range.start }
@@ -316,7 +375,10 @@ private struct TripRangeCalendar: View {
     private func dayButton(_ day: Date) -> some View {
         let endpoint = calendar.isDate(day, inSameDayAs: range.start) || calendar.isDate(day, inSameDayAs: range.end)
         let between = day > range.start && day < range.end
-        return Button { range.select(day) } label: {
+        return Button {
+            if singleDate { range.start = day; range.end = day; range.choosingEnd = false }
+            else { range.select(day) }
+        } label: {
             Text("\(calendar.component(.day, from: day))").font(.body)
                 .foregroundStyle(endpoint ? Color(uiColor: .systemBackground) : Color(uiColor: .label))
                 .frame(maxWidth: .infinity, minHeight: 44)
@@ -337,5 +399,47 @@ private struct TripRangeCalendar: View {
             .accessibilityValue(endpoint ? "日期范围端点" : between ? "已选范围内" : "")
             .accessibilityAddTraits(endpoint || between ? [.isSelected] : [])
             .accessibilityIdentifier("trip-range-day-\(TripDateRange.apiDate(day, calendar: calendar).dayString)")
+    }
+}
+
+private struct TripCoverThumbnail: View {
+    let url: URL?
+    let selected: Bool
+    @State private var image: UIImage?
+    var body: some View {
+        Color(uiColor: .secondarySystemGroupedBackground).aspectRatio(1, contentMode: .fit)
+            .overlay {
+                GeometryReader { geometry in
+                    if let image {
+                        Image(uiImage: image).resizable().scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                    } else {
+                        Image(systemName: "photo").foregroundStyle(.tertiary)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? Color.primary : .clear, lineWidth: 3) }
+            .overlay(alignment: .topTrailing) {
+                if selected {
+                    Image(systemName: "checkmark.circle.fill").symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .black).padding(7)
+                }
+            }
+            .task(id: url) {
+                image = nil
+                guard let url else { return }
+                let loaded = await JourneyPhotoCache.shared.image(for: url)
+                guard !Task.isCancelled else { return }
+                image = loaded
+            }
+    }
+}
+
+// Nil means automatic; leaving automatic mode selects the first available thumbnail.
+enum TripCoverSelection {
+    static func toggled(current: String?, firstPhoto: String?) -> String? {
+        current == nil ? firstPhoto : nil
     }
 }

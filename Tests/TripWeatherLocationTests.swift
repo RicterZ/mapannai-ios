@@ -2,6 +2,33 @@ import XCTest
 @testable import MapAnNai
 
 final class TripWeatherLocationTests: XCTestCase {
+    func testEmptyDayUsesOnlyFirstDestinationIncludingLegacyDestination() {
+        let day = TripDay(id: "d", tripId: "t", date: "2026-10-15", markerIds: [], chains: [])
+        let first = TripDestination(name: "东京", latitude: 35.6762, longitude: 139.6503)
+        let second = TripDestination(name: "北京", latitude: 39.9, longitude: 116.4)
+        var trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: day.date, days: [day])
+        XCTAssertTrue(TripWeatherLocation.points(day: day, trip: trip, markers: []).isEmpty)
+        trip.destination = first
+        let fallback = TripWeatherLocation.points(day: day, trip: trip, markers: [])
+        XCTAssertEqual(fallback.first?.coordinate, Coordinate(latitude: first.latitude, longitude: first.longitude))
+        trip.destinations = [first, second]
+        XCTAssertEqual(TripWeatherLocation.points(day: day, trip: trip, markers: []), fallback)
+        trip.destinations = []
+        XCTAssertTrue(TripWeatherLocation.points(day: day, trip: trip, markers: []).isEmpty)
+    }
+    func testDayMembersAndRouteMembersTakePriorityOverDestination() {
+        var day = TripDay(id: "d", tripId: "t", date: "2026-10-15", markerIds: ["p"], chains: [])
+        let trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: day.date, days: [day],
+            destinations: [TripDestination(name: "东京", latitude: 35, longitude: 139)])
+        let marker = Marker(id: "p", coordinates: Coordinate(latitude: 31, longitude: 121),
+            content: MarkerContent(id: "p", title: "Point", markdownContent: ""))
+        XCTAssertEqual(TripWeatherLocation.points(day: day, trip: trip, markers: [marker]).first?.coordinate, marker.coordinates)
+        day.markerIds = []; day.chains = [["p"]]
+        XCTAssertEqual(TripWeatherLocation.points(day: day, trip: trip, markers: [marker]).first?.coordinate, marker.coordinates)
+        XCTAssertTrue(TripWeatherLocation.points(day: day, trip: trip, markers: []).isEmpty,
+            "Unresolved day members must not silently change weather location")
+    }
+
     func testAsyncLocationCacheTracksCoordinatesAndMembership() async {
         let cache = TripWeatherLocationCache()
         let first = point("a", 31.2, 121.4)

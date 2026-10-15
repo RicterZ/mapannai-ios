@@ -2,6 +2,27 @@ import XCTest
 @testable import MapAnNai
 
 final class JourneyDaySummaryTests: XCTestCase {
+    func testAutomaticCoverToggleSelectsFirstPhotoWhenUnchecked() {
+        XCTAssertEqual(TripCoverSelection.toggled(current: nil, firstPhoto: "first.jpg"), "first.jpg")
+        XCTAssertNil(TripCoverSelection.toggled(current: "chosen.jpg", firstPhoto: "first.jpg"))
+        XCTAssertNil(TripCoverSelection.toggled(current: nil, firstPhoto: nil))
+    }
+
+    @MainActor func testSelectedTripCoverOverridesAutomaticWithoutChangingDayPhotos() {
+        var places = markers
+        places[0].content.headerImage = "https://example.invalid/day.jpg"
+        let day = TripDay(id: "d", tripId: "t", date: "2026-10-01", markerIds: ["a"], chains: [])
+        var trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: day.date, days: [day])
+        let cache = JourneyChapterCache()
+        let automatic = cache.snapshot(trip: trip, markers: places)
+        trip.coverImage = "https://example.invalid/chosen.jpg"
+        let selected = cache.snapshot(trip: trip, markers: places)
+        XCTAssertEqual(selected.coverURL?.lastPathComponent, "chosen.jpg")
+        XCTAssertEqual(selected.summaries[0].photos, automatic.summaries[0].photos)
+        trip.coverImage = nil
+        XCTAssertEqual(cache.snapshot(trip: trip, markers: places).coverURL, automatic.coverURL)
+    }
+
     @MainActor func testChapterCacheReusesSnapshotsAndIgnoresNotesAndCoordinates() {
         let cache = JourneyChapterCache()
         let day = TripDay(id: "d", tripId: "t", date: "2026-10-01", markerIds: ["a", "b"], chains: [["a", "b"]])

@@ -9,6 +9,7 @@ struct TripSaveDraft: Identifiable {
     let end: Date
     let emoji: String
     var destinations: [TripDestination] = []
+    var coverImage: String? = nil
 }
 
 struct DayEditorDraft: Identifiable {
@@ -489,12 +490,12 @@ struct DayEditorDraft: Identifiable {
     @discardableResult
     func saveTripInBackground(_ value: TripSaveDraft, using suppliedClient: APIClient? = nil) -> Bool {
         guard !value.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入旅行名称"; return false }
+        guard (value.trip != nil || !value.destinations.isEmpty), value.destinations.count <= 20,
+              value.destinations.allSatisfy(\.isValid),
+              Set(value.destinations.map(\.coordinateKey)).count == value.destinations.count else {
+            errorMessage = "请搜索并选择有效且不重复的目的地省市"; return false
+        }
         if value.trip == nil {
-            guard !value.destinations.isEmpty, value.destinations.count <= 20,
-                  value.destinations.allSatisfy(\.isValid),
-                  Set(value.destinations.map(\.coordinateKey)).count == value.destinations.count else {
-                errorMessage = "请搜索并选择目的地省市"; return false
-            }
             guard value.start.dayString <= value.end.dayString else { errorMessage = "结束日期不能早于开始日期"; return false }
             guard TripDateRange(savedStart: value.start, savedEnd: value.end).isValid else {
                 errorMessage = "一次最多创建 367 天，请缩短日期范围"; return false
@@ -504,19 +505,31 @@ struct DayEditorDraft: Identifiable {
         var optimistic: Trip?
         if let trip = value.trip {
             guard let previous else { errorMessage = "旅行已不存在"; return false }
-            do { optimistic = try previous.edited(name: value.name, emoji: value.emoji, start: value.start, end: value.end) }
+            do {
+                optimistic = try previous.edited(name: value.name, emoji: value.emoji, start: value.start, end: value.end)
+                optimistic?.coverImage = value.coverImage
+                optimistic?.destinations = value.destinations
+                optimistic?.destination = value.destinations.first
+            }
             catch { errorMessage = error.localizedDescription; return false }
             guard previous.minimumEditableDayCount == trip.minimumEditableDayCount else {
                 errorMessage = "行程天数已变化，请重新打开编辑"; return false
             }
         }
-        guard reserveEditorSave() else { return false }
+        if value.trip != nil {
+            guard !demo else { errorMessage = "当前为只读示例，无法保存。"; return false }
+            guard canEditItinerary else { errorMessage = "请等待当前保存完成"; return false }
+            saving = true; dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
+            failedSaveAction = nil; canResumeFailedSave = false
+        } else if !reserveEditorSave() { return false }
         let revision = connectionRevision, client = suppliedClient ?? api
         if let optimistic, let index = trips.firstIndex(where: { $0.id == optimistic.id }) { trips[index] = optimistic }
-        Task {
-            let ok = await perform(reserved: true, expectedRevision: revision) { _ in
+        let submittedTrip = optimistic
+        let operation: () async throws -> Void = {
                 var body: [String: Any] = ["name": value.name, "startDate": value.start.dayString, "emoji": value.emoji]
                 if let trip = value.trip {
+                    body["coverImage"] = value.coverImage.map { $0 as Any } ?? NSNull()
+                    body["destinations"] = value.destinations.map(\.requestBody)
                     let path = "trips/\(APIClient.id(trip.id))"
                     let latest: Trip = try await client.request(path)
                     guard revision == self.connectionRevision else { throw CancellationError() }
@@ -541,7 +554,8 @@ struct DayEditorDraft: Identifiable {
                     }
                     guard revision == self.connectionRevision else { throw CancellationError() }
                     try await client.mutate(path, method: "PUT", body: ["endDate": value.end.dayString])
-                    if revision == self.connectionRevision, let index = self.trips.firstIndex(where: { $0.id == trip.id }) {
+                    if revision == self.connectionRevision, let index = self.trips.firstIndex(where: { $0.id == trip.id }),
+                       self.trips[index] == submittedTrip {
                         self.trips[index].days = savedDays.sorted { $0.date < $1.date }
                     }
                 } else {
@@ -558,7 +572,21 @@ struct DayEditorDraft: Identifiable {
                     }
                     if value.emoji != "✈️" { try await client.mutate("trips/\(APIClient.id(created.id))", method: "PUT", body: ["emoji": value.emoji]) }
                 }
-            }
+        }
+        if value.trip != nil {
+            enqueueItineraryWrite(using: client, rollback: { [weak self] in
+                guard let self else { return }
+                if let previous, let index = self.trips.firstIndex(where: { $0.id == previous.id }) {
+                    self.trips[index] = previous
+                }
+                if !self.canResumeFailedSave {
+                    self.retainFailedSave { [weak self] in self?.tripSaveRecovery = value }
+                }
+            }, operation: operation)
+            return true
+        }
+        Task {
+            let ok = await perform(reserved: true, expectedRevision: revision) { _ in try await operation() }
             guard revision == connectionRevision else { return }
             if ok { pendingCreatedTrips[value.id] = nil }
             else {

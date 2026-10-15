@@ -443,7 +443,7 @@ final class BackgroundSaveTests: XCTestCase {
                 data = Data(buffer.prefix(max(0, count)))
             }
             let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-            XCTAssertNil(body["destinations"], "Editing must retain destination metadata")
+            if body["name"] != nil { XCTAssertNotNil(body["destinations"]) }
             if request.httpMethod == "POST" {
                 let date = try XCTUnwrap(body["date"] as? String)
                 if date == "2026-10-08", failFourth { return (500, Data(#"{"error":"添加失败"}"#.utf8)) }
@@ -482,17 +482,112 @@ final class BackgroundSaveTests: XCTestCase {
         XCTAssertEqual(server.days[0].chains, trip.days[0].chains)
         XCTAssertEqual(Array(server.days.prefix(2).map(\.id)), trip.days.map(\.id))
     }
+    @MainActor func testEditingDestinationsUpdatesImmediatelyAndRetainsFailedDraft() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        let trip = store.trips[0]
+        let city = TripDestination(name: "东京都", latitude: 35.6762, longitude: 139.6503)
+        let draft = TripSaveDraft(trip: trip, name: trip.name, start: .fromDay(trip.startDate),
+            end: .fromDay(trip.endDate), emoji: trip.emoji ?? "✈️", destinations: [city])
+        DelayedSaveProtocol.handler = { request in
+            if request.httpMethod == "GET" { return (200, try JSONEncoder().encode(trip)) }
+            var data = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                data = Data(buffer.prefix(max(0, count)))
+            }
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            let values = try XCTUnwrap(body["destinations"] as? [[String: Any]])
+            XCTAssertEqual(values.first?["name"] as? String, city.name)
+            return (500, Data(#"{"error":"test failure"}"#.utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.saveTripInBackground(draft, using: client()))
+        XCTAssertEqual(store.trips[0].selectedDestinations, [city])
+        try await settle(store)
+        XCTAssertEqual(store.trips[0], trip)
+        store.resumeFailedSave()
+        XCTAssertEqual(store.tripSaveRecovery?.destinations, [city])
+    }
+
+    @MainActor func testConsecutiveTripCoverEditsPublishImmediatelyAndWriteInOrder() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        let trip = store.trips[0]
+        var writes: [String] = []
+        DelayedSaveProtocol.handler = { request in
+            if request.httpMethod == "GET" { return (200, try JSONEncoder().encode(trip)) }
+            var data = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                data = Data(buffer.prefix(max(0, count)))
+            }
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            if let cover = body["coverImage"] as? String { writes.append(cover) }
+            return (200, Data("{}".utf8))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        func draft(_ trip: Trip, _ cover: String) -> TripSaveDraft {
+            TripSaveDraft(trip: trip, name: trip.name, start: .fromDay(trip.startDate), end: .fromDay(trip.endDate),
+                emoji: trip.emoji ?? "✈️", coverImage: cover)
+        }
+        XCTAssertTrue(store.saveTripInBackground(draft(trip, "first"), using: client()))
+        XCTAssertEqual(store.trips[0].coverImage, "first")
+        XCTAssertTrue(store.saveTripInBackground(draft(store.trips[0], "second"), using: client()))
+        XCTAssertEqual(store.trips[0].coverImage, "second")
+        try await settle(store)
+        XCTAssertEqual(writes, ["first", "second"])
+    }
+
+    @MainActor func testTripCoverSelectionAndAutomaticResetUseExistingAPI() async throws {
+        for cover: String? in ["https://example.invalid/chosen.jpg", nil] {
+            let store = store(), sample = AppStore(settings: Settings(), demo: true)
+            store.trips = sample.trips
+            let trip = store.trips[0]
+            var sawCoverWrite = false
+            DelayedSaveProtocol.handler = { request in
+                if request.httpMethod == "GET" { return (200, try JSONEncoder().encode(trip)) }
+                var data = request.httpBody ?? Data()
+                if let stream = request.httpBodyStream {
+                    stream.open(); defer { stream.close() }
+                    var buffer = [UInt8](repeating: 0, count: 4096)
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    data = Data(buffer.prefix(max(0, count)))
+                }
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                if body["name"] != nil {
+                    sawCoverWrite = true
+                    if let cover { XCTAssertEqual(body["coverImage"] as? String, cover) }
+                    else { XCTAssertTrue(body["coverImage"] is NSNull) }
+                }
+                return (200, Data("{}".utf8))
+            }
+            defer { DelayedSaveProtocol.handler = nil }
+            let draft = TripSaveDraft(trip: trip, name: trip.name, start: .fromDay(trip.startDate),
+                end: .fromDay(trip.endDate), emoji: trip.emoji ?? "✈️", coverImage: cover)
+            XCTAssertTrue(store.saveTripInBackground(draft, using: client()))
+            XCTAssertEqual(store.trips[0].coverImage, cover)
+            try await settle(store)
+            XCTAssertTrue(sawCoverWrite)
+        }
+    }
+
     @MainActor func testTripFailureRollsBackDatesAndRetainsEditorValues() async throws {
         let store = store()
         let sample = AppStore(settings: store.settings, demo: true)
         let trip = try XCTUnwrap(sample.trips.first)
         store.trips = [trip]
-        let value = TripSaveDraft(trip: trip, name: "新旅行名", start: .fromDay("2026-10-05"), end: .fromDay("2026-10-06"), emoji: "🚆")
+        let value = TripSaveDraft(trip: trip, name: "新旅行名", start: .fromDay("2026-10-05"), end: .fromDay("2026-10-06"), emoji: "🚆", coverImage: "https://example.invalid/chosen.jpg")
         DelayedSaveProtocol.handler = { _ in (500, Data(#"{"error":"保存失败"}"#.utf8)) }
         defer { DelayedSaveProtocol.handler = nil }
         XCTAssertTrue(store.saveTripInBackground(value, using: client()))
         XCTAssertTrue(store.saving)
         XCTAssertEqual(store.trips[0].name, value.name)
+        XCTAssertEqual(store.trips[0].coverImage, value.coverImage)
         XCTAssertEqual(store.trips[0].days[0].date, "2026-10-05")
         try await settle(store)
         XCTAssertEqual(store.trips, [trip])
@@ -501,6 +596,7 @@ final class BackgroundSaveTests: XCTestCase {
         XCTAssertEqual(store.tripSaveRecovery?.name, value.name)
         XCTAssertEqual(store.tripSaveRecovery?.start, value.start)
         XCTAssertEqual(store.tripSaveRecovery?.emoji, value.emoji)
+        XCTAssertEqual(store.tripSaveRecovery?.coverImage, value.coverImage)
     }
 }
 
