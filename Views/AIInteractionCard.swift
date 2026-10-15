@@ -5,6 +5,7 @@ struct AIInteractionCard: View {
     @ObservedObject var planner: AIPlannerStore
     let store: AppStore
     let record: AIInteractionRecord
+    @State private var declined = false
     @State private var selected: [String] = []
     @State private var range = TripDateRange()
     @State private var start = Date()
@@ -36,7 +37,7 @@ struct AIInteractionCard: View {
                 HStack {
                     Text(input.kind == "ask_choice" ? "选择偏好" : input.kind == "ask_datetime" ? "日期与时间" : "行程草案 · 尚未保存")
                     Spacer()
-                    Text(record.selection != nil ? "已选择" : inactive || expired ? "已结束" : "请选择")
+                    Text(declined ? "都不选，文字说明" : record.selection != nil ? "已选择" : inactive || expired ? "未选择，文字说明" : "请选择")
                         .monospacedDigit()
                 }.font(.caption).foregroundStyle(.secondary)
                 Text(input.question).font(.headline)
@@ -69,12 +70,37 @@ struct AIInteractionCard: View {
                 }
                 if !inactive && !expired && record.selection == nil {
                 Divider()
-                HStack(spacing: 12) {
+                ViewThatFits(in: .horizontal) {
+                    actions(horizontal: true)
+                    actions(horizontal: false)
+                }.disabled(disabled)
+                }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Color(uiColor: .separator).opacity(0.7), lineWidth: 1) }
+        }.accessibilityIdentifier("ai-interaction-card")
+            .onAppear(perform: restore)
+            .onChange(of: record.selection.map { if case .none = $0 { return true }; return false } ?? false) { _, value in
+                if value { declined = true; selected = [] }
+            }
+            .onChange(of: planner.interactionSubmitted) { _, submitted in
+                if submitted, let record = planner.conversation?.interactions?.first(where: { $0.id == prompt.id }), case .none? = record.selection { declined = true; selected = [] }
+            }
+    }
+    @ViewBuilder private func actions(horizontal: Bool) -> some View {
+        let layout = horizontal ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+        layout {
+                    if input.kind == "ask_choice" {
+                        Button("都不选，文字说明") { submit(.none) }
+                            .buttonStyle(.bordered).tint(.primary)
+                            .accessibilityIdentifier("ai-interaction-none")
+                    }
                     if input.kind == "preview_itinerary" {
                         Button("想调整") { submit(.preview(action: "revise", feedback: feedback)) }
                             .buttonStyle(.bordered)
                     }
-                    Spacer(minLength: 0)
+                    if horizontal { Spacer(minLength: 0) }
                     Button(planner.interactionSubmitting ? "提交中…" : input.kind == "preview_itinerary" ? "按这个继续" : "确认选择") {
                         switch input.kind {
                         case "ask_choice": submit(.choices(selected))
@@ -83,17 +109,13 @@ struct AIInteractionCard: View {
                         }
                     }.buttonStyle(.borderedProminent).tint(.primary)
                         .accessibilityIdentifier("ai-interaction-submit")
-                }.disabled(disabled)
-                }
-            }
-            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
-            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Color(uiColor: .separator).opacity(0.7), lineWidth: 1) }
-        }.accessibilityIdentifier("ai-interaction-card")
-            .onAppear {
+        }
+    }
+    private func restore() {
                 var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timezone
                 range = TripDateRange(calendar: calendar)
                 switch record.selection {
+                case .none?: declined = true; selected = []
                 case .choices(let ids): selected = ids
                 case .datetime(let first, let last):
                     let mode = input.mode ?? "date"
@@ -103,7 +125,6 @@ struct AIInteractionCard: View {
                 case .preview(_, let value): feedback = value
                 case nil: break
                 }
-            }
     }
     private func submit(_ selection: AIInteractionSelection) { planner.submitInteraction(selection, store: store) }
     private var choices: some View {

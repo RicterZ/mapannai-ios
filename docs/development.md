@@ -152,7 +152,7 @@ AI聊天统一全屏工作区，首页与地图入口均保留原页与档位；
 
 保留的AI配置组件可填写兼容 OpenAI 的模型 API 地址、Key 和模型名。配置按 MapAnNai 服务与凭据隔离，Key 仅存钥匙串；聊天记录存设备 Application Support，不同步到 Web。
 
-客户端只调用现有 `POST /api/ai/chat`，发送 settings/messages/context，并消费 NDJSON 的 delta、message、status、changed、complete、error 事件。系统提示词、旅行上下文补全与 MCP 工具由 MapAnNai Plus 服务器负责，iOS 不维护副本、不直连模型或执行工具。模型 API 配置会通过此请求交给用户连接的服务端。
+客户端通过 `POST /api/ai/runs` 创建服务器后台任务，发送 settings/messages/context 及 conversationId/requestId；通过 GET 游标续取 partial、message、status、interaction、changed、complete、error 事件，显式停止使用 DELETE。系统提示词、旅行上下文补全与 MCP 工具由 MapAnNai Plus 服务器负责，iOS 不维护副本、不直连模型或执行工具。模型 API 配置会通过此请求交给用户连接的服务端。
 
 首页与地图用fullScreenCover打开同一AIPlannerView，不再使用聊天detent或iPad右侧聊天区；地图摄像机遮挡不因全屏AI增加侧区insets。首页历史选择器通过面板onDismiss先关闭再交接全屏聊天，返回保留会话与正在进行的回复，不停止请求。
 
@@ -200,7 +200,7 @@ AI配置缺失或无效时，聊天页显示“前往设置”入口并禁用发
 
 AI 回复的管道 Markdown 表格使用原生 SwiftUI Layout 与横向 ScrollView；支持表头、对齐标记、转义竖线与流式缺失单元格，代码围栏不解析成表格。正文与单元格保留内联 Markdown，系统动态字体与文本选择继续可用。表格视口固定为气泡内容宽度，列按单元格自然宽度展开，不因气泡宽度自动折行；溢出仅在表格内部横向滚动。列宽取整列最大自然宽度，单元格底色和边框填满统一列宽与行高，交替行底色连续铺满整行。
 
-AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限后台执行时间，结束、停止、失败和到期均释放。到期保存部分回复、取消请求并失效 generation，显示后台中断说明；不自动重发写入请求，不承诺长期后台运行。隐藏 AI 对话图标的 UserDefaults 偏好仍保留，当前入口由全局关闭控制，不删除配置或历史。
+AI 请求开始时使用 UIApplication.beginBackgroundTask 申请有限客户端后台执行时间，结束、停止及到期均释放。到期仅暂停客户端拉取并失效旧回调，不取消服务器执行、不显示后台中断错误；回前台或重启后通过已持久化任务ID及游标补齐结果，不自动重发写入请求。隐藏 AI 对话图标的 UserDefaults 偏好仍保留，当前入口由全局关闭控制，不删除配置或历史。
 
 定位按钮在取得高德有效位置后，一次性设置中心、zoom15 和当前面板遮挡对应的视口锚点，不沿用点击前的缩放；首次定位等待位置回调，减少动态效果时立即更新。
 
@@ -365,7 +365,7 @@ Trip已持久化有序目的地名称与WGS-84中心，创建支持多个目的�
 
 AI工具过程与实时status共用AIToolLabel中文映射，覆盖Web MCP实际注册的全部工具（含目的地搜索、旅行待安排成员和路线更新/删除），不以Web旧标签表代替工具清单；未知工具回退原名，不暴露参数。过程标题/明细左对齐，箭头紧邻标题。键盘出现与视口高度变化时，仅following开启的对话恢复最新底部；用户已上滚阅读时不改变位置。
 
-AI聊天返回使用无背景chevron.left及左边缘右滑。关闭界面不取消请求、不释放后台执行时间或重置generation；显式停止、服务切换及系统后台时间到期仍会取消。首页生成中的入口指向activeID，不切换会话。工具全部由服务端动态枚举并执行，客户端消费通用NDJSON消息/changed事件并刷新数据；当前Web MCP没有操控前端控件的工具合约，不在iOS伪造客户端工具。
+AI聊天返回使用无背景chevron.left及左边缘右滑。关闭界面不取消请求、不释放后台执行时间或重置generation；显式停止取消服务器任务；服务切换及系统后台时间到期仅取消本地拉取，不停止服务器任务。首页生成中的入口指向activeID，不切换会话。工具全部由服务端动态枚举并执行，客户端消费通用NDJSON消息/changed事件并刷新数据；当前Web MCP没有操控前端控件的工具合约，不在iOS伪造客户端工具。
 
 天详情正文采用原生分页TabView，左右拖动跟手显示相邻日期，松手由系统完成切页或回弹；分页内部先更新本地选择，等待原生分页滚动结束后才提交AppStore日期与路线刷新，避免滑动中途的全局发布打断翻页；日期栏点击仍直接选择日期。日期栏黑色指示条按原生分页实际滚动偏移在相邻日期按钮中心之间线性插值，拖动、减速及回弹同进度，不发布全局状态；日期栏与落定日期同步，切天保留当前面板档位，复用日期栏的选择入口与既有地图跟随规则。选择/排序期间禁用横向分页和日期按钮，保留地点拖放与纵向滚动；最小档路线横向滚动仍用于浏览地点，不切日期。编辑时未安排组始终显示，空组保留60pt透明拖放区域；预览时空组仍隐藏。选择删除直接复用旅行/日期的DeletionConfirmationView（隐藏独占地点选项），沿用同一高度测量、安全区处理、标题、分隔线和取消/删除按钮，不使用系统alert；确认仍同步捕获地点ID并后台移除，仅清理当天引用。未安排标题取消系统默认行缩进，与路线标题对齐；未安排地点直接复用路线地点组件，统一分类图标、两行标题、单行地址与下方140pt照片，仅省略路线序号、游览时间和交通规划；编辑时使用与路线同尺寸/同位置的24pt选择圆圈、25pt分类图标与行高，不叠加List原生选择缩进。
 
@@ -453,6 +453,10 @@ Archive detail rows keep their native List layout. A noninteractive UIKit probe 
 
 ## AI interaction cards
 
-Chat requests declare `supportsInteractions: true`. NDJSON `interaction` events contain an ephemeral prompt ID/token, epoch-millisecond deadline and typed input (`ask_choice`, `ask_datetime`, `preview_itinerary`). Native inline cards submit the selected value to the authenticated `POST /api/ai/interactions`; the original chat stream remains open. Time/date values are Gregorian destination-local wall time without UTC conversion. Selection validation, duplicate submission guards, server deadlines and HTTP 409 expiry are handled without replaying requests. Stop, connection changes, tool results and stream termination clear the prompt and cancel pending submission; generation/prompt identity reject stale callbacks. Prompt tokens are never persisted; sanitized card inputs, message positions and confirmed selections persist separately in conversation history and are never sent as chat messages. Historical cards cannot resubmit. Cards reuse TripRangeCalendar for single/range dates and show no countdown or timeout-duration copy. The server deadline remains authoritative; extending it to 60 seconds requires a server update. Unsupported inputs offer text fallback. Preview approval is not write authorization.
+Chat requests declare `supportsInteractions: true`. NDJSON `interaction` events contain an ephemeral prompt ID/token, epoch-millisecond deadline and typed input (`ask_choice`, `ask_datetime`, `preview_itinerary`). Native inline cards submit the selected value to the authenticated `POST /api/ai/interactions`; background event polling continues. Time/date values are Gregorian destination-local wall time without UTC conversion. Selection validation, duplicate submission guards, server deadlines and HTTP 409 expiry are handled without replaying requests. Stop, connection changes, tool results and stream termination clear the prompt and cancel pending submission; generation/prompt identity reject stale callbacks. Prompt tokens are never stored in history JSON; pending interaction capabilities are in Keychain for reconnect, while sanitized card inputs, message positions and confirmed selections persist separately in conversation history and are never sent as chat messages. Historical cards cannot resubmit. Cards reuse TripRangeCalendar for single/range dates and show no countdown or timeout-duration copy. The server deadline remains authoritative; the current server uses 60 seconds. Choice cards submit `{action:"none"}` for the fixed “都不选，文字说明” fallback. The server returns `declined` and asks the model to wait for a text reply without default choices or writes; cards and tool summaries preserve this explicit decline. Timed-out cards and results display text-follow-up status rather than suggesting automatic planning; actual model continuation policy remains server-owned. Unsupported inputs offer text fallback. Preview approval is not write authorization.
 
 `Coordinates.inChina` shares the web client's six approximate service-region rectangles and seven exclusion rectangles, with finite-coordinate validation. The predicate gates GCJ conversion, not API provider selection; server-selected providers remain unchanged. This is an approximate service region, not an exact border.
+
+## Server-owned AI background execution
+
+Native chat starts `POST /api/ai/runs` with stable conversationId/requestId and a random x-run-token, then polls `GET /api/ai/runs/:id?after=cursor` (100-event pages). Explicit Stop calls DELETE; background expiry only detaches polling. Foreground/relaunch resumes persisted pending runs. Cumulative `partial` replaces preview text; sequenced final events and cursor checkpoint together with conversation history. Creation identity/context/model are frozen before POST; retries reuse the same identity, including a lost creation response. Capability, model credential snapshot and pending interaction tokens are held in Keychain, not history JSON. No automatic replay of original chat writes or legacy streaming fallback. Server process interruption is terminal, not automatically restarted. Tests use URLProtocol/mock data, never production AI writes.

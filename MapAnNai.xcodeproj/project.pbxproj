@@ -33,6 +33,7 @@
 		2260162CF6EFF3A1D8BB3A14 /* TripWeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85019C7C891CFD8D3A89E3A5 /* TripWeatherService.swift */; };
 		23CC06614DFD047642FEFB5F /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F55A919B31EC92357E58F47 /* HomeView.swift */; };
 		248B5EF5261AB46C680B894E /* SearchPaginationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 879F810511ACB01618962440 /* SearchPaginationTests.swift */; };
+		250919D365FBCCD0497563A7 /* AIBackgroundRunTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE8EB9727B4B4CF3505B6A1 /* AIBackgroundRunTests.swift */; };
 		2630CCDF568636B07A9396BF /* ChatMarkdownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7708E0ACC60D14458C79575 /* ChatMarkdownTests.swift */; };
 		26429B20FCD935DD2A7553D0 /* AIInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66B35BA444E2A1D35FEEFD92 /* AIInteraction.swift */; };
 		27733094231AD19C78C10729 /* InteractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96C9DF6A9CD060EB8FC5BF9 /* InteractionTests.swift */; };
@@ -107,6 +108,7 @@
 		A84AB72A4DDDDCE73C8F9F47 /* MapZoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 401E2D25019885A304E0676C /* MapZoomTests.swift */; };
 		A9F6407DE636ABED000B181E /* RouteRedrawTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB69B65CFD0B0604D5476A1 /* RouteRedrawTests.swift */; };
 		AA2D044D83A4701C0993FE2F /* JourneyArchiveOrderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D861381AB5919D4FB03CD01D /* JourneyArchiveOrderingTests.swift */; };
+		AF5B129945A49990D1BAFB2E /* AIBackgroundRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E33322F49D4765C4A3D9DA6 /* AIBackgroundRun.swift */; };
 		B13C16980AC0CF8CF7E227EB /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DC8A3EBC540A61F7259026E /* TripsView.swift */; };
 		B25AC42552BB34D2312B4B7B /* AIPlannerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A017E8694F055DAB5D395B /* AIPlannerUITests.swift */; };
 		B353F2DDCDACD295F7761889 /* MapAnNaiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880735812DDF2FA55D3DF5DF /* MapAnNaiApp.swift */; };
@@ -254,6 +256,7 @@
 		7AB7B3D97ACB96856B958F56 /* JourneyEditorStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyEditorStyle.swift; sourceTree = "<group>"; };
 		7DC8A3EBC540A61F7259026E /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
 		7DCC62887180493DD5274D78 /* MarkerRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerRepository.swift; sourceTree = "<group>"; };
+		7E33322F49D4765C4A3D9DA6 /* AIBackgroundRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIBackgroundRun.swift; sourceTree = "<group>"; };
 		82047EC9DAF802B745B1CC9A /* AIInteractionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIInteractionCard.swift; sourceTree = "<group>"; };
 		85019C7C891CFD8D3A89E3A5 /* TripWeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripWeatherService.swift; sourceTree = "<group>"; };
 		87523F223330A78B85CF2E66 /* JourneyCardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyCardContent.swift; sourceTree = "<group>"; };
@@ -263,6 +266,7 @@
 		8D1D7BACAED41D3AB875D71B /* AMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AMapView.swift; sourceTree = "<group>"; };
 		8E8BC6B0004E2261EB109B84 /* NativeSheetHeightReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSheetHeightReader.swift; sourceTree = "<group>"; };
 		8ED85B293D18534AAB521985 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
+		8FE8EB9727B4B4CF3505B6A1 /* AIBackgroundRunTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIBackgroundRunTests.swift; sourceTree = "<group>"; };
 		8FFDC9F749A4D63D28FFD824 /* PlannedRoutePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedRoutePresentation.swift; sourceTree = "<group>"; };
 		908FAE746654BE33A7EF0C0B /* DayCameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCameraTests.swift; sourceTree = "<group>"; };
 		91EFBD72522A19CC2A1A64B5 /* RouteScheduleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteScheduleUITests.swift; sourceTree = "<group>"; };
@@ -386,6 +390,7 @@
 		2BCFA94719B5F00772146B79 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				7E33322F49D4765C4A3D9DA6 /* AIBackgroundRun.swift */,
 				66B35BA444E2A1D35FEEFD92 /* AIInteraction.swift */,
 				5543717B3FBF113B9D8669E9 /* AIPlanner.swift */,
 				1579B0865582F6FFBD7E34E0 /* APIClient.swift */,
@@ -427,6 +432,7 @@
 		51A720AC2B203A3394D9A050 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				8FE8EB9727B4B4CF3505B6A1 /* AIBackgroundRunTests.swift */,
 				CB36EAD1DEBA4FC2D99ED368 /* AIInteractionTests.swift */,
 				5AD8D5E25A1C9E0E2FACB862 /* AIPlannerTests.swift */,
 				73EFD766A2F6A15B0BE41DCD /* AppleMapCoordinateTests.swift */,
@@ -677,6 +683,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AF5B129945A49990D1BAFB2E /* AIBackgroundRun.swift in Sources */,
 				26429B20FCD935DD2A7553D0 /* AIInteraction.swift in Sources */,
 				697FB4093EC7B5B64497CF4C /* AIInteractionCard.swift in Sources */,
 				7F2EFC410862C24918A5DEE5 /* AIMessageMarkdown.swift in Sources */,
@@ -760,6 +767,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				250919D365FBCCD0497563A7 /* AIBackgroundRunTests.swift in Sources */,
 				D47E6C676EFE803CF918981F /* AIInteractionTests.swift in Sources */,
 				DA9CD0CDD537652D05E8EE9E /* AIPlannerTests.swift in Sources */,
 				3D720D267564FEC8C55445D1 /* AppleMapCoordinateTests.swift in Sources */,

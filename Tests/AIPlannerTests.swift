@@ -204,6 +204,6 @@ extension AIPlannerTests {
         let request = AIRequest(settings: AIConfiguration(), messages: [], context: AIContext(localDate: "2026-10-15", tripId: nil, dayId: nil))
         let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
         XCTAssertEqual(json?["supportsInteractions"] as? Bool, true)
-        XCTAssertEqual(AIMessage(role: "tool", content: #"{"status":"timed_out"}"#, name: "ask_choice").interactionSummary, "超时未选择，AI 暂拟")
+        XCTAssertEqual(AIMessage(role: "tool", content: #"{"status":"timed_out"}"#, name: "ask_choice").interactionSummary, "未选择，改用文字说明")
     }
 }

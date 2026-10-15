@@ -32,6 +32,7 @@ struct AIInteractionPrompt: Codable, Identifiable {
     func validate(_ selection: AIInteractionSelection) throws {
         guard supported else { throw AppError.message("当前交互暂不支持，请在聊天中补充") }
         switch (input.kind, selection) {
+        case ("ask_choice", .none): break
         case ("ask_choice", .choices(let ids)):
             guard !ids.isEmpty, ids.count <= (input.multiple == true ? input.maxSelections ?? 1 : 1),
                   Set(ids).count == ids.count, ids.allSatisfy({ id in input.options?.contains { $0.id == id } == true }) else {
@@ -64,6 +65,7 @@ struct AIInteractionPrompt: Codable, Identifiable {
 }
 
 enum AIInteractionSelection: Codable {
+    case none
     case choices([String])
     case datetime(start: String, end: String?)
     case preview(action: String, feedback: String)
@@ -72,13 +74,17 @@ enum AIInteractionSelection: Codable {
         if let ids = try? decoder.singleValueContainer().decode([String].self) { self = .choices(ids); return }
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if let action = try c.decodeIfPresent(String.self, forKey: .action) {
-            self = .preview(action: action, feedback: try c.decode(String.self, forKey: .feedback))
+            if action == "none" { self = .none }
+            else { self = .preview(action: action, feedback: try c.decode(String.self, forKey: .feedback)) }
         } else {
             self = .datetime(start: try c.decode(String.self, forKey: .start), end: try c.decodeIfPresent(String.self, forKey: .end))
         }
     }
     func encode(to encoder: Encoder) throws {
         switch self {
+        case .none:
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode("none", forKey: .action)
         case .choices(let ids): var c = encoder.singleValueContainer(); try c.encode(ids)
         case .datetime(let start, let end):
             var c = encoder.container(keyedBy: CodingKeys.self)

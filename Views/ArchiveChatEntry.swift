@@ -65,9 +65,6 @@ struct ArchiveChatEntry: View {
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("archive-chat-recent")
             }
-            if let error = planner.error, !planner.presented {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
         }
         .edgeAttachedPanel(isPresented: $historyPresented, dimsBackground: true, backgroundColor: .systemBackground, onDismiss: {
             if resumeAfterHistory { resumeAfterHistory = false; planner.presented = true }

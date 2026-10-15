@@ -60,6 +60,20 @@ final class AIInteractionTests: XCTestCase {
         let legacy = Data(#"{"id":"00000000-0000-0000-0000-000000000001","title":"旧会话","messages":[]}"#.utf8)
         XCTAssertNil(try JSONDecoder().decode(AIConversation.self, from: legacy).interactions)
     }
+    func testDeclineChoiceRoundTripsAndDoesNotApplyToOtherTools() throws {
+        let choice = try prompt(#"{"kind":"ask_choice","question":"偏好？","options":[{"id":"a","label":"自然"},{"id":"b","label":"城市"}]}"#)
+        try choice.validate(.none)
+        let data = try JSONEncoder().encode(AIInteractionSelection.none)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: data) as? [String: String], ["action": "none"])
+        guard case .none = try JSONDecoder().decode(AIInteractionSelection.self, from: data) else { return XCTFail("Missing decline") }
+        let date = try prompt(#"{"kind":"ask_datetime","question":"何时？","mode":"date","timezone":"Asia/Tokyo"}"#)
+        XCTAssertThrowsError(try date.validate(.none))
+        let message = AIMessage(role: "tool", content: #"{"status":"declined","selection":null}"#, name: "ask_choice")
+        XCTAssertEqual(message.interactionSummary, "都不选，改用文字说明")
+        let record = AIInteractionRecord(id: "test", input: choice.input, messageIndex: 1, selection: AIInteractionSelection.none, ended: true)
+        let restored = try JSONDecoder().decode(AIInteractionRecord.self, from: JSONEncoder().encode(record))
+        guard case .none? = restored.selection else { return XCTFail("History lost decline") }
+    }
     func testChinaRegionsMatchWebAndForeignCoordinatesStayUnchanged() {
         for (lat, lng) in [(39.9,116.4), (31.2,121.5), (18.25,109.5), (43.8,87.6)] {
             XCTAssertTrue(Coordinates.inChina(Coordinate(latitude: lat, longitude: lng)))

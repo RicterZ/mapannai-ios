@@ -48,7 +48,8 @@ struct AIMessage: Codable, Equatable {
               let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         switch result["status"] as? String {
         case "selected": return result["summary"] as? String ?? "已提交选择"
-        case "timed_out": return "超时未选择，AI 暂拟"
+        case "declined": return "都不选，改用文字说明"
+        case "timed_out": return "未选择，改用文字说明"
         case "unsupported": return "当前客户端不支持，请文字补充"
         default: return nil
         }
@@ -141,6 +142,8 @@ struct AIContext: Codable {
     }
 }
 struct AIRequest: Encodable {
+    var conversationId: UUID? = nil
+    var requestId: UUID? = nil
     var supportsInteractions = true
     var settings: AIConfiguration
     var messages: [AIMessage]
@@ -197,6 +200,7 @@ struct AIConversation: Codable, Identifiable {
     var title = "新会话"
     var messages: [AIMessage] = []
     var interactions: [AIInteractionRecord]? = nil
+    var pendingRun: AIBackgroundRun? = nil
 }
 actor AIHistoryRepository {
     private var revisions: [String: Int] = [:]
@@ -252,7 +256,10 @@ actor AIHistoryRepository {
 
     func configure(for settings: Settings) async {
         pendingConfigurationPrompt = nil
-        activeStore = nil; presented = false; stop()
+        activeStore = nil; presented = false
+        task?.cancel(); task = nil; interactionTask?.cancel(); interactionTask = nil
+        interaction = nil; interactionSubmitting = false; interactionSubmitted = false
+        endBackgroundExecution(); busy = false
         let oldEffects = effectsTask; oldEffects?.cancel()
         generation = UUID(); let revision = generation
         await oldEffects?.value
@@ -300,6 +307,27 @@ actor AIHistoryRepository {
         conversations.removeAll { $0.id == activeID }; activeID = conversations.first?.id; persist()
     }
     func stop() {
+        if let index = conversations.firstIndex(where: { $0.id == activeID }),
+           let run = conversations[index].pendingRun, let store = activeStore {
+            let service = AIPlannerService(client: store.api)
+            conversations[index].pendingRun = nil; persist()
+            let revision = generation
+            var request = AIRequest(settings: configuration, messages: conversations[index].messages,
+                context: run.context ?? AIContext(localDate: StartupCamera.localDate(now: Date(), calendar: .current), tripId: nil, dayId: nil))
+            request.conversationId = conversations[index].id; request.requestId = run.requestID
+            request.settings.model = run.model ?? configuration.model
+            request.settings.baseUrl = run.modelBaseURL ?? configuration.baseUrl
+            request.settings.apiKey = Keychain.read("ai-run-model-" + run.requestID.uuidString)
+            Task {
+                do {
+                    var target = run
+                    if target.id == nil { target.id = try await service.startRun(request, token: target.token) }
+                    try await service.cancelRun(target)
+                } catch {
+                    if generation != revision, !busy { self.error = "停止请求未确认，规划可能仍在继续" }
+                }
+            }
+        }
         clearInteraction()
         preservePartialReply()
         endBackgroundExecution()
@@ -329,31 +357,88 @@ actor AIHistoryRepository {
         busy = true; error = nil; partial = ""; status = "正在思考…"
         let request = AIRequest(settings: configuration, messages: messages,
             context: AIContext(localDate: StartupCamera.localDate(now: Date(), calendar: .current), tripId: store.tripID, dayId: store.dayID))
+        var pending = AIBackgroundRun(token: UUID().uuidString + UUID().uuidString, requestID: UUID())
+        pending.context = request.context; pending.model = configuration.model; pending.modelBaseURL = configuration.baseUrl
+        do {
+            try Keychain.write(pending.token, key: "ai-run-" + pending.requestID.uuidString)
+            try Keychain.write(configuration.apiKey, key: "ai-run-model-" + pending.requestID.uuidString)
+        }
+        catch { busy = false; self.error = error.localizedDescription; return }
+        conversations[index].pendingRun = pending
+        persist()
+        startPolling(store: store, conversationID: id, revision: revision, initial: request)
+    }
+    func resumeBackgroundRun(store: AppStore) {
+        guard ready, task == nil, let conversation = conversations.first(where: { $0.pendingRun != nil }) else { return }
+        activeID = conversation.id
+        busy = true; error = nil; status = "正在更新规划进度…"
+        partial = conversation.pendingRun?.partial ?? ""
+        interaction = conversation.pendingRun?.prompt
+        interactionSubmitted = false; interactionSubmitting = false
+        startPolling(store: store, conversationID: conversation.id, revision: generation)
+    }
+    private func startPolling(store: AppStore, conversationID id: UUID, revision: UUID, initial: AIRequest? = nil) {
         let service = AIPlannerService(client: store.api)
         activeStore = store
         beginBackgroundExecution()
         task = Task {
-            do {
-                try await service.stream(request) { [self, store] event in
-                    await self.receive(event, id: id, revision: revision, store: store)
+            defer {
+                if generation == revision { task = nil; endBackgroundExecution() }
+            }
+            while !Task.isCancelled, generation == revision {
+                guard let index = conversations.firstIndex(where: { $0.id == id }), var run = conversations[index].pendingRun else { return }
+                if UIApplication.shared.applicationState == .background {
+                    status = "正在规划中…"
+                    do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                    continue
                 }
-            } catch {
-                if generation == revision {
-                    let message = error.localizedDescription
-                    if UIApplication.shared.applicationState == .background, error is URLError {
-                        self.error = "后台连接已中断，已保留收到的内容；正在执行的操作可能已保存，请查询后继续"
-                    } else {
-                        self.error = !configuration.apiKey.isEmpty && message.contains(configuration.apiKey) ? "AI 请求失败，请检查配置" : message
+                do {
+                    guard !run.token.isEmpty else { throw AppError.message("规划凭据不可用") }
+                    // Save the submission identity before POST so a lost response is retry-safe.
+                    try await checkpoint()
+                    if run.id == nil {
+                        var request = initial ?? AIRequest(settings: configuration, messages: conversations[index].messages,
+                            context: run.context ?? AIContext(localDate: StartupCamera.localDate(now: Date(), calendar: .current), tripId: nil, dayId: nil))
+                        request.settings.apiKey = Keychain.read("ai-run-model-" + run.requestID.uuidString)
+                        request.settings.model = run.model ?? configuration.model
+                        request.settings.baseUrl = run.modelBaseURL ?? configuration.baseUrl
+                        request.conversationId = id; request.requestId = run.requestID
+                        run.id = try await service.startRun(request, token: run.token)
+                        guard generation == revision, !Task.isCancelled else { return }
+                        conversations[index].pendingRun = run
+                        try await checkpoint()
                     }
+                    let page = try await service.readRun(run)
+                    guard generation == revision, !Task.isCancelled else { return }
+                    for item in page.events where item.seq > run.cursor {
+                        receive(item.event, id: id, revision: revision, store: store)
+                        run.cursor = item.seq
+                    }
+                    if let interaction { try Keychain.write(interaction.token, key: "ai-interaction-" + interaction.id) }
+                    run.partial = partial; run.prompt = interaction
+                    conversations[index].pendingRun = run
+                    try await checkpoint()
+                    if page.status != "running", page.events.count < 100 {
+                        conversations[index].pendingRun = nil
+                        if page.status != "completed", error == nil { error = "本次规划已结束（\(page.status)），已保留收到的结果" }
+                        preservePartialReply(); clearInteraction(); busy = false; partial = ""
+                        try await checkpoint()
+                        queueRefresh(store: store, ids: [])
+                        return
+                    }
+                    if page.events.count < 100 { try await Task.sleep(for: .seconds(1)) }
+                } catch {
+                    guard generation == revision, !Task.isCancelled else { return }
+                    status = "正在重新连接，规划仍在继续…"
+                    // Never resend a chat turn or discard its cursor on a transport failure.
+                    do { try await Task.sleep(for: .seconds(3)) } catch { return }
                 }
             }
-            guard generation == revision else { return }
-            preservePartialReply()
-            endBackgroundExecution()
-            clearInteraction()
-            busy = false; task = nil; partial = ""
-            queueRefresh(store: store, ids: []) // Includes partial writes and unexpected disconnects.
         }
+    }
+    private func checkpoint() async throws {
+        saveRevision += 1
+        try await history.write(conversations, scope: scope, revision: saveRevision)
     }
     #if DEBUG
     func previewStreamingReply() async {
@@ -391,9 +476,10 @@ actor AIHistoryRepository {
     }
     // Keep received text, invalidate old callbacks, and never replay tool writes.
     func expireBackgroundExecution() {
-        guard busy else { endBackgroundExecution(); return }
-        stop()
-        error = "后台回复已中断，已保留收到的内容；正在执行的操作可能已保存，请查询后继续"
+        // Only detach the phone; the server owns execution until explicit cancellation.
+        task?.cancel(); task = nil; generation = UUID()
+        endBackgroundExecution()
+        status = "正在规划中…"
     }
     private func preservePartialReply() {
         guard !partial.isEmpty, let index = conversations.firstIndex(where: { $0.id == activeID }) else { return }
@@ -412,6 +498,8 @@ actor AIHistoryRepository {
                 persist()
             }
         case "title": updateConversationTitle(event.title, id: id)
+        case "partial": partial = event.text ?? ""; status = "正在回复…"
+        case "error": error = event.error ?? "本次规划失败"
         case "delta": partial += event.text ?? ""; status = "正在回复…"
         case "status": status = event.name.map { "正在调用 · " + AIToolLabel.text($0) } ?? "正在处理行程…"
         case "message":
@@ -420,7 +508,8 @@ actor AIHistoryRepository {
                 if let prompt = interaction, message.name == prompt.input.kind,
                    let data = message.content?.data(using: .utf8),
                    let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   result["status"] as? String == "selected", let value = result["selection"],
+                   ["selected", "declined"].contains(result["status"] as? String ?? ""),
+                   let value = result["status"] as? String == "declined" ? ["action": "none"] : result["selection"],
                    let bytes = try? JSONSerialization.data(withJSONObject: value),
                    let selection = try? JSONDecoder().decode(AIInteractionSelection.self, from: bytes) {
                     updateInteractionRecord(prompt.id) { $0.selection = selection }

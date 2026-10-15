@@ -2,6 +2,7 @@ import SwiftUI
 import CoreLocation
 
 struct HomeView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var store: AppStore
     @ObservedObject var settings: Settings
     // Only presentation changes invalidate Home/map; streaming tokens are observed inside the chat view.
@@ -68,6 +69,9 @@ struct HomeView: View {
             setMarkerConfirmationHeight(nil)
             restoreJourneyAfterMarker()
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { aiPlanner.resumeBackgroundRun(store: store) }
+        }
         .onReceive(aiPlanner.$presented.removeDuplicates()) { aiPresented = $0 }
         .fullScreenCover(isPresented: Binding(get: { aiPresented && !mapEntered }, set: { if !$0 { aiPlanner.close() } })) {
             AIPlannerView(planner: aiPlanner, store: store, onOpenSettings: { aiSettingsPresented = true })
@@ -78,6 +82,7 @@ struct HomeView: View {
 
         .task(id: settings.revision) {
             await aiPlanner.configure(for: settings)
+            aiPlanner.resumeBackgroundRun(store: store)
             #if DEBUG
             if store.demo && ProcessInfo.processInfo.arguments.contains("--archive-ai-preview") {
                 aiPlanner.configuration = AIConfiguration(model: "preview")
