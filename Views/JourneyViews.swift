@@ -141,8 +141,9 @@ struct JourneyDaysContents: View {
             }
             }
             .opacity(archiveContentVisible ? 1 : 0)
-            // Ablation C: freeze chapter entrance/exit animation; keep the UIKit cover flight.
-            .animation(nil, value: archiveContentVisible)
+            .offset(y: archiveContentVisible || reduceMotion ? 0 : -28)
+            .animation(reduceMotion ? .linear(duration: 0.15) :
+                .timingCurve(0.16, 0.86, 0.28, 1, duration: archiveContentVisible ? 0.60 : 0.30), value: archiveContentVisible)
         }
             .onPreferenceChange(ArchiveHeaderFrame.self) { if !$0.isEmpty { onArchiveHeaderFrame($0) } }
             .scrollContentBackground(.hidden)
