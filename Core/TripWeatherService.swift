@@ -42,7 +42,7 @@ actor TripWeatherService {
     static func merge(_ old: Snapshot?, daily: Daily, timeZone: TimeZone, now: Date) throws -> Snapshot {
         var days = old?.days ?? [:]
         let today = JourneyArchiveOrdering.localDay(at: now, timeZone: timeZone)
-        for date in daily.time where date >= today {
+        for date in daily.time where date >= today || days[date] == nil {
             guard let weather = try daily.weather(on: date), weather.weatherCode != nil else { continue }
             days[date] = weather
         }
@@ -64,22 +64,41 @@ actor TripWeatherService {
         return (0..<7).contains(distance)
     }
 
-    func forecast(for day: String, at coordinate: Coordinate, timeZone: TimeZone,
+    func forecast(for day: String, at coordinate: Coordinate, timeZone requestedTimeZone: TimeZone? = nil,
                   now: Date = .now) async throws -> TripDayWeather? {
         guard coordinate.isValid else { throw URLError(.badURL) }
         let cached = await cachedWeather(for: day, at: coordinate)
-        guard Self.isInForecastWindow(day, now: now, timeZone: timeZone) else { return cached }
+        let knownZone = requestedTimeZone ?? snapshots[coordinate].flatMap { TimeZone(identifier: $0.timeZone) }
+        let timeZone = knownZone ?? .current
+        let today = JourneyArchiveOrdering.localDay(at: now, timeZone: timeZone)
+        let historical = day < today
+        if historical, cached != nil, knownZone != nil { return cached }
+        let inWindow = (knownZone == nil ? [-86400.0, 0, 86400] : [0]).contains {
+            Self.isInForecastWindow(day, now: now.addingTimeInterval($0), timeZone: timeZone)
+        }
+        guard historical || inWindow else { return cached }
+        guard !historical || day >= "1940-01-01" else { return cached }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let cutoff = JourneyArchiveOrdering.localDay(at: calendar.date(byAdding: .day, value: -5, to: now)!, timeZone: timeZone)
+        // Archive data lags several days; use forecast past-day data for the recent past.
+        let useArchive = historical && day < cutoff
         if let entry = snapshots[coordinate], cached != nil,
            now.timeIntervalSince(entry.fetched) < 1800 { return cached }
-        var url = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
+        var url = URLComponents(string: useArchive ? "https://archive-api.open-meteo.com/v1/archive" : "https://api.open-meteo.com/v1/forecast")!
         url.queryItems = [
             URLQueryItem(name: "latitude", value: String(coordinate.latitude)),
             URLQueryItem(name: "longitude", value: String(coordinate.longitude)),
-            URLQueryItem(name: "timezone", value: timeZone.identifier),
-            URLQueryItem(name: "forecast_days", value: "7"),
+            URLQueryItem(name: "timezone", value: knownZone?.identifier ?? "auto"),
             URLQueryItem(name: "temperature_unit", value: "celsius"),
-            URLQueryItem(name: "daily", value: "weather_code,temperature_2m_min,temperature_2m_max,precipitation_probability_max")
+            URLQueryItem(name: "daily", value: useArchive ? "weather_code,temperature_2m_min,temperature_2m_max" : "weather_code,temperature_2m_min,temperature_2m_max,precipitation_probability_max")
         ]
+        if useArchive {
+            url.queryItems! += [URLQueryItem(name: "start_date", value: day), URLQueryItem(name: "end_date", value: day)]
+        } else {
+            url.queryItems!.append(URLQueryItem(name: "forecast_days", value: "7"))
+            if historical { url.queryItems!.append(URLQueryItem(name: "past_days", value: "5")) }
+        }
         var request = URLRequest(url: url.url!)
         request.timeoutInterval = 20
         let (data, response) = try await session.data(for: request)
@@ -87,30 +106,34 @@ actor TripWeatherService {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        let daily = try JSONDecoder().decode(Response.self, from: data).daily
-        let merged = try Self.merge(snapshots[coordinate], daily: daily, timeZone: timeZone, now: now)
+        let result = try JSONDecoder().decode(Response.self, from: data)
+        guard let destinationZone = result.timezone.flatMap({ TimeZone(identifier: $0) }) ?? knownZone else {
+            throw URLError(.cannotParseResponse)
+        }
+        var merged = try Self.merge(snapshots[coordinate], daily: result.daily, timeZone: destinationZone, now: now)
+        if useArchive { merged.fetched = snapshots[coordinate]?.fetched ?? .distantPast }
         snapshots[coordinate] = merged
         await disk.write(merged, at: coordinate)
         return merged.days[day]
     }
 
-    private struct Response: Decodable { let daily: Daily }
+    private struct Response: Decodable { let daily: Daily; let timezone: String? }
     struct Daily: Decodable {
         let time: [String]
         let weather_code: [Int?]
         let temperature_2m_min: [Double?]
         let temperature_2m_max: [Double?]
-        let precipitation_probability_max: [Int?]
+        let precipitation_probability_max: [Int?]?
 
         func weather(on day: String) throws -> TripDayWeather? {
             guard [weather_code.count, temperature_2m_min.count, temperature_2m_max.count,
-                   precipitation_probability_max.count].allSatisfy({ $0 == time.count }) else {
+                   precipitation_probability_max?.count ?? time.count].allSatisfy({ $0 == time.count }) else {
                 throw URLError(.cannotParseResponse)
             }
             guard let index = time.firstIndex(of: day) else { return nil }
             return TripDayWeather(date: day, weatherCode: weather_code[index],
                 minimumCelsius: temperature_2m_min[index], maximumCelsius: temperature_2m_max[index],
-                precipitationProbability: precipitation_probability_max[index])
+                precipitationProbability: precipitation_probability_max?[index])
         }
     }
 }

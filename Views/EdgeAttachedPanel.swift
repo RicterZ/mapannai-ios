@@ -108,6 +108,7 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
         weak var panel: Presentation?
         var transitioning = false
         var lastRequestedDetent: ItineraryDetent?
+        var lastCompactHeight: CGFloat?
         init(_ value: EdgePanelPresenter) {
             self.value = value
             super.init()
@@ -132,8 +133,9 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
                         }
                     }
                 }
-                if lastRequestedDetent != value.detent {
+                if lastRequestedDetent != value.detent || lastCompactHeight != value.compactHeight {
                     lastRequestedDetent = value.detent
+                    lastCompactHeight = value.compactHeight
                     host.additionalSafeAreaInsets.top = value.detent == .compact ? 0 : value.topContentInset
                     panel?.setDetent(value.detent, animated: true)
                 }
@@ -161,7 +163,7 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             host.view.accessibilityIdentifier = "edge-attached-panel"
             host.view.accessibilityViewIsModal = value.dimsBackground
             host.additionalSafeAreaInsets.top = value.detent == .compact ? 0 : value.topContentInset
-            self.host = host; lastRequestedDetent = value.detent; transitioning = true
+            self.host = host; lastRequestedDetent = value.detent; lastCompactHeight = value.compactHeight; transitioning = true
             value.onMotionChange(true)
             presenter.present(host, animated: value.animatesPresentation && !UIAccessibility.isReduceMotionEnabled) { [weak self] in
                 self?.transitioning = false
@@ -292,7 +294,6 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             other is UIPanGestureRecognizer
         }
         func setDetent(_ next: ItineraryDetent, animated: Bool) {
-            guard next != detent else { return }
             detent = next; presentedViewController.additionalSafeAreaInsets.top = next == .compact ? 0 : (coordinator?.value.topContentInset ?? 24)
             layout(animated: animated)
         }

@@ -2,6 +2,32 @@ import XCTest
 @testable import MapAnNai
 
 final class DayMapJourneyTests: XCTestCase {
+    @MainActor func testLeavingDayMapClearsPlaceDetailBeforeReentering() {
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = store.trips[0], day = trip.days[0]
+        store.select(trip: trip, day: day, focus: false)
+        store.beginDayMapBrowsing(focus: false)
+        store.selectMapMarker(store.mapMarkers[0])
+        XCTAssertNotNil(store.selectedMarker)
+
+        store.endDayMapBrowsing()
+        XCTAssertNil(store.selectedMarker)
+        XCTAssertNil(store.dayMapFocusID)
+        XCTAssertEqual(store.tripID, trip.id)
+        XCTAssertEqual(store.dayID, day.id)
+
+        store.beginDayMapBrowsing(focus: false)
+        XCTAssertNil(store.selectedMarker)
+        store.selectMapMarker(store.mapMarkers[0])
+        XCTAssertNotNil(store.selectedMarker, "A new tap must still open place details")
+    }
+    @MainActor func testEndingInactiveDayMapDoesNotClearArchivePlaceSelection() {
+        let store = AppStore(settings: Settings(), demo: true)
+        let marker = store.markers[0]
+        store.focus(marker)
+        store.endDayMapBrowsing()
+        XCTAssertEqual(store.selectedMarker?.id, marker.id)
+    }
     @MainActor func testEnteringDayBrowsingWithoutFocusPreservesMapCamera() {
         let store = AppStore(settings: Settings(), demo: true)
         let trip = store.trips[0], day = trip.days[0]
@@ -23,11 +49,11 @@ final class DayMapJourneyTests: XCTestCase {
         store.trips = [Trip(id: "t", name: "测试", startDate: day.date, endDate: day.date, days: [day])]
         store.select(trip: store.trips.first, day: day, focus: false)
         store.beginDayMapBrowsing()
-        XCTAssertEqual(store.mapMarkers.map(\.id), ["p0"])
+        XCTAssertEqual(store.mapMarkers.map(\.id), markers.map(\.id))
         store.beginAddingPlace(to: day)
         XCTAssertEqual(store.mapMarkers.map(\.id), markers.map(\.id))
         store.endAddingPlace()
-        XCTAssertEqual(store.mapMarkers.map(\.id), ["p0"])
+        XCTAssertEqual(store.mapMarkers.map(\.id), markers.map(\.id))
     }
     @MainActor func testMapTapOpensDayPlaceDetailWithoutChangingDayScope() {
         let store = AppStore(settings: Settings(), demo: true)
@@ -104,7 +130,7 @@ final class DayMapJourneyTests: XCTestCase {
         store.trips = [Trip(id: "t", name: "测试", startDate: day.date, endDate: day.date, days: [day])]
         store.select(trip: store.trips.first, day: day, focus: false)
         store.beginDayMapBrowsing()
-        XCTAssertEqual(store.mapMarkers.map(\.id), ["p0", "p1"])
+        XCTAssertEqual(store.mapMarkers.map(\.id), markers.map(\.id))
         XCTAssertEqual(store.dayMapFocusID, "p0"); XCTAssertNil(store.selectedMarker)
         store.focusDayMapMarker("p1")
         XCTAssertEqual(store.camera?.points, [markers[1].coordinates])

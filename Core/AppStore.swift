@@ -171,9 +171,7 @@ struct DayEditorDraft: Identifiable {
         return trips.flatMap(\.days)
     }
     var mapMarkers: [Marker] {
-        guard !placeSearchPresented, dayMapBrowsing, let day else { return markers }
-        let ids = Set(day.markerIds + day.chains.flatMap { $0 })
-        return markers.filter { ids.contains($0.id) }
+        markers
     }
     func dayMapNumber(for id: String) -> Int? {
         guard dayMapBrowsing, let day else { return nil }
@@ -299,11 +297,15 @@ struct DayEditorDraft: Identifiable {
         dayMapFocusID = DayMapJourney.stops(day: day, markers: markers).first?.marker.id
         if focus { showWholeDayOnMap() }
     }
-    func endDayMapBrowsing() { dayMapBrowsing = false; dayMapFocusID = nil }
+    func endDayMapBrowsing() {
+        if dayMapBrowsing { selectedMarker = nil }
+        dayMapBrowsing = false; dayMapFocusID = nil
+    }
     func showWholeDayOnMap() {
         guard dayMapBrowsing, let day else { return }
         dayMapCameraFollowing = true
-        let points = mapMarkers.filter { $0.coordinates.isValid }.map(\.coordinates)
+        let dayIDs = Set(day.markerIds + day.chains.flatMap { $0 })
+        let points = markers.filter { dayIDs.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
             + mapDisplayRoutes.filter { $0.dayID == day.id }.flatMap(\.points)
         guard !points.isEmpty else { return }
         camera = CameraCommand(points: points, singlePointZoom: 15)

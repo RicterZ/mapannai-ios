@@ -220,9 +220,9 @@ struct JourneyDaysContents: View {
         let memberIDs = Set(day.chains.flatMap { $0 } + day.markerIds)
         return JourneyDayCardContent(day: day, index: index, summary: summary,
             loadPhotos: archiveColorIndex == nil || archiveHeaderVisible, onPhotoSelection: onPhotoSelection,
-            weatherCoordinate: TripWeatherLocation.representative(store.markers.filter {
+            weatherPoints: store.markers.filter {
                 memberIDs.contains($0.id)
-            }.map { TripWeatherLocation.Point(id: $0.id, coordinate: $0.coordinates) }), loadWeather: !store.demo)
+            }.map { TripWeatherLocation.Point(id: $0.id, coordinate: $0.coordinates) }, loadWeather: !store.demo)
             .contentShape(Rectangle())
     }
 
@@ -546,6 +546,8 @@ struct JourneyArchiveView: View {
                         if let group = yearGroups[index] {
                             Button {
                                 guard expandedYear == nil, yearMotion == nil else { return }
+                                independentDetail = nil
+                                store.selectedMarker = nil
                                 yearLayout = ArchiveYearLayout()
                                 yearReady = false
                                 expandedYear = group.year
@@ -813,6 +815,8 @@ struct JourneyArchiveView: View {
         let activeFrames = expandedYear == nil ? cardFrames : yearLayout.cards
         let headingFrame = expandedYear == nil ? archiveHeadingFrame : yearLayout.heading
         guard openedID == nil, yearMotion == nil, let frame = activeFrames[trip.id] else { return }
+        independentDetail = nil
+        store.selectedMarker = nil
         // A later animation completion must not overwrite an early day selection.
         store.select(trip: trip, focus: false)
         transferSeparatorFrame = expandedYear == nil ? separatorFrame : .zero

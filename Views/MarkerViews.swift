@@ -9,6 +9,7 @@ struct MarkerDetailView: View {
     var embedded = false
     var compact = false
     var onExpand: () -> Void = {}
+    var onConfirmationHeight: (CGFloat?) -> Void = { _ in }
     var searchPlace: Place?
     var onClose: () -> Void
     var onNavigateItinerary: () -> Void
@@ -16,8 +17,10 @@ struct MarkerDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationUnavailable = false
     @State private var editing = false
+    @State private var confirmationHeight: CGFloat?
     @State private var deleting = false
     @State private var removingFromDay = false
+    @State private var deletionTarget: Marker?
     @State private var removalTarget: (day: TripDay, markerID: String)?
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var noteHeight: CGFloat = 1
@@ -58,9 +61,13 @@ struct MarkerDetailView: View {
                         .ignoresSafeArea(.container, edges: .bottom)
                 }
             }
+            .onChange(of: deleting || removingFromDay) { _, active in
+                if !active { confirmationHeight = nil; onConfirmationHeight(nil) }
+            }
+            .onDisappear { onConfirmationHeight(nil) }
             .onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
             .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
-            .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose))
+            .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose, confirmationHeight: confirmationHeight))
     }
     private var compactContent: some View {
                     Button(action: onExpand) {
@@ -81,7 +88,14 @@ struct MarkerDetailView: View {
     }
 
     private var detailPage: some View {
-            detailScroll
+            ZStack(alignment: .top) {
+                detailScroll
+                    .opacity(deleting || removingFromDay ? 0 : 1)
+                    .allowsHitTesting(!deleting && !removingFromDay)
+                    .accessibilityHidden(deleting || removingFromDay)
+                if deleting || removingFromDay { inlineDeletion }
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: deleting || removingFromDay)
             .toolbar(.hidden, for: .navigationBar)
 
                 .sheet(isPresented: Binding(get: { editing && !embedded }, set: { editing = $0 })) {
@@ -92,20 +106,48 @@ struct MarkerDetailView: View {
                         embedded: true, onSaved: { editing = false }, onClosed: { editing = false })
                         .toolbar(.visible, for: .navigationBar)
                 }
-                .sheet(isPresented: $removingFromDay, onDismiss: { removalTarget = nil }) {
-                    if let target = removalTarget {
-                        DeletionConfirmationView(store: store, title: "从今日行程移除", message: "仅从当前日期和当天所有路线中移除，地点收藏及其他日期的安排会保留。", kind: "marker-from-day", offersExclusiveMarkers: false, allowsQueuedWrites: true) { _ in
-                            if store.removeDayPlacesInBackground([target.markerID], from: target.day) { onClose() }
-                            removalTarget = nil
-                        }
-                    }
-                }
-                .sheet(isPresented: $deleting) {
-                    let target = current
-                    DeletionConfirmationView(store: store, title: "删除地点", message: "删除收藏，并从所有每日行程和路线中移除这个地点。", kind: "marker", offersExclusiveMarkers: false) { _ in
-                        if store.deleteMarker(target) { onClose() }
-                    }
-                }
+
+    }
+
+    private var inlineDeletion: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Label("移除行程", systemImage: "trash").font(.caption).foregroundStyle(.secondary)
+            Text(removingFromDay ? "从今日行程移除" : "删除地点").font(.title2.weight(.semibold))
+            Text(removingFromDay ? "仅从当前日期和当天所有路线中移除，地点收藏及其他日期的安排会保留。" : "删除收藏，并从所有每日行程和路线中移除这个地点。")
+                .font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            HStack(spacing: 12) {
+                Button {
+                    deleting = false; removingFromDay = false
+                    deletionTarget = nil; removalTarget = nil
+                } label: {
+                    Text("取消").frame(maxWidth: .infinity, minHeight: 52)
+                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                }.buttonStyle(.plain).accessibilityIdentifier("cancel-delete-marker")
+                Button(role: .destructive) {
+                    let accepted: Bool
+                    if removingFromDay, let target = removalTarget {
+                        accepted = store.removeDayPlacesInBackground([target.markerID], from: target.day)
+                    } else if let target = deletionTarget {
+                        accepted = store.deleteMarker(target)
+                    } else { accepted = false }
+                    if accepted { onClose() }
+                } label: {
+                    Text(removingFromDay ? "移除" : "删除地点").frame(maxWidth: .infinity, minHeight: 52)
+                        .foregroundStyle(.white).background(Color.red, in: Capsule())
+                }.buttonStyle(.plain).disabled(store.saving)
+                    .accessibilityIdentifier("confirm-delete-marker")
+            }
+        }
+        .padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { proxy in
+            Color.clear.onAppear { confirmationHeight = proxy.size.height; onConfirmationHeight(proxy.size.height) }
+                .onChange(of: proxy.size.height) { _, height in confirmationHeight = height; onConfirmationHeight(height) }
+        })
+        .background(Color(uiColor: .systemBackground))
+        .transition(.opacity)
     }
 
     private var detailScroll: some View {
@@ -208,8 +250,27 @@ struct MarkerDetailView: View {
                         markerActionLayout {
                             Button {
                                 if store.addMarkerInBackground(current, to: day) { onClose() }
-                            } label: { Label(addDayLabel(day), systemImage: "plus") }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "calendar.badge.plus")
+                                        .font(.title3.weight(.medium))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(addDayLabel(day).components(separatedBy: " · ").first ?? "加入行程")
+                                            .font(.body.weight(.semibold))
+                                        Text(day.date.replacingOccurrences(of: "-", with: "/"))
+                                            .font(.caption).opacity(0.85)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "plus").font(.body.weight(.semibold))
+                                }
+                                .padding(.horizontal, 16).padding(.vertical, 12)
+                                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                                .foregroundStyle(.white)
+                                .background(Color.black, in: RoundedRectangle(cornerRadius: 14))
+                                .contentShape(RoundedRectangle(cornerRadius: 14))
+                            }
                                 .disabled(store.saving).accessibilityIdentifier("add-marker-to-current-day")
+                                .accessibilityLabel(addDayLabel(day))
                         }
                     }
                     markerActionLayout {
@@ -224,7 +285,7 @@ struct MarkerDetailView: View {
                                 .disabled(store.saving).accessibilityIdentifier("remove-marker-from-current-day")
                         }
                         if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-                        Button(role: .destructive) { deleting = true } label: {
+                        Button(role: .destructive) { deletionTarget = current; deleting = true } label: {
                             Label("删除", systemImage: "trash").font(.subheadline).foregroundStyle(.red).frame(minHeight: 44)
                         }.accessibilityLabel("删除地点").accessibilityIdentifier("marker-delete")
                     }
@@ -536,6 +597,7 @@ private struct MarkerDetailPresentation: ViewModifier {
     let edgeAttached: Bool
     var embedded = false
     let onClose: () -> Void
+    var confirmationHeight: CGFloat? = nil
     @State private var detent: PresentationDetent = .medium
     @ViewBuilder func body(content: Content) -> some View {
         if embedded { content.background(Color(uiColor: .systemBackground)) }
@@ -543,7 +605,8 @@ private struct MarkerDetailPresentation: ViewModifier {
             content.modifier(IPadMarkerDialogPresentation(allowsBackgroundInteraction: true))
         } else if edgeAttached { content.background(Color(uiColor: .systemBackground)) }
         else {
-            content.presentationDetents([.height(80), .medium, .large], selection: $detent)
+            content.presentationDetents(confirmationHeight.map { [.height($0)] } ?? [.height(80), .medium, .large], selection: $detent)
+                .animation(.easeInOut(duration: 0.22), value: confirmationHeight)
                 .presentationBackgroundInteraction(.enabled)
                 .presentationBackground(Color(uiColor: .systemBackground))
                 .presentationDragIndicator(.visible)

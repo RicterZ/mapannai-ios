@@ -2,6 +2,19 @@ import XCTest
 @testable import MapAnNai
 
 final class TripWeatherLocationTests: XCTestCase {
+    func testAsyncLocationCacheTracksCoordinatesAndMembership() async {
+        let cache = TripWeatherLocationCache()
+        let first = point("a", 31.2, 121.4)
+        let moved = point("a", 40, 116)
+        let initial = await cache.representative([first])
+        let repeated = await cache.representative([first])
+        let updated = await cache.representative([moved])
+        let empty = await cache.representative([])
+        XCTAssertEqual(initial, first.coordinate)
+        XCTAssertEqual(repeated, initial)
+        XCTAssertEqual(updated, moved.coordinate)
+        XCTAssertNil(empty)
+    }
     func testSingleMarkerPreservesExactCoordinate() {
         let stop = point("only", 31.234567, 121.456789)
         XCTAssertEqual(TripWeatherLocation.representative([stop]), stop.coordinate)

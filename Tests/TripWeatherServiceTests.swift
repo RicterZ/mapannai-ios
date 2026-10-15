@@ -2,6 +2,73 @@ import XCTest
 @testable import MapAnNai
 
 final class TripWeatherServiceTests: XCTestCase {
+    func testTokyoHistoryResolvesTimeZoneWithoutAppleGeocoding() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory); MockURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = TripWeatherService(session: URLSession(configuration: configuration), cacheDirectory: directory)
+        MockURLProtocol.handler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(query.first { $0.name == "timezone" }?.value, "auto")
+            XCTAssertEqual(request.url?.host, "archive-api.open-meteo.com")
+            return (200, Data(#"{"timezone":"Asia/Tokyo","daily":{"time":["2024-05-01"],"weather_code":[63],"temperature_2m_min":[12.4],"temperature_2m_max":[19.9]}}"#.utf8))
+        }
+        let coordinate = Coordinate(latitude: 35.6762, longitude: 139.6503)
+        let weather = try await service.forecast(for: "2024-05-01", at: coordinate)
+        XCTAssertEqual(weather?.weatherCode, 63)
+        let zone = await service.cachedTimeZone(at: coordinate)
+        XCTAssertEqual(zone?.identifier, "Asia/Tokyo")
+    }
+    func testHistoricalWeatherUsesArchiveAndPersistsWithoutRefetching() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory); MockURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let coordinate = Coordinate(latitude: 35.68, longitude: 139.69)
+        let zone = TimeZone(identifier: "Asia/Tokyo")!
+        let now = ISO8601DateFormatter().date(from: "2026-10-16T12:00:00Z")!
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.host, "archive-api.open-meteo.com")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(query.first { $0.name == "start_date" }?.value, "2024-05-01")
+            XCTAssertEqual(query.first { $0.name == "end_date" }?.value, "2024-05-01")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            return (200, Data(#"{"daily":{"time":["2024-05-01"],"weather_code":[63],"temperature_2m_min":[12.4],"temperature_2m_max":[19.9]}}"#.utf8))
+        }
+        let service = TripWeatherService(session: session, cacheDirectory: directory)
+        let weather = try await service.forecast(for: "2024-05-01", at: coordinate, timeZone: zone, now: now)
+        XCTAssertEqual(weather?.weatherCode, 63)
+        XCTAssertNil(weather?.precipitationProbability)
+        MockURLProtocol.handler = { _ in
+            XCTFail("Historical cache must not be refreshed")
+            throw URLError(.notConnectedToInternet)
+        }
+        let restored = TripWeatherService(session: session, cacheDirectory: directory)
+        let cached = try await restored.forecast(for: "2024-05-01", at: coordinate, timeZone: zone, now: now)
+        XCTAssertEqual(cached, weather)
+    }
+
+    func testRecentHistoryUsesPastDaysAndMissingCodeIsNotCached() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory); MockURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = TripWeatherService(session: URLSession(configuration: configuration), cacheDirectory: directory)
+        let coordinate = Coordinate(latitude: 35, longitude: 140)
+        let now = ISO8601DateFormatter().date(from: "2026-10-16T12:00:00Z")!
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.host, "api.open-meteo.com")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(query.first { $0.name == "past_days" }?.value, "5")
+            return (200, Data(#"{"daily":{"time":["2026-10-15"],"weather_code":[null],"temperature_2m_min":[null],"temperature_2m_max":[null]}}"#.utf8))
+        }
+        let weather = try await service.forecast(for: "2026-10-15", at: coordinate, timeZone: TimeZone(secondsFromGMT: 0)!, now: now)
+        XCTAssertNil(weather)
+        let cached = await service.cachedWeather(for: "2026-10-15", at: coordinate)
+        XCTAssertNil(cached)
+    }
     func testRefreshFreezesHistoryAndPreservesMissingForecast() async throws {
         let zone = TimeZone(secondsFromGMT: 0)!
         let now = ISO8601DateFormatter().date(from: "2026-10-16T12:00:00Z")!

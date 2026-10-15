@@ -2,7 +2,7 @@ import Foundation
 
 /// Selects a dense city-sized neighborhood without linking a long chain of nearby stops.
 enum TripWeatherLocation {
-    struct Point {
+    struct Point: Hashable {
         let id: String
         let coordinate: Coordinate
     }
@@ -48,5 +48,21 @@ enum TripWeatherLocation {
         let dLat = lat2 - lat1, dLon = (b.longitude - a.longitude) * .pi / 180
         let h = pow(sin(dLat / 2), 2) + cos(lat1) * cos(lat2) * pow(sin(dLon / 2), 2)
         return 6_371_000 * 2 * asin(sqrt(min(1, max(0, h))))
+    }
+}
+
+// Keep clustering off the main actor and reuse results until membership/coordinates change.
+actor TripWeatherLocationCache {
+    static let shared = TripWeatherLocationCache()
+    private struct Result { let coordinate: Coordinate? }
+    private var results: [[TripWeatherLocation.Point]: Result] = [:]
+
+    func representative(_ points: [TripWeatherLocation.Point]) -> Coordinate? {
+        let key = points.filter { $0.coordinate.isValid }.sorted { $0.id < $1.id }
+        if let cached = results[key] { return cached.coordinate }
+        let coordinate = TripWeatherLocation.representative(key)
+        if results.count >= 256 { results.removeAll(keepingCapacity: true) }
+        results[key] = Result(coordinate: coordinate)
+        return coordinate
     }
 }

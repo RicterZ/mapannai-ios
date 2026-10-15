@@ -16,6 +16,36 @@ final class JourneyCardStyleUITests: XCTestCase {
         }
     }
 
+    @MainActor func testDayMapShowsOtherSavedPlacesScreenshot() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let trip = app.buttons["archive-trip-demo-trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 8)); trip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
+        let handle = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.16))
+        handle.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+        Thread.sleep(forTimeInterval: 1)
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/Users/sakana/Projects/mapannai-ios/output/day-map-other-places.png"))
+    }
+
+    @MainActor func testMarkerDeleteCompactPaddingScreenshot() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--saved-places-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let card = app.buttons["independent-marker-demo-3"]
+        for _ in 0..<6 where !card.isHittable { app.swipeUp() }
+        XCTAssertTrue(card.waitForExistence(timeout: 5)); card.tap()
+        let delete = app.buttons["marker-delete"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 5)); delete.tap()
+        XCTAssertTrue(app.buttons["confirm-delete-marker"].waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1)
+        try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/Users/sakana/Projects/mapannai-ios/output/marker-delete-padding.png"))
+        app.buttons["cancel-delete-marker"].tap()
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+    }
+
     @MainActor func testYearUnfoldsFullCardsAndDetailReturnsToYear() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview"]
@@ -575,7 +605,7 @@ final class JourneyCardStyleUITests: XCTestCase {
         let card = app.buttons["archive-trip-demo-trip"]
         XCTAssertTrue(card.waitForExistence(timeout: 5)); card.tap()
         let day = app.buttons["journey-day-day-1"]
-        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
         let schedule = app.buttons["route-0-schedule-demo-0"]
         XCTAssertTrue(schedule.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["day-detail-date-day-1"].exists)
@@ -604,7 +634,7 @@ final class JourneyCardStyleUITests: XCTestCase {
             let card = app.buttons["archive-trip-demo-trip"]
             XCTAssertTrue(card.waitForExistence(timeout: 5)); card.tap()
             let day = app.buttons["journey-day-day-1"]
-            XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+            XCTAssertTrue(day.waitForExistence(timeout: 5)); day.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
             XCTAssertTrue(app.buttons["route-0-marker-demo-0"].waitForExistence(timeout: 5))
             XCTAssertFalse(app.otherElements["route-0-transport-0"].firstMatch.exists)
             attach(app, large ? "Day detail accessibility type" : "Day detail legacy distance")
@@ -618,7 +648,7 @@ final class JourneyCardStyleUITests: XCTestCase {
         let card = app.buttons["archive-trip-demo-trip"]
         XCTAssertTrue(card.waitForExistence(timeout: 5)); card.tap()
         let day = app.buttons["journey-day-day-1"]
-        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.tap()
+        XCTAssertTrue(day.waitForExistence(timeout: 5)); day.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
         XCTAssertTrue(app.buttons["route-0-schedule-demo-0"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["day-marker-demo-3"].exists)
         let note = app.staticTexts["先到沿街入口集合，参观前核对预约时间；雨天从侧门进入，沿着连廊前往展厅。"]
