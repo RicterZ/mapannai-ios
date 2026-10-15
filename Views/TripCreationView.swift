@@ -114,12 +114,12 @@ struct TripCreationView: View {
     private var navigation: some View {
         HStack {
             Button { nameFocused = false; dismiss() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 22, weight: .regular))
+                Image(systemName: "chevron.left").font(.system(size: 20, weight: .regular))
                     .frame(width: 44, height: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel("取消")
                 .accessibilityIdentifier("trip-create-cancel").disabled(submitted)
             Spacer(minLength: 0)
-            Text(trip == nil ? "新的旅途" : "编辑旅途").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+            Text(trip == nil ? "新的旅途" : "编辑旅途").font(.headline).foregroundStyle(.primary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
