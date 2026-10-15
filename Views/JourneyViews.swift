@@ -458,12 +458,8 @@ struct JourneyArchiveView: View {
         .onPreferenceChange(ArchiveSeparatorFrame.self) { if openedID == nil { separatorFrame = $0 } }
         .onPreferenceChange(ArchiveHeadingFrame.self) { if openedID == nil, !$0.isEmpty { archiveHeadingFrame = $0 } }
         .onPreferenceChange(ArchiveDividerFrames.self) { if openedID == nil { dividerFrames = $0 } }
-        .onAppear { if let trip = openedTrip { store.select(trip: trip, focus: false) } }
-        .onChange(of: path) { _, value in
-            if value.isEmpty, let trip = openedTrip { store.select(trip: trip, focus: false) }
-        }
         .onChange(of: store.selectedMarker?.id) { _, id in
-            if id != nil, !mapVisible, independentDetail == nil, let trip = openedTrip { onSelect(trip, store.day) }
+            if id != nil, !mapVisible, independentDetail == nil, let trip = openedTrip { onSelect(trip, nil) }
         }
         .onChange(of: trips.map(\.id)) { _, ids in
             if let openedID, !ids.contains(openedID) { close() }
@@ -816,8 +812,7 @@ struct JourneyArchiveView: View {
         guard openedID == nil, yearMotion == nil, let frame = activeFrames[trip.id] else { return }
         independentDetail = nil
         store.selectedMarker = nil
-        // A later animation completion must not overwrite an early day selection.
-        store.select(trip: trip, focus: false)
+        // Browsing the archive is local; selecting a day prepares the map in HomeView.
         transferSeparatorFrame = expandedYear == nil ? separatorFrame : .zero
         openingFrame = frame
         slotViewportHeight = viewportHeight
