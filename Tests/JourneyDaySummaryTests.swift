@@ -22,8 +22,8 @@ final class JourneyDaySummaryTests: XCTestCase {
         let newPhoto = cache.snapshot(trip: trip, markers: edited)
         XCTAssertFalse(newPhoto === renamed)
         XCTAssertEqual(newPhoto.coverURL?.lastPathComponent, "new.jpg")
-        let excluded = cache.snapshot(trip: trip, markers: edited, excludingCover: true)
-        XCTAssertEqual(excluded.summaries.first?.coverTitle, "B")
+        XCTAssertEqual(newPhoto.summaries.first?.coverURL, newPhoto.coverURL)
+        XCTAssertEqual(newPhoto.summaries.first?.photos.count, 2)
         var reordered = trip
         reordered.days[0].chains = [["b", "a"]]
         XCTAssertEqual(cache.snapshot(trip: reordered, markers: edited).summaries.first?.routePreviews, [["B", "New title"]])
@@ -90,6 +90,20 @@ final class JourneyDaySummaryTests: XCTestCase {
         XCTAssertEqual(JourneyDaySummary(day: day, index: 0, markers: places,
             excludingPhotos: [URL(string: "https://example.invalid/a.jpg")!]).photos.map(\.title), ["B", "D"])
     }
+    @MainActor func testTripCoverDoesNotExcludeDayPhotoButDaysStillDeduplicate() {
+        let day = TripDay(id: "first", tripId: "t", date: "2026-10-01", markerIds: ["a"], chains: [["a"]])
+        var next = day
+        next.id = "second"
+        next.date = "2026-10-02"
+        let trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: next.date, days: [day, next])
+        var places = markers
+        places[0].content.headerImage = "https://example.invalid/shared-cover.jpg"
+        let snapshot = JourneyChapterCache().snapshot(trip: trip, markers: places)
+        XCTAssertNotNil(snapshot.coverURL)
+        XCTAssertEqual(snapshot.summaries[0].coverURL, snapshot.coverURL)
+        XCTAssertTrue(snapshot.summaries[1].photos.isEmpty)
+    }
+
     func testChaptersSkipCoverAndPreviouslySelectedPhotos() {
         var places = markers
         places[0].content.headerImage = "https://example.invalid/hotel.jpg"

@@ -417,7 +417,7 @@ AI NDJSON的title事件由change_title工具成功后发送；iOS按发起请求
 
 ## 首页旅行的今日章节
 
-旅行章节展示快照由视图持有的 `JourneyChapterCache` 复用：仅旅行数据、地点名称/封面或封面排除规则变化时重新生成；图片加载、几何偏好与转场状态更新不重新构建摘要。一次生成共用一份地点索引，地点笔记和坐标不参与摘要失效。首页预加载 URL 按展示顺序稳定去重，避免同一集合换序导致任务重启。缓存不保存凭据、不落盘；原卡片转场和正文位移/淡入保持不变。
+旅行章节展示快照由视图持有的 `JourneyChapterCache` 复用：仅旅行数据、地点名称/封面变化时重新生成；图片加载、几何偏好与转场状态更新不重新构建摘要。一次生成共用一份地点索引，地点笔记和坐标不参与摘要失效。首页预加载 URL 按展示顺序稳定去重，避免同一集合换序导致任务重启。缓存不保存凭据、不落盘；原卡片转场和正文位移/淡入保持不变。
 
 首页打开旅行时冻结设备本地日期对应的 day ID，在已有卡片转场完成回调后使用 ScrollViewReader 定位。待执行目标在滚动前消费，用户拖动也会清除；同页刷新、后台返回和子页面返回不重新初始化。关闭后重新打开生成新目标。仅滚动详情列表，不选择日期、不进入日详情或调整镜头；无匹配日保持原行为，不新增固定延时或额外滚动动画。
 
@@ -436,3 +436,5 @@ Trip day cards query Open-Meteo using the spherical mean of the largest 30km-rad
 ### Archive detail entrance motion
 
 Archive detail rows keep their native List layout. A noninteractive UIKit probe locates each cell content view and applies a keyed Core Animation `transform.translation.y` animation: 28pt, 0.3 seconds ease-in/ease-out on entrance. The independent archive header is not translated. SwiftUI retains the opacity transition. Late attachment during entrance starts from the translated position; settled newly attached cells do not replay entrance. Reduced Motion skips translation, and dismantling clears the owned animation and translation. Real images, carousel shadows, weather and initial day scrolling remain enabled. Hibiki build 382 was manually reported smooth after photo/height ablation; no Instruments frame-time conclusion is claimed.
+
+旅途封面不参与每日章节照片排除：封面选中的照片仍可出现在当天卡片中；日内及跨日期照片继续按展示顺序去重。

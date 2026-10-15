@@ -106,29 +106,27 @@ struct JourneyDaySummary {
         let days: [TripDay]
         let coverURL: URL?
         let summaries: [JourneyDaySummary]
-        init(trip: Trip, places: [JourneyDaySummary.Place], excludingCover: Bool) {
+        init(trip: Trip, places: [JourneyDaySummary.Place]) {
             days = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
             let lookup = JourneyDaySummary.lookup(places)
             coverURL = JourneyDaySummary.cover(trip: trip, lookup: lookup)
             summaries = JourneyDaySummary.chapters(days: days, lookup: lookup,
-                excludingPhotos: excludingCover ? Set([coverURL].compactMap { $0 }) : [])
+                excludingPhotos: [])
         }
     }
     private struct Entry {
         let trip: Trip
         let places: [JourneyDaySummary.Place]
-        let excludingCover: Bool
         let snapshot: Snapshot
     }
     private var entries: [String: Entry] = [:]
 
-    func snapshot(trip: Trip, markers: [Marker], excludingCover: Bool = false) -> Snapshot {
+    func snapshot(trip: Trip, markers: [Marker]) -> Snapshot {
         let places = markers.map(JourneyDaySummary.Place.init)
-        if let entry = entries[trip.id], entry.trip == trip, entry.places == places,
-           entry.excludingCover == excludingCover { return entry.snapshot }
-        let snapshot = Snapshot(trip: trip, places: places, excludingCover: excludingCover)
+        if let entry = entries[trip.id], entry.trip == trip, entry.places == places { return entry.snapshot }
+        let snapshot = Snapshot(trip: trip, places: places)
         if entries.count >= 64 { entries.removeAll(keepingCapacity: true) }
-        entries[trip.id] = Entry(trip: trip, places: places, excludingCover: excludingCover, snapshot: snapshot)
+        entries[trip.id] = Entry(trip: trip, places: places, snapshot: snapshot)
         return snapshot
     }
 }

@@ -29,7 +29,7 @@ struct JourneyDaysContents: View {
     @State private var pendingInitialDayID: String?
     @State private var initialDayScrollInitialized = false
     var body: some View {
-        let chapters = chapterCache.snapshot(trip: trip, markers: store.markers, excludingCover: archiveColorIndex != nil)
+        let chapters = chapterCache.snapshot(trip: trip, markers: store.markers)
         let days = chapters.days
         let summaries = chapters.summaries
         ScrollViewReader { reader in
