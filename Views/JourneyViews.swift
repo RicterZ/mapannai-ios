@@ -121,11 +121,6 @@ struct JourneyDaysContents: View {
                 }
             }
             Section {
-                if !store.demo {
-                    Link("天气数据：Open-Meteo", destination: TripWeatherService.attributionURL)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                }
                 JourneyActionGroup(compact: true) {
                     if !unscheduledPlaces.isEmpty || !store.demo {
                         Button { store.beginAddingPlace(tripID: trip.id) } label: {

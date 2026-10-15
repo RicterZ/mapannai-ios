@@ -165,6 +165,10 @@ struct SettingsView: View {
             card {
                 Text("MapAnNai").font(.title3.weight(.semibold)).padding(.vertical, 4)
                 Divider()
+                Link(destination: TripWeatherService.attributionURL) {
+                    linkRow("天气数据：Open-Meteo")
+                }.accessibilityIdentifier("about-weather-attribution")
+                Divider()
                 Link(destination: URL(string: "https://github.com/RicterZ/mapannai-plus")!) {
                     linkRow("RicterZ/mapannai-plus")
                 }.accessibilityIdentifier("about-web-repository")
