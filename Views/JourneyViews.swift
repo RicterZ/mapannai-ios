@@ -558,10 +558,9 @@ struct JourneyArchiveView: View {
                                 .accessibilityIdentifier("archive-year-\(group.year)")
                                 .accessibilityHint("展开这一年的旅途")
                                 .frame(height: 204)
-                                .visualEffect { content, proxy in
-                                    content.rotation3DEffect(.radians(ArchiveStorage.angle(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, baseMidY: proxy.frame(in: .named("journey-archive")).midY - CGFloat(storageSlot) * 88, enabled: !typeSize.isAccessibilitySize && !reduceMotion)), axis: (x: 1, y: 0, z: 0), perspective: proxy.size.width / 1000)
-                                        .offset(y: ArchiveStorage.packingOffset(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, enabled: !typeSize.isAccessibilitySize && !reduceMotion))
-                                }
+                                .contentShape(RoundedRectangle(cornerRadius: 26))
+                                .modifier(ArchiveCardTransform(viewportHeight: height, slot: storageSlot,
+                                    enabled: !typeSize.isAccessibilitySize && !reduceMotion))
                                 .frame(height: typeSize.isAccessibilitySize ? 204 : 88, alignment: .top)
                                 .background(GeometryReader { proxy in
                                     Color.clear.preference(key: ArchiveDividerFrames.self,
@@ -576,26 +575,26 @@ struct JourneyArchiveView: View {
                         Button { open(trip, index: index, viewportHeight: height) } label: {
                             JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
                                 .frame(height: 204)
-                                .visualEffect { content, proxy in
-                                    content.rotation3DEffect(.radians(ArchiveStorage.angle(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, baseMidY: proxy.frame(in: .named("journey-archive")).midY - CGFloat(storageSlot + (yearGroups[index] == nil ? 0 : 1)) * 88, enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion)), axis: (x: 1, y: 0, z: 0), perspective: proxy.size.width / 1000)
-                                        .offset(y: ArchiveStorage.packingOffset(midY: proxy.frame(in: .named("journey-archive")).midY, viewportHeight: height, enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion))
-                                }
-                                .frame(height: compact ? 88 : 204, alignment: .top)
-                                .contentShape(Rectangle())
                         }
                         .buttonStyle(ArchiveCardButtonStyle())
-                        .background(GeometryReader { proxy in
-                            Color.clear.preference(key: ArchiveCardFrames.self, value: [trip.id: proxy.frame(in: .named("journey-archive"))])
-                        })
-                        .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+                        .contentShape(RoundedRectangle(cornerRadius: 26))
                         .overlay {
                             ArchiveContextInteraction(
                                 preview: JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
                                     .frame(width: min(608, max(1, cardFrames[trip.id]?.width ?? 340)), height: 204),
                                 onOpen: { open(trip, index: index, viewportHeight: height) },
                                 onEdit: { editing = trip }, onDelete: { deleting = trip })
+                                .clipShape(RoundedRectangle(cornerRadius: 26))
                                 .accessibilityHidden(true)
                         }
+                        .modifier(ArchiveCardTransform(viewportHeight: height,
+                            slot: storageSlot + (yearGroups[index] == nil ? 0 : 1),
+                            enabled: !isTop && !typeSize.isAccessibilitySize && !reduceMotion))
+                        .frame(height: compact ? 88 : 204, alignment: .top)
+                        .background(GeometryReader { proxy in
+                            Color.clear.preference(key: ArchiveCardFrames.self, value: [trip.id: proxy.frame(in: .named("journey-archive"))])
+                        })
+                        .opacity(openedID == nil || !transitionStarted ? 1 : 0)
                         .zIndex(Double(index))
                         .accessibilityIdentifier("archive-trip-\(trip.id)")
                         .accessibilityHint(isTop ? "置顶旅途，打开旅行详情" : "打开旅行详情")
@@ -1083,6 +1082,31 @@ private struct ArchiveContextInteraction<Preview: View>: UIViewRepresentable {
             parameters.shadowPath = UIBezierPath()
             return UITargetedPreview(view: view, parameters: parameters)
         }
+    }
+}
+
+// Apply the projection to the interaction layer too, not just its rendered contents.
+private struct ArchiveCardTransform: ViewModifier {
+    let viewportHeight: CGFloat
+    let slot: Int
+    let enabled: Bool
+    @State private var frame = CGRect.zero
+
+    func body(content: Content) -> some View {
+        content
+            .rotation3DEffect(.radians(ArchiveStorage.angle(midY: frame.midY,
+                viewportHeight: viewportHeight, baseMidY: frame.midY - CGFloat(slot) * 88,
+                enabled: enabled)), axis: (x: 1, y: 0, z: 0), perspective: frame.width / 1000)
+            .offset(y: ArchiveStorage.packingOffset(midY: frame.midY,
+                viewportHeight: viewportHeight, enabled: enabled))
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.onGeometryChange(for: CGRect.self) { _ in
+                        proxy.frame(in: .named("journey-archive"))
+                    } action: { frame = $0 }
+                }
+                .allowsHitTesting(false)
+            }
     }
 }
 
