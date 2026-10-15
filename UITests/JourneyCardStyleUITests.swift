@@ -1,6 +1,21 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testChapterCacheOpenCloseAndReopen() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--today-chapter-preview"]
+        app.launch()
+        for _ in 0..<2 {
+            let card = app.buttons["archive-trip-today-trip"]
+            XCTAssertTrue(card.waitForExistence(timeout: 8))
+            card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
+            XCTAssertTrue(app.buttons["journey-day-today-preview-0"].waitForExistence(timeout: 8))
+            let back = app.buttons["archive-detail-close"]
+            XCTAssertTrue(back.waitForExistence(timeout: 5))
+            back.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.01)
+        }
+    }
+
     @MainActor func testYearUnfoldsFullCardsAndDetailReturnsToYear() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--year-archive-preview"]

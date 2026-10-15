@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import UIKit
 
 struct JourneyDaysContents: View {
+    @StateObject private var chapterCache = JourneyChapterCache()
     @ObservedObject var store: AppStore
     let trip: Trip
     var onSelectDay: ((TripDay) -> Void)? = nil
@@ -28,10 +29,9 @@ struct JourneyDaysContents: View {
     @State private var pendingInitialDayID: String?
     @State private var initialDayScrollInitialized = false
     var body: some View {
-        let days = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
-        let cover = archiveColorIndex == nil ? nil : JourneyDaySummary.cover(trip: trip, markers: store.markers)
-        let summaries = JourneyDaySummary.chapters(days: days, markers: store.markers,
-            excludingPhotos: Set([cover].compactMap { $0 }))
+        let chapters = chapterCache.snapshot(trip: trip, markers: store.markers, excludingCover: archiveColorIndex != nil)
+        let days = chapters.days
+        let summaries = chapters.summaries
         ScrollViewReader { reader in
         List {
             if let archiveColorIndex {
@@ -241,6 +241,7 @@ private struct NativeDayFrames: PreferenceKey {
 }
 
 struct JourneyArchiveView: View {
+    @StateObject private var chapterCache = JourneyChapterCache()
     @ObservedObject var store: AppStore
     let planner: AIPlannerStore
     @Binding var path: [JourneyDestination]
@@ -294,17 +295,18 @@ struct JourneyArchiveView: View {
     private var photoURLs: [URL] {
         var urls: [URL] = []
         for trip in trips {
-            if let url = JourneyDaySummary.cover(trip: trip, markers: store.markers) { urls.append(url) }
-            let days = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
-            urls.append(contentsOf: JourneyDaySummary.chapters(days: days, markers: store.markers).compactMap(\.coverURL))
+            let chapters = chapterCache.snapshot(trip: trip, markers: store.markers)
+            if let url = chapters.coverURL { urls.append(url) }
+            urls.append(contentsOf: chapters.summaries.compactMap(\.coverURL))
         }
-        return Array(Set(urls))
+        var seen = Set<URL>()
+        return urls.filter { seen.insert($0).inserted }
     }
     private func number(for trip: Trip) -> Int {
         JourneyArchiveOrdering.numberedIDs(store.trips).firstIndex(of: trip.id).map { $0 + 1 } ?? 1
     }
     private func coverPhoto(_ trip: Trip) -> UIImage? {
-        JourneyDaySummary.cover(trip: trip, markers: store.markers).flatMap { photos[$0] }
+        chapterCache.snapshot(trip: trip, markers: store.markers).coverURL.flatMap { photos[$0] }
     }
     private var yearGroups: [Int: JourneyArchiveYearGroup] {
         JourneyArchiveOrdering.yearGroups(trips, today: Date.now.dayString)

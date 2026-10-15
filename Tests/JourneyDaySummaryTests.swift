@@ -2,6 +2,60 @@ import XCTest
 @testable import MapAnNai
 
 final class JourneyDaySummaryTests: XCTestCase {
+    @MainActor func testChapterCacheReusesSnapshotsAndIgnoresNotesAndCoordinates() {
+        let cache = JourneyChapterCache()
+        let day = TripDay(id: "d", tripId: "t", date: "2026-10-01", markerIds: ["a", "b"], chains: [["a", "b"]])
+        let trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: day.date, days: [day])
+        let initial = cache.snapshot(trip: trip, markers: markers)
+        for _ in 0..<20 {
+            XCTAssertTrue(cache.snapshot(trip: trip, markers: markers) === initial)
+        }
+        var edited = markers
+        edited[0].content.markdownContent = "Updated note"
+        edited[0].coordinates.latitude = 30
+        XCTAssertTrue(cache.snapshot(trip: trip, markers: edited) === initial)
+        edited[0].content.title = "New title"
+        let renamed = cache.snapshot(trip: trip, markers: edited)
+        XCTAssertFalse(renamed === initial)
+        XCTAssertEqual(renamed.summaries.first?.routePreviews, [["New title", "B"]])
+        edited[0].content.headerImage = "https://example.invalid/new.jpg"
+        let newPhoto = cache.snapshot(trip: trip, markers: edited)
+        XCTAssertFalse(newPhoto === renamed)
+        XCTAssertEqual(newPhoto.coverURL?.lastPathComponent, "new.jpg")
+        let excluded = cache.snapshot(trip: trip, markers: edited, excludingCover: true)
+        XCTAssertEqual(excluded.summaries.first?.coverTitle, "B")
+        var reordered = trip
+        reordered.days[0].chains = [["b", "a"]]
+        XCTAssertEqual(cache.snapshot(trip: reordered, markers: edited).summaries.first?.routePreviews, [["B", "New title"]])
+        reordered.days[0].markerIds = []
+        reordered.days[0].chains = []
+        XCTAssertEqual(cache.snapshot(trip: reordered, markers: edited).summaries.first?.count, 0)
+        XCTAssertEqual(cache.snapshot(trip: trip, markers: []).summaries.first?.count, 0)
+    }
+
+    @MainActor func testChapterCacheLocalTiming() {
+        let places = (0..<3000).map { index in
+            Marker(id: "p\(index)", coordinates: Coordinate(latitude: 0, longitude: 0),
+                content: MarkerContent(id: "p\(index)", title: "Place \(index)", markdownContent: ""))
+        }
+        let days = (0..<20).map { index in
+            TripDay(id: "d\(index)", tripId: "t", date: "2026-10-01", markerIds: ["p\(index)"], chains: [["p\(index)"]])
+        }
+        let trip = Trip(id: "t", name: "Timing", startDate: "2026-10-01", endDate: "2026-10-20", days: days)
+        let start = Date()
+        for _ in 0..<30 {
+            for (index, day) in days.enumerated() {
+                XCTAssertEqual(JourneyDaySummary(day: day, index: index, markers: places).count, 1)
+            }
+        }
+        let baseline = Date().timeIntervalSince(start)
+        let cache = JourneyChapterCache()
+        let first = cache.snapshot(trip: trip, markers: places)
+        let cachedStart = Date()
+        for _ in 0..<30 { XCTAssertTrue(cache.snapshot(trip: trip, markers: places) === first) }
+        print("Chapter benchmark (Debug simulator, 3000 places/20 days/30 updates): uncached=\(baseline)s cached=\(Date().timeIntervalSince(cachedStart))s")
+    }
+
     private let markers = ["a", "b", "c", "d"].map {
         Marker(id: $0, coordinates: Coordinate(latitude: 0, longitude: 0),
             content: MarkerContent(id: $0, title: $0.uppercased(), headerImage: $0 == "b" ? "https://example.invalid/b.jpg" : nil, markdownContent: ""))

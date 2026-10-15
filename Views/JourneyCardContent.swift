@@ -10,6 +10,14 @@ struct JourneyDayPhoto: Identifiable, Equatable {
 
 /// Read-only presentation: routes provide order; membership alone does not.
 struct JourneyDaySummary {
+    struct Place: Equatable {
+        let id: String
+        let title: String
+        let headerImage: String?
+        init(_ marker: Marker) {
+            id = marker.id; title = marker.title; headerImage = marker.content.headerImage
+        }
+    }
     let theme: String?
     let places: String
     let routePreviews: [[String]]
@@ -22,10 +30,13 @@ struct JourneyDaySummary {
     var coverTitle: String? { photos.first?.title }
 
     init(day: TripDay, index: Int, markers: [Marker], excludingPhotos: Set<URL> = []) {
-        let lookup = Dictionary(markers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        self.init(day: day, index: index, lookup: Self.lookup(markers.map(Place.init)), excludingPhotos: excludingPhotos)
+    }
+
+    private init(day: TripDay, index: Int, lookup: [String: Place], excludingPhotos: Set<URL>) {
         let title = day.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         theme = title.isEmpty || title.replacingOccurrences(of: " ", with: "") == "第\(index + 1)天" || title == day.date ? nil : title
-        count = Set(day.markerIds + day.chains.flatMap { $0 }).intersection(Set(lookup.keys)).count
+        count = Set(day.markerIds + day.chains.flatMap { $0 }).filter { lookup[$0] != nil }.count
         let routes = day.chains.filter { !$0.isEmpty }
         let routed = Set(routes.flatMap { $0 })
         let extra = day.markerIds.filter { !routed.contains($0) && lookup[$0] != nil }
@@ -57,7 +68,7 @@ struct JourneyDaySummary {
         transport = modes.isEmpty ? nil : modes.prefix(2).map(\.label).joined(separator: "·") + (modes.count > 2 ? "等\(modes.count)种交通" : "")
         var used = excludingPhotos
         photos = (routes.flatMap { $0 } + day.markerIds).compactMap { id in
-            guard let marker = lookup[id], let url = marker.content.headerImage.flatMap(imageURL),
+            guard let marker = lookup[id], let url = marker.headerImage.flatMap(imageURL),
                   used.insert(url).inserted else { return nil }
             return JourneyDayPhoto(url: url, title: marker.title)
         }
@@ -65,21 +76,61 @@ struct JourneyDaySummary {
 
     // Assign in display order, not image-load or scroll order.
     static func chapters(days: [TripDay], markers: [Marker], excludingPhotos: Set<URL> = []) -> [JourneyDaySummary] {
+        chapters(days: days, lookup: lookup(markers.map(Place.init)), excludingPhotos: excludingPhotos)
+    }
+
+    fileprivate static func chapters(days: [TripDay], lookup: [String: Place], excludingPhotos: Set<URL>) -> [JourneyDaySummary] {
         var used = excludingPhotos
         return days.enumerated().map { index, day in
-            let summary = JourneyDaySummary(day: day, index: index, markers: markers, excludingPhotos: used)
+            let summary = JourneyDaySummary(day: day, index: index, lookup: lookup, excludingPhotos: used)
             used.formUnion(summary.photos.map(\.url))
             return summary
         }
     }
 
     static func cover(trip: Trip, markers: [Marker]) -> URL? {
+        cover(trip: trip, lookup: lookup(markers.map(Place.init)))
+    }
+    fileprivate static func lookup(_ places: [Place]) -> [String: Place] {
+        Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+    fileprivate static func cover(trip: Trip, lookup: [String: Place]) -> URL? {
         let ids = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
             .flatMap { $0.chains.flatMap { $0 } + $0.markerIds } + (trip.markerIds ?? [])
-        return cover(ids: ids, markers: Dictionary(markers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }))
+        return ids.lazy.compactMap { lookup[$0]?.headerImage.flatMap(imageURL) }.first
     }
-    private static func cover(ids: [String], markers: [String: Marker]) -> URL? {
-        ids.lazy.compactMap { markers[$0]?.content.headerImage.flatMap(imageURL) }.first
+}
+
+// UI state (photos, geometry, transitions) must not rebuild chapter presentation data.
+@MainActor final class JourneyChapterCache: ObservableObject {
+    final class Snapshot {
+        let days: [TripDay]
+        let coverURL: URL?
+        let summaries: [JourneyDaySummary]
+        init(trip: Trip, places: [JourneyDaySummary.Place], excludingCover: Bool) {
+            days = trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
+            let lookup = JourneyDaySummary.lookup(places)
+            coverURL = JourneyDaySummary.cover(trip: trip, lookup: lookup)
+            summaries = JourneyDaySummary.chapters(days: days, lookup: lookup,
+                excludingPhotos: excludingCover ? Set([coverURL].compactMap { $0 }) : [])
+        }
+    }
+    private struct Entry {
+        let trip: Trip
+        let places: [JourneyDaySummary.Place]
+        let excludingCover: Bool
+        let snapshot: Snapshot
+    }
+    private var entries: [String: Entry] = [:]
+
+    func snapshot(trip: Trip, markers: [Marker], excludingCover: Bool = false) -> Snapshot {
+        let places = markers.map(JourneyDaySummary.Place.init)
+        if let entry = entries[trip.id], entry.trip == trip, entry.places == places,
+           entry.excludingCover == excludingCover { return entry.snapshot }
+        let snapshot = Snapshot(trip: trip, places: places, excludingCover: excludingCover)
+        if entries.count >= 64 { entries.removeAll(keepingCapacity: true) }
+        entries[trip.id] = Entry(trip: trip, places: places, excludingCover: excludingCover, snapshot: snapshot)
+        return snapshot
     }
 }
 
