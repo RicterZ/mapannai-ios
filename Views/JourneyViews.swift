@@ -149,9 +149,7 @@ struct JourneyDaysContents: View {
             .scrollContentBackground(.hidden)
             .background(archiveColorIndex == nil ? Color(uiColor: .systemBackground) : Color.clear)
             .listSectionSpacing(8)
-            .onPreferenceChange(NativeDayFrames.self) {
-                nativeDayFrames = $0
-            }
+            // Ablation A: freeze frame feedback; trip-place drop targeting is temporarily inactive.
             .onAppear {
                 guard !initialDayScrollInitialized else { return }
                 initialDayScrollInitialized = true
