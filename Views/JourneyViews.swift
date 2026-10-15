@@ -141,9 +141,14 @@ struct JourneyDaysContents: View {
             }
             }
             .opacity(archiveContentVisible ? 1 : 0)
-            .offset(y: archiveContentVisible || reduceMotion ? 0 : -28)
+            .background {
+                if archiveColorIndex != nil {
+                    ArchiveCellMotion(visible: archiveContentVisible, entering: !archiveHeaderVisible, reduceMotion: reduceMotion)
+                }
+            }
             .animation(reduceMotion ? .linear(duration: 0.15) :
-                .timingCurve(0.16, 0.86, 0.28, 1, duration: archiveContentVisible ? 0.60 : 0.30), value: archiveContentVisible)
+                (archiveContentVisible ? .easeInOut(duration: 0.30) :
+                    .timingCurve(0.16, 0.86, 0.28, 1, duration: 0.30)), value: archiveContentVisible)
         }
             .onPreferenceChange(ArchiveHeaderFrame.self) { if !$0.isEmpty { onArchiveHeaderFrame($0) } }
             .scrollContentBackground(.hidden)
@@ -1060,7 +1065,7 @@ private struct ArchiveContextInteraction<Preview: View>: UIViewRepresentable {
                 ])
             })
         }
-        // The interaction's source is a clear plane, never the overlapping SwiftUI card hierarchy.
+        // Snapshot the card itself, not the transparent, projected interaction plane.
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
             previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
             targetedPreview(interaction)
@@ -1070,12 +1075,23 @@ private struct ArchiveContextInteraction<Preview: View>: UIViewRepresentable {
             targetedPreview(interaction)
         }
         private func targetedPreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
-            guard let view = interaction.view else { return nil }
+            guard let view = interaction.view, let window = view.window else { return nil }
+            let size = CGSize(width: view.bounds.width, height: 204)
+            guard size.width > 0 else { return nil }
+            let renderer = ImageRenderer(content: parent.preview.frame(width: size.width, height: size.height))
+            renderer.scale = window.screen.scale
+            guard let image = renderer.uiImage else { return nil }
+            let preview = UIImageView(image: image)
+            preview.frame = CGRect(origin: .zero, size: size)
+            preview.layer.cornerRadius = 26
+            preview.clipsToBounds = true
             let parameters = UIPreviewParameters()
             parameters.backgroundColor = .clear
-            parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: 26)
+            parameters.visiblePath = UIBezierPath(roundedRect: preview.bounds, cornerRadius: 26)
             parameters.shadowPath = UIBezierPath()
-            return UITargetedPreview(view: view, parameters: parameters)
+            let center = view.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), to: window)
+            return UITargetedPreview(view: preview, parameters: parameters,
+                target: UIPreviewTarget(container: window, center: center))
         }
     }
 }
@@ -1571,5 +1587,74 @@ struct JourneyDayEditor: View {
         }
         .journeyError(store: store)
         .presentationDetents([.large])
+    }
+}
+
+// Animate the presentation layer explicitly; SwiftUI still owns the cell's layout.
+private struct ArchiveCellMotion: UIViewRepresentable {
+    let visible: Bool
+    let entering: Bool
+    let reduceMotion: Bool
+    func makeUIView(context: Context) -> Probe {
+        let view = Probe()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+    func updateUIView(_ view: Probe, context: Context) {
+        view.visible = visible
+        view.entering = entering
+        view.reduceMotion = reduceMotion
+        view.applyWhenAttached()
+    }
+    static func dismantleUIView(_ view: Probe, coordinator: ()) { view.reset() }
+    final class Probe: UIView {
+        private static let animationKey = "archive-content-translation"
+        var visible = true
+        var entering = false
+        var reduceMotion = false
+        weak var target: UIView?
+        var appliedVisible: Bool?
+        override func didMoveToWindow() { super.didMoveToWindow(); applyWhenAttached() }
+        override func layoutSubviews() { super.layoutSubviews(); applyWhenAttached() }
+        func reset() {
+            target?.layer.removeAnimation(forKey: Self.animationKey)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            target?.layer.setValue(0, forKeyPath: "transform.translation.y")
+            CATransaction.commit()
+            target = nil
+            appliedVisible = nil
+        }
+        func applyWhenAttached() {
+            guard window != nil else { return }
+            var ancestor = superview
+            while let view = ancestor {
+                if let cell = view as? UICollectionViewCell { apply(to: cell.contentView); return }
+                if let cell = view as? UITableViewCell { apply(to: cell.contentView); return }
+                ancestor = view.superview
+            }
+        }
+        private func apply(to content: UIView) {
+            if target !== content { reset(); target = content }
+            guard appliedVisible != visible else { return }
+            let first = appliedVisible == nil
+            let from = (content.layer.presentation()?.value(forKeyPath: "transform.translation.y") as? NSNumber)?.doubleValue
+                ?? (visible ? -28 : 0)
+            appliedVisible = visible
+            content.layer.removeAnimation(forKey: Self.animationKey)
+            let destination = visible || reduceMotion ? 0.0 : -28.0
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            content.layer.setValue(destination, forKeyPath: "transform.translation.y")
+            CATransaction.commit()
+            guard !reduceMotion, !first || (visible && entering) else { return }
+            let animation = CABasicAnimation(keyPath: "transform.translation.y")
+            animation.fromValue = first ? -28.0 : from
+            animation.toValue = destination
+            animation.duration = 0.3
+            animation.timingFunction = visible ? CAMediaTimingFunction(name: .easeInEaseOut)
+                : CAMediaTimingFunction(controlPoints: 0.16, 0.86, 0.28, 1)
+            content.layer.add(animation, forKey: Self.animationKey)
+        }
     }
 }
