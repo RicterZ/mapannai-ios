@@ -83,7 +83,6 @@ struct JourneyDaysContents: View {
                 .accessibilityIdentifier("journey-day-menu-\(day.id)")
                 }
 
-                    .modifier(JourneyChapterEntrance(visible: archiveContentVisible))
                     .id(day.id)
 
                     .listRowInsets(EdgeInsets(top: 16, leading: 4, bottom: 16, trailing: 4))
@@ -97,10 +96,8 @@ struct JourneyDaysContents: View {
             if !unscheduledPlaces.isEmpty {
                 Section {
                     JourneyPlaceGroupHeading(title: "未安排日期", count: unscheduledPlaces.count)
-                        .modifier(JourneyChapterEntrance(visible: archiveContentVisible))
                     ForEach(unscheduledPlaces) { marker in
                         DayPlaceIdentity(marker: marker)
-                            .modifier(JourneyChapterEntrance(visible: archiveContentVisible))
                             .listRowBackground(Color(uiColor: .systemBackground))
                             .listRowSeparator(.hidden)
                             .contentShape(Rectangle())
@@ -139,11 +136,14 @@ struct JourneyDaysContents: View {
                         }
                             .disabled(store.saving).accessibilityIdentifier("journey-edit-trip")
                     }
-                }.modifier(JourneyChapterEntrance(visible: archiveContentVisible))
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }.listRowBackground(Color.clear).listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
             }
+            .opacity(archiveContentVisible ? 1 : 0)
+            .offset(y: archiveContentVisible || reduceMotion ? 0 : -28)
+            .animation(reduceMotion ? .linear(duration: 0.15) :
+                .timingCurve(0.16, 0.86, 0.28, 1, duration: archiveContentVisible ? 0.60 : 0.30), value: archiveContentVisible)
         }
             .onPreferenceChange(ArchiveHeaderFrame.self) { if !$0.isEmpty { onArchiveHeaderFrame($0) } }
             .scrollContentBackground(.hidden)
@@ -226,23 +226,6 @@ struct JourneyDaysContents: View {
             .contentShape(Rectangle())
     }
 
-}
-
-private struct JourneyChapterEntrance: ViewModifier {
-    let visible: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private var motion: Animation {
-        .timingCurve(0.16, 0.86, 0.28, 1, duration: visible ? 0.60 : 0.30)
-    }
-    func body(content: Content) -> some View {
-        content
-            .animation(reduceMotion ? .linear(duration: 0.15) : motion) { view in
-                view.opacity(visible ? 1 : 0)
-            }
-            .animation(reduceMotion ? nil : motion) { view in
-                view.offset(y: visible || reduceMotion ? 0 : -28)
-            }
-    }
 }
 
 private struct NativeDayFrames: PreferenceKey {
