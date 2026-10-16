@@ -320,9 +320,11 @@ struct JourneyArchiveView: View {
                 archive(height: slotViewportHeight ?? geometry.size.height)
                     .opacity(yearMotion == nil && (expandedYear == nil || !yearReady) ? 1 : 0)
                     .allowsHitTesting(openedID == nil && expandedYear == nil && yearMotion == nil)
+                    .disabled(expandedYear != nil || openedID != nil || yearMotion != nil)
                     .accessibilityHidden(openedID != nil || expandedYear != nil)
                 if let year = expandedYear {
                     yearArchive(year, height: geometry.size.height)
+                        .zIndex(1)
                         .opacity(yearReady && yearMotion == nil ? 1 : 0)
                         .allowsHitTesting(yearReady && yearMotion == nil && openedID == nil)
                         .accessibilityHidden(!yearReady || yearMotion != nil || openedID != nil)
@@ -584,8 +586,7 @@ struct JourneyArchiveView: View {
                         .buttonStyle(ArchiveCardButtonStyle())
                         .contentShape(RoundedRectangle(cornerRadius: 26))
                         .overlay {
-                            ArchiveContextInteraction(
-                                preview: JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
+                            ArchiveContextInteraction(preview: JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
                                     .frame(width: min(608, max(1, cardFrames[trip.id]?.width ?? 340)), height: 204),
                                 onOpen: { open(trip, index: index, viewportHeight: height) },
                                 onEdit: { editing = trip }, onDelete: { deleting = trip })
@@ -707,13 +708,10 @@ struct JourneyArchiveView: View {
                             Color.clear.preference(key: ArchiveYearLayout.self,
                                 value: ArchiveYearLayout(cards: [trip.id: proxy.frame(in: .named("journey-archive"))]))
                         })
-                        .overlay {
-                            ArchiveContextInteraction(
-                                preview: JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
-                                    .frame(width: max(1, yearLayout.cards[trip.id]?.width ?? 340), height: 204),
-                                onOpen: { open(trip, index: index, viewportHeight: height) },
-                                onEdit: { editing = trip }, onDelete: { deleting = trip })
-                                .accessibilityHidden(true)
+                        .contentShape(RoundedRectangle(cornerRadius: 26))
+                        .contextMenu {
+                            Button("编辑旅途", systemImage: "pencil") { editing = trip }
+                            Button("删除旅途", systemImage: "trash", role: .destructive) { deleting = trip }
                         }
                         .accessibilityIdentifier("archive-trip-\(trip.id)")
                         .accessibilityAction(named: "编辑旅途") { editing = trip }
@@ -728,7 +726,6 @@ struct JourneyArchiveView: View {
             .frame(maxWidth: 640).frame(maxWidth: .infinity)
         }
         .modifier(ArchiveDetailScrollEdges())
-        .scrollDisabled(openedID != nil || yearMotion != nil || !yearReady)
         .refreshable { await store.refresh(force: true) }
         .accessibilityIdentifier("archive-year-list")
     }
@@ -818,7 +815,15 @@ struct JourneyArchiveView: View {
     private func open(_ trip: Trip, index: Int, viewportHeight: CGFloat) {
         let activeFrames = expandedYear == nil ? cardFrames : yearLayout.cards
         let headingFrame = expandedYear == nil ? archiveHeadingFrame : yearLayout.heading
-        guard openedID == nil, yearMotion == nil, let frame = activeFrames[trip.id] else { return }
+        guard openedID == nil else {
+            return
+        }
+        guard yearMotion == nil else {
+            return
+        }
+        guard let frame = activeFrames[trip.id] else {
+            return
+        }
         independentDetail = nil
         store.selectedMarker = nil
         // Browsing the archive is local; selecting a day prepares the map in HomeView.
@@ -1037,6 +1042,7 @@ private struct ArchiveCardFrames: PreferenceKey {
 }
 
 private struct ArchiveContextInteraction<Preview: View>: UIViewRepresentable {
+    @Environment(\.isEnabled) private var isEnabled
     let preview: Preview
     let onOpen: () -> Void
     let onEdit: () -> Void
@@ -1048,14 +1054,20 @@ private struct ArchiveContextInteraction<Preview: View>: UIViewRepresentable {
         view.backgroundColor = .clear
         view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
         view.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.open)))
+
         return view
     }
-    func updateUIView(_ view: UIView, context: Context) { context.coordinator.parent = self }
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.parent = self
+        view.isUserInteractionEnabled = isEnabled
+    }
 
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var parent: ArchiveContextInteraction
         init(_ parent: ArchiveContextInteraction) { self.parent = parent }
-        @objc func open() { parent.onOpen() }
+        @objc func open() {
+            parent.onOpen()
+        }
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
             configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
             UIContextMenuConfiguration(identifier: nil, previewProvider: { [self] in
