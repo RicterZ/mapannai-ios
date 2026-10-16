@@ -108,4 +108,4 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh release create "$RELEASE_TAG" dist/*.ipa dist/*.sha256 \
-            --verify-tag --title "${RELEASE_TAG#v}" --notes-file docs/release-notes.md
+            --verify-tag --title "${RELEASE_TAG#v}" --generate-notes

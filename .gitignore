@@ -12,3 +12,5 @@ Config/Local.xcconfig
 
 dist/
 output/
+
+docs/

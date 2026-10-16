@@ -37,11 +37,7 @@ Requires **iOS / iPadOS 17 or later**. Each release includes an unsigned `.ipa` 
 3. In AltStore Classic, open **My Apps**, tap **＋**, choose the IPA, then follow the prompts.
 4. Apps installed with a free Apple account usually need to be refreshed every **7 days** in AltStore.
 
-Use AltStore Classic, not AltStore PAL. Re-signing may change the Bundle ID, and the AMap key is tied to one. If the AMap background fails to load, switch to Apple Maps in Settings, or rebuild with a matching key ([build guide, Chinese](docs/development.md)).
-
-## Build from source
-
-See the [build guide (Chinese)](docs/development.md).
+Use AltStore Classic, not AltStore PAL. Re-signing may change the Bundle ID, and the AMap key is tied to one. If the AMap background fails to load, switch to Apple Maps in Settings.
 
 ## License
 

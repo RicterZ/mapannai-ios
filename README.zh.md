@@ -37,11 +37,7 @@ MapAnNai iOS 是 [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) 的�
 3. 打开 AltStore Classic → **My Apps** → **＋**，选择 IPA，按提示完成安装。
 4. 使用免费 Apple 账号安装的应用通常每 **7 天**需要在 AltStore 中刷新一次。
 
-请使用 AltStore Classic，不要用 AltStore PAL。重签可能改变 Bundle ID，而高德 Key 与 Bundle ID 绑定；如果高德底图无法加载，可在设置中切换到系统地图，或用匹配的 Key 重新构建（见 [构建指南](docs/development.md)）。
-
-## 自行构建
-
-见 [构建指南](docs/development.md)。
+请使用 AltStore Classic，不要用 AltStore PAL。重签可能改变 Bundle ID，而高德 Key 与 Bundle ID 绑定；如果高德底图无法加载，可在设置中切换到系统地图。
 
 ## 许可
 
