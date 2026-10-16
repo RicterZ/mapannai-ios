@@ -30,6 +30,12 @@ struct ArchiveYearPose {
     let transform: CATransform3D
     let opacity: CGFloat
 
+    init(frame: CGRect) {
+        self.frame = frame
+        transform = CATransform3DIdentity
+        opacity = 1
+    }
+
     init(slot: CGRect, transform: CATransform3D = CATransform3DIdentity, opacity: CGFloat = 1) {
         // An 88pt archive slot is not the card's drawing bounds.
         frame = CGRect(x: slot.minX, y: slot.minY, width: slot.width, height: 204)

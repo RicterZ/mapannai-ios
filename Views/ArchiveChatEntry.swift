@@ -5,6 +5,7 @@ struct ArchiveChatEntry: View {
     @ObservedObject var planner: AIPlannerStore
     @ObservedObject var store: AppStore
     let mapVisible: Bool
+    var snapshotOnly = false
     @State private var text = ""
     @State private var historyPresented = false
     @State private var resumeAfterHistory = false
@@ -15,6 +16,17 @@ struct ArchiveChatEntry: View {
     private var input: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
+        // ImageRenderer draws the panel's hosted UIKit presenter as a placeholder.
+        if snapshotOnly { content } else {
+            content.edgeAttachedPanel(isPresented: $historyPresented, dimsBackground: true, backgroundColor: .systemBackground, onDismiss: {
+                if resumeAfterHistory { resumeAfterHistory = false; planner.presented = true }
+            }) {
+                AIConversationList(planner: planner, store: store, onClose: { historyPresented = false }) { resumeAfterHistory = true }
+            }
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("聊聊下一程").font(.system(size: headingSize, weight: .semibold))
@@ -33,9 +45,15 @@ struct ArchiveChatEntry: View {
             Text("目的地、想做的事，或一个想法。")
                 .font(.subheadline).foregroundStyle(.secondary)
             HStack(spacing: 4) {
-                TextField("想去哪儿，或想怎么走？", text: $text)
-                    .font(.body).focused($inputFocused).submitLabel(.send)
-                    .onSubmit(submit).accessibilityIdentifier("archive-chat-input")
+                if snapshotOnly {
+                    Text(text.isEmpty ? "想去哪儿，或想怎么走？" : text)
+                        .font(.body).foregroundStyle(text.isEmpty ? .tertiary : .primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    TextField("想去哪儿，或想怎么走？", text: $text)
+                        .font(.body).focused($inputFocused).submitLabel(.send)
+                        .onSubmit(submit).accessibilityIdentifier("archive-chat-input")
+                }
                 if !input.isEmpty {
                     Button(action: submit) {
                         Image(systemName: "paperplane")
@@ -66,12 +84,6 @@ struct ArchiveChatEntry: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("archive-chat-recent")
             }
         }
-        .edgeAttachedPanel(isPresented: $historyPresented, dimsBackground: true, backgroundColor: .systemBackground, onDismiss: {
-            if resumeAfterHistory { resumeAfterHistory = false; planner.presented = true }
-        }) {
-            AIConversationList(planner: planner, store: store, onClose: { historyPresented = false }) { resumeAfterHistory = true }
-        }
-
     }
 
     private func submit() {

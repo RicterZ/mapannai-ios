@@ -273,6 +273,7 @@ struct JourneyArchiveView: View {
     @State private var transferDividers: [ArchiveTransferDivider] = []
     @State private var photos: [URL: UIImage] = [:]
     @State private var archiveHeadingFrame = CGRect.zero
+    @State private var chatEntryFrame = CGRect.zero
     @State private var transferHeading: ArchiveTransferHeading?
     @State private var initialDayID: String?
     @State private var creating = false
@@ -462,6 +463,7 @@ struct JourneyArchiveView: View {
             }
             photos = photos.filter { urls.contains($0.key) }
         }
+        .onPreferenceChange(ArchiveChatFrame.self) { if expandedYear == nil, !$0.isEmpty { chatEntryFrame = $0 } }
         .onPreferenceChange(ArchiveYearLayout.self) { value in
             if openedID == nil, expandedYear != nil, !value.cards.isEmpty { yearLayout = value }
         }
@@ -631,6 +633,10 @@ struct JourneyArchiveView: View {
                 }
                 ArchiveChatEntry(planner: planner, store: store, mapVisible: mapVisible)
                     .id("archive-chat-entry")
+                    .background(GeometryReader { proxy in
+                        Color.clear.preference(key: ArchiveChatFrame.self,
+                            value: proxy.frame(in: .named("journey-archive")))
+                    })
                     .overlay(alignment: .top) {
                         if !trips.isEmpty && independent.isEmpty {
                             Rectangle().fill(Color(uiColor: .separator).opacity(0.18))
@@ -789,6 +795,14 @@ struct JourneyArchiveView: View {
             let flat = yearLayout.cards[trip.id].map { ArchiveYearPose(slot: $0) }
                 ?? ArchiveYearPose(slot: slot, transform: home.transform, opacity: 0)
             tile(id: trip.id, image: image, home: home, flat: flat, order: Double(index) + 1)
+        }
+        if !chatEntryFrame.isEmpty,
+           let image = archiveImage(ArchiveChatEntry(planner: planner, store: store, mapVisible: mapVisible, snapshotOnly: true),
+               width: chatEntryFrame.width, height: chatEntryFrame.height) {
+            let home = ArchiveYearPose(frame: chatEntryFrame)
+            let below = chatEntryFrame.offsetBy(dx: 0, dy: max(0, height - chatEntryFrame.minY + 24))
+            tile(id: "chat-entry", image: image, home: home,
+                flat: ArchiveYearPose(frame: below), order: Double(trips.count + yearGroups.count + 1))
         }
         for (index, group) in yearGroups {
             guard let slot = dividerFrames[index], let image = archiveImage(
@@ -1673,5 +1687,13 @@ private struct ArchiveCellMotion: UIViewRepresentable {
                 : CAMediaTimingFunction(controlPoints: 0.16, 0.86, 0.28, 1)
             content.layer.add(animation, forKey: Self.animationKey)
         }
+    }
+}
+
+private struct ArchiveChatFrame: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty { value = next }
     }
 }
