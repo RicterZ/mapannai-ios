@@ -2,6 +2,9 @@
 
 English | [中文](README.zh.md) · [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) · [Download IPA](https://github.com/RicterZ/mapannai-ios/releases/latest)
 
+<img width="2249" height="1447" alt="screenshots" src="https://github.com/user-attachments/assets/9be410d8-546f-4e5d-b21d-4b025ca75937" />
+
+
 Put the places you want to visit on a map, then carry your day-by-day travel plan in your pocket.
 
 MapAnNai iOS is the native iPhone and iPad app for [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus). It works with your own server, so a trip planned on the web is ready on your phone, and changes made on the road show up everywhere.
