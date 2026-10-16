@@ -491,7 +491,7 @@ struct DayContentsView: View {
         let linked = Set(day.chains.flatMap { $0 })
         let unlinked = day.markerIds.filter { !linked.contains($0) && available.contains($0) }
         var sections: [(section: DayReorderSection, items: [DayReorderItem])] = day.chains.enumerated().map { index, chain in
-            (.route(index), chain.map { DayReorderItem.place(markerID: $0, route: index) })
+            (.route(index), chain.flatMap { [DayReorderItem.place(markerID: $0, route: index), .detail(markerID: $0, route: index)] })
         }
         sections.append((.unplanned, unlinked.isEmpty ? [.placeholder] : unlinked.map { .place(markerID: $0, route: nil) }))
         return DayPlaceReorderList(
@@ -544,20 +544,24 @@ struct DayContentsView: View {
                 let reference = DayPlaceReference(markerID: id, routeIndex: route)
                 let chain = route.flatMap { day.chains.indices.contains($0) ? day.chains[$0] : nil } ?? []
                 let position = chain.firstIndex(of: id)
+                RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: route, marker: marker,
+                    tint: route == nil ? .secondary : routeTint, editing: true,
+                    selected: selectedPlaces.contains(reference), toggleSelection: {
+                        if selectedPlaces.contains(reference) { selectedPlaces.remove(reference) } else { selectedPlaces.insert(reference) }
+                    },
+                    stop: route.flatMap { r in position.flatMap { day.scheduledRoute(at: r)?.stops[$0] } },
+                    showsSchedule: false)
+            }
+        case .detail(let id, let route):
+            let chain = day.chains.indices.contains(route) ? day.chains[route] : []
+            if let marker = store.markers.first(where: { $0.id == id }), let position = chain.firstIndex(of: id) {
                 VStack(spacing: 0) {
-                    RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: route, marker: marker,
-                        tint: route == nil ? .secondary : routeTint, editing: true,
-                        selected: selectedPlaces.contains(reference), toggleSelection: {
-                            if selectedPlaces.contains(reference) { selectedPlaces.remove(reference) } else { selectedPlaces.insert(reference) }
-                        },
-                        stop: route.flatMap { r in position.flatMap { day.scheduledRoute(at: r)?.stops[$0] } },
-                        showsSchedule: true,
-                        editSchedule: {
-                            if let route, let position, let scheduled = day.scheduledRoute(at: route) {
-                                openSchedule(scheduled, position: position, transport: false)
-                            }
-                        })
-                    if let route, let position, position + 1 < chain.count {
+                    if let scheduled = day.scheduledRoute(at: route) {
+                        RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: route,
+                            marker: marker, tint: routeTint, editing: true, stop: scheduled.stops[position],
+                            showsIdentity: false, editSchedule: { openSchedule(scheduled, position: position, transport: false) })
+                    }
+                    if position + 1 < chain.count {
                         transportRow(chain: chain, index: route, position: position)
                     }
                 }
