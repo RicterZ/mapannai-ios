@@ -1685,10 +1685,6 @@ struct DayEditorDraft: Identifiable {
         if ProcessInfo.processInfo.arguments.contains("--cover-resize-preview") {
             markers[2].content.headerImage = "https://example.invalid/cover.jpg"
         }
-        if ProcessInfo.processInfo.arguments.contains("--tmp-carousel") {
-            markers[0].content.headerImage = "https://example.invalid/a.jpg"
-            markers[1].content.headerImage = "https://example.invalid/b.jpg"
-        }
         if ProcessInfo.processInfo.arguments.contains("--long-note-preview") {
             markers[1].content.markdownContent = (1...24).map { "<p>第\($0)段旅行笔记：查看地点信息与当天安排。</p>" }.joined() + "<p>长笔记结束</p>"
         }
