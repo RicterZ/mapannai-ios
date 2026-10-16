@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 enum AIComposerLayout {
     static let inset: CGFloat = 16
@@ -61,6 +62,12 @@ struct AIPlannerView: View {
     @ObservedObject var store: AppStore
     var onOpenSettings: () -> Void = {}
     @State private var text = ""
+    @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var attachedImages: [String] = []
+    @State private var uploadingPhotos = false
+    @State private var photoError: String?
+    @State private var uploadTask: Task<Void, Never>?
+
     @State private var historyPresented = false
     @State private var resetConfirmation = false
     @State private var configurationAlert = false
@@ -68,7 +75,7 @@ struct AIPlannerView: View {
     @State private var nearBottom = true
     @FocusState private var inputFocused: Bool
     private var configurationReady: Bool { (try? planner.configuration.validated()) != nil }
-    private var canSend: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && planner.ready && configurationReady }
+    private var canSend: Bool { (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty) && !uploadingPhotos && planner.ready && configurationReady }
     private var messages: [AIMessage] { planner.conversation?.messages ?? [] }
 
     private func interactionCard(_ record: AIInteractionRecord) -> some View {
@@ -107,7 +114,16 @@ struct AIPlannerView: View {
                                 if message.role == "user", let content = message.content, !content.isEmpty {
                                     HStack {
                                         Spacer(minLength: 40)
+                                        VStack(alignment: .leading, spacing: 10) {
                                         Text(content).font(.body).textSelection(.enabled)
+                                        if let images = message.images, !images.isEmpty {
+                                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                                                ForEach(Array(images.enumerated()), id: \.offset) { _, url in
+                                                    attachmentImage(url).frame(height: 116).clipped().clipShape(RoundedRectangle(cornerRadius: 10))
+                                                }
+                                            }
+                                        }
+                                        }
                                             .padding(.horizontal, 16).padding(.vertical, 12)
                                             .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 19))
                                             .frame(maxWidth: geometry.size.width * 0.8, alignment: .trailing)
@@ -269,17 +285,68 @@ struct AIPlannerView: View {
         }
     }
 
+    private func attachmentImage(_ url: String) -> some View {
+        AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFill() }
+            placeholder: { ZStack { Color(uiColor: .tertiarySystemFill); Image(systemName: "photo").foregroundStyle(.secondary) } }
+    }
+    private func uploadPhotos(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty, !uploadingPhotos else { return }
+        let client = store.api, revision = store.settings.revision, conversation = planner.activeID
+        uploadingPhotos = true; photoError = nil
+        uploadTask = Task {
+            defer { uploadingPhotos = false; selectedPhotos = []; uploadTask = nil }
+            for item in items.prefix(max(0, 4 - attachedImages.count)) {
+                do {
+                    guard !store.demo else { throw AppError.message("示例模式不上传图片") }
+                    guard let bytes = try await item.loadTransferable(type: Data.self), bytes.count <= 30 * 1024 * 1024 else { throw AppError.message("请选择30MB以内的照片") }
+                    let compressed = try await Task.detached(priority: .userInitiated) { try MarkerImageCompression.jpeg(from: bytes) }.value
+                    try Task.checkCancellation()
+                    let url = try await client.uploadImage(compressed)
+                    try Task.checkCancellation()
+                    guard revision == store.settings.revision, conversation == planner.activeID else { return }
+                    guard URL(string: url)?.scheme == "https", url.count <= 4096 else { throw AppError.message("图片地址必须为HTTPS") }
+                    attachedImages.append(url)
+                } catch {
+                    if !Task.isCancelled, revision == store.settings.revision { photoError = "图片上传失败，请重新选择重试" }
+                    return
+                }
+            }
+        }
+    }
     private var composer: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !attachedImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(attachedImages.enumerated()), id: \.offset) { index, url in
+                            attachmentImage(url).frame(width: 68, height: 68).clipped().clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(alignment: .topTrailing) {
+                                    Button { attachedImages.remove(at: index) } label: {
+                                        Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.65))
+                                            .frame(width: 32, height: 32)
+                                    }.buttonStyle(.plain).accessibilityLabel("移除图片")
+                                }
+                        }
+                    }.padding(.horizontal, 14).padding(.top, 12)
+                }
+            }
+            if uploadingPhotos { Label("正在添加照片…", systemImage: "photo").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.top, 10) }
+            if let photoError { Text(photoError).font(.caption).foregroundStyle(.red).padding(.horizontal, 16).padding(.top, 8) }
         HStack(alignment: .bottom, spacing: 4) {
+            PhotosPicker(selection: $selectedPhotos, maxSelectionCount: max(1, 4 - attachedImages.count), matching: .images) {
+                Image(systemName: "photo.badge.plus").font(.system(size: 20)).foregroundStyle(.secondary)
+                    .frame(width: 44, height: 52).contentShape(Rectangle())
+            }.disabled(planner.busy || uploadingPhotos || attachedImages.count >= 4)
+                .accessibilityLabel("添加照片").accessibilityIdentifier("ai-add-photo")
             TextField("想继续聊些什么？", text: $text, axis: .vertical)
                 .lineLimit(1...5).focused($inputFocused).font(.body)
-                .padding(.leading, 16).padding(.vertical, 15)
+                .padding(.leading, 2).padding(.vertical, 15)
                 .accessibilityIdentifier("ai-message-input")
             Button {
                 if planner.busy { planner.stop() }
                 else {
-                    planner.send(text, store: store)
-                    if planner.busy { text = ""; inputFocused = false; following = true }
+                    planner.send(text, images: attachedImages, store: store)
+                    if planner.busy { text = ""; attachedImages = []; photoError = nil; inputFocused = false; following = true }
                 }
             } label: {
                 Group {
@@ -294,6 +361,11 @@ struct AIPlannerView: View {
                 .accessibilityIdentifier(planner.busy ? "ai-stop" : "ai-send")
         }
         .padding(.trailing, 5)
+        }
+        .onChange(of: selectedPhotos) { _, items in uploadPhotos(items) }
+        .onChange(of: planner.activeID) { _, _ in uploadTask?.cancel(); attachedImages = []; photoError = nil }
+        .onChange(of: store.settings.revision) { _, _ in uploadTask?.cancel(); attachedImages = []; photoError = nil }
+        .onDisappear { uploadTask?.cancel() }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
         .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(uiColor: .separator).opacity(0.15), lineWidth: 0.5) }
         .accessibilityElement(children: .contain)

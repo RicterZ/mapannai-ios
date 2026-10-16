@@ -466,3 +466,11 @@ Native chat starts `POST /api/ai/runs` with stable conversationId/requestId and 
 ## Widget prototype signing
 
 The widget extension is embedded in the app and supports medium/large families, but currently displays a placeholder rather than live itinerary data. App Group entitlements are kept as reference files and deliberately NOT applied in project.yml so Personal Team signing can install the extension. Shared snapshot writing is a prototype; without signed App Group membership the widget cannot read app data. Shared/TodayWidgetCard and DEBUG review screens are design fixtures, not a completed WidgetKit data/UI integration. Enabling shared data requires an eligible signing team, the same registered App Group on both App IDs, and further widget integration work. Do not claim current placeholder installation validates live widgets.
+
+AI用户消息使用Web现有images:[HTTPS URL]合约（最多4张），不把base64放入聊天请求。PhotosPicker选图复用MarkerImageCompression最长边1600/JPEG82%和APIClient.uploadImage；COS不携带API token。上传期间阻止发送，部分成功保留缩略图；切换会话/服务或关闭取消未完成上传并拒绝旧结果。已发送URL随消息存储和后台任务恢复，模型视觉转换由服务器负责。图片可能包含个人信息，交给所连接服务器及其模型服务处理。
+
+新版交互支持deadline:null：服务器暂停任务等待用户，不设客户端超时；数字deadline继续兼容旧60秒协议。POST /api/ai/interactions携带apiKey以恢复服务器未持久化模型Key的任务，使用原任务Keychain冻结凭据，而非后来修改的配置。图片继续沿用/api/upload预签名直传和用户消息images字段。
+
+## 旅途分享长图
+
+`JourneyShareView` 冻结打开时的旅途与地点快照，复用 `JourneyDayCardContent` 的分享模式展开全部路线和照片，不显示时间/距离。照片异步载入，天气仅读取本地缓存；ImageRenderer 在本机输出 PNG，编码和写文件在后台执行，通过系统 ShareLink 分享。超长行程降低输出比例，将图片高度限制在16000像素内；照片失败会提示且跳过，不修改行程数据。

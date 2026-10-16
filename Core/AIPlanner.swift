@@ -32,7 +32,8 @@ struct AIMessage: Codable, Equatable {
     var tool_calls: [ToolCall]? = nil
     var tool_call_id: String? = nil
     var name: String? = nil
-    enum CodingKeys: String, CodingKey { case role, content, tool_calls, tool_call_id, name }
+    var images: [String]? = nil
+    enum CodingKeys: String, CodingKey { case role, content, tool_calls, tool_call_id, name, images }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(role, forKey: .role)
@@ -40,6 +41,7 @@ struct AIMessage: Codable, Equatable {
         try c.encodeIfPresent(tool_calls, forKey: .tool_calls)
         try c.encodeIfPresent(tool_call_id, forKey: .tool_call_id)
         try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(images, forKey: .images)
     }
 
     var interactionSummary: String? {
@@ -342,8 +344,13 @@ actor AIHistoryRepository {
     }
     // Presentation does not own the request; only explicit stop or connection changes cancel it.
     func close() { presented = false }
-    func send(_ text: String, store: AppStore) {
-        let input = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    func send(_ text: String, images: [String] = [], store: AppStore) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let input = trimmed.isEmpty && !images.isEmpty ? "请识别这些图片，结合当前对话帮助我。" : trimmed
+        guard images.count <= 4, images.allSatisfy({ value in
+            guard value.count <= 4096, let url = URL(string: value) else { return false }
+            return url.scheme == "https" && url.host != nil
+        }) else { error = "每条消息最多4张图片，图片地址必须为HTTPS"; return }
         guard !busy, ready, !input.isEmpty else { return }
         guard store.settings.configured, !store.demo else { error = "请连接服务后使用 AI 规划；示例模式不写入数据"; return }
         do { configuration = try configuration.validated() } catch { self.error = error.localizedDescription; return }
@@ -352,7 +359,7 @@ actor AIHistoryRepository {
         guard let index = conversations.firstIndex(where: { $0.id == activeID }) else { return }
         var messages = AIMessage.repaired(conversations[index].messages)
         guard messages.count < 180 else { error = "会话较长，请新建会话继续"; return }
-        messages.append(AIMessage(role: "user", content: input))
+        messages.append(AIMessage(role: "user", content: input, images: images.isEmpty ? nil : images))
         if conversations[index].messages.isEmpty { conversations[index].title = String(input.prefix(40)) }
         conversations[index].messages = messages; persist()
         let id = conversations[index].id
@@ -545,10 +552,12 @@ actor AIHistoryRepository {
         do { try prompt.validate(selection) } catch { interactionError = error.localizedDescription; return }
         let revision = generation
         let service = AIPlannerService(client: store.api)
+        let requestID = conversation?.pendingRun?.requestID
+        let modelKey = requestID.map { Keychain.read("ai-run-model-" + $0.uuidString) } ?? configuration.apiKey
         interactionSubmitting = true; interactionError = nil
         interactionTask = Task {
             do {
-                try await service.submitInteraction(prompt, selection: selection)
+                try await service.submitInteraction(prompt, selection: selection, apiKey: modelKey)
                 guard generation == revision, interaction?.id == prompt.id else { return }
                 updateInteractionRecord(prompt.id) { $0.selection = selection }
                 interactionSubmitted = true

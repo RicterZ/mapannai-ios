@@ -74,6 +74,15 @@ final class AIInteractionTests: XCTestCase {
         let restored = try JSONDecoder().decode(AIInteractionRecord.self, from: JSONEncoder().encode(record))
         guard case .none? = restored.selection else { return XCTFail("History lost decline") }
     }
+    func testUnlimitedInteractionDeadlineDecodesAndPersists() throws {
+        let data = Data(#"{"id":"p","token":"test","deadline":null,"input":{"kind":"ask_choice","question":"选择","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}}"#.utf8)
+        let prompt = try JSONDecoder().decode(AIInteractionPrompt.self, from: data)
+        XCTAssertNil(prompt.deadline)
+        XCTAssertEqual(prompt.expires, .distantFuture)
+        try prompt.validate(.choices(["a"]))
+        let restored = try JSONDecoder().decode(AIInteractionPrompt.self, from: JSONEncoder().encode(prompt))
+        XCTAssertNil(restored.deadline)
+    }
     func testChinaRegionsMatchWebAndForeignCoordinatesStayUnchanged() {
         for (lat, lng) in [(39.9,116.4), (31.2,121.5), (18.25,109.5), (43.8,87.6)] {
             XCTAssertTrue(Coordinates.inChina(Coordinate(latitude: lat, longitude: lng)))

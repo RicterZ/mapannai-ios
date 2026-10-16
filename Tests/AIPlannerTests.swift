@@ -19,6 +19,18 @@ final class AIPlannerTests: XCTestCase {
         XCTAssertTrue(planner.conversations[0].messages.isEmpty)
     }
 
+    func testImageAttachmentsPersistAndEncodeUsingWebContract() throws {
+        let urls = ["https://images.example/a.jpg", "https://images.example/b.jpg"]
+        let message = AIMessage(role: "user", content: "看看这些地点", images: urls)
+        let bytes = try JSONEncoder().encode(message)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        XCTAssertEqual(json["images"] as? [String], urls)
+        XCTAssertEqual(json["content"] as? String, "看看这些地点")
+        XCTAssertEqual(try JSONDecoder().decode(AIMessage.self, from: bytes).images, urls)
+        XCTAssertEqual(AIMessage.repaired([message]).first?.images, urls)
+        let legacy = Data(#"{"role":"user","content":"旧消息"}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(AIMessage.self, from: legacy).images)
+    }
     func testToolLabelsTranslateKnownNamesAndPreserveUnknownNames() {
         XCTAssertEqual(AIToolLabel.text("search_places"), "搜索地点")
         XCTAssertEqual(AIToolLabel.text("plan_trip_day"), "规划当天行程")
@@ -197,10 +209,10 @@ extension AIPlannerTests {
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer map-token")
         }
         defer { AIStreamProtocol.inspect = nil; AIStreamProtocol.status = 200 }
-        try await service.submitInteraction(prompt, selection: .choices(["a"]))
+        try await service.submitInteraction(prompt, selection: .choices(["a"]), apiKey: "model-test-key")
         AIStreamProtocol.status = 409
         do {
-            try await service.submitInteraction(prompt, selection: .choices(["a"]))
+            try await service.submitInteraction(prompt, selection: .choices(["a"]), apiKey: "model-test-key")
             XCTFail("Expired interaction must fail")
         } catch { XCTAssertTrue(error.localizedDescription.contains("已结束")) }
         let request = AIRequest(settings: AIConfiguration(), messages: [], context: AIContext(localDate: "2026-10-15", tripId: nil, dayId: nil))

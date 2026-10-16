@@ -480,7 +480,13 @@ struct DayContentsView: View {
         .environment(\.defaultMinListRowHeight, 0)
         .onPreferenceChange(NativeRouteFrames.self) { nativeRouteGeometry.frames = $0 }
         .background(NativePlaceListDrop(frames: nativeRouteFrames, frameSource: { nativeRouteGeometry.frames }, prefix: "day-place/" + day.id + "/", onDiagnostics: { dragDiagnosticUpdates = $0 }, onDrop: { store.finishRouteDrop() }, onSorting: { active in
-            withAnimation(AppMotion.crossfade(reduceMotion: reduceMotion)) { sortingPlaces = active }
+            // Collapse immediately so drop feedback measures the settled layout.
+            if active {
+                var transaction = Transaction(); transaction.disablesAnimations = true
+                withTransaction(transaction) { sortingPlaces = true }
+            } else {
+                withAnimation(AppMotion.crossfade(reduceMotion: reduceMotion)) { sortingPlaces = false }
+            }
         }, sourceTargets: Dictionary(uniqueKeysWithValues: day.chains.enumerated().flatMap { route, ids in
             ids.enumerated().map { position, id in (id + "/" + String(route), "\(route)/\(position)") }
         })) { id, route in
@@ -1434,24 +1440,47 @@ struct NativePlaceListDrop: UIViewRepresentable {
             }
             return session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
         }
+        /// The List keeps collapsed schedule/transport cells at their old height while
+        /// a drag is active, so sorting removes that space visually for every later row.
+        private var compactShifts: [IndexPath: CGFloat] = [:]
+        private var compactFrames: [IndexPath: CGRect] {
+            cellFrames.reduce(into: [:]) { result, entry in
+                result[entry.key] = entry.value.offsetBy(dx: 0, dy: compactShifts[entry.key] ?? 0)
+            }
+        }
+        private func updateCompactShifts() {
+            let routeSections = Set(nativeRowTargets.compactMap { path, key in
+                key == "unplanned" || key.hasPrefix("source/") ? nil : path.section
+            })
+            var removed: CGFloat = 0
+            compactShifts = [:]
+            for path in cellFrames.keys.sorted() {
+                compactShifts[path] = -removed
+                if routeSections.contains(path.section), nativeRowTargets[path] == nil, path != fixedSource {
+                    removed += cellFrames[path]?.height ?? 0
+                }
+            }
+        }
         private func fixedTarget(_ session: UIDropSession) -> String? {
             guard let list = host as? UICollectionView else { return nil }
             // Keep stable row identities, but follow their shrinking layout and scrolling.
             for path in Array(cellFrames.keys) {
                 if let attributes = list.layoutAttributesForItem(at: path) { cellFrames[path] = attributes.frame }
             }
+            updateCompactShifts()
             fixedFrames = [:]
             for (path, key) in nativeRowTargets {
-                if let frame = cellFrames[path] { fixedFrames[key] = fixedFrames[key].map { $0.union(frame) } ?? frame }
+                if let frame = compactFrames[path] { fixedFrames[key] = fixedFrames[key].map { $0.union(frame) } ?? frame }
             }
             let point = session.location(in: list)
             guard list.bounds.contains(point) else { return nil }
             return NativeRouteDropGeometry.target(at: point, frames: fixedFrames)
         }
         private func updateFixedFeedback(_ target: String?, list: UICollectionView) {
-            guard feedbackTarget != target else { return }
+            let targetChanged = feedbackTarget != target
             feedbackTarget = target
             var offsets: [IndexPath: CGFloat] = [:]
+            let cellFrames = compactFrames
             if let target, let route = target.split(separator: "/").first, Int(route) != nil {
                 let rows = nativeRowTargets.filter { _, key in
                     let parts = key.split(separator: "/")
@@ -1496,7 +1525,9 @@ struct NativePlaceListDrop: UIViewRepresentable {
                 }
             }
             let changedOffsets = offsets.filter { abs($0.value) > 0.5 }
-            if target != nil, changedOffsets != feedbackOffsets {
+            for (path, shift) in compactShifts { offsets[path, default: 0] += shift }
+            let offsetsChanged = changedOffsets != feedbackOffsets
+            if target != nil, offsetsChanged {
                 reorderFeedback.impactOccurred()
                 reorderFeedback.prepare()
             }
@@ -1505,6 +1536,15 @@ struct NativePlaceListDrop: UIViewRepresentable {
                 for path in list.indexPathsForVisibleItems where path != self.fixedSource {
                     list.cellForItem(at: path)?.transform = CGAffineTransform(translationX: 0, y: offsets[path] ?? 0)
                 }
+            }
+            // Self-sizing passes reapply layout attributes and reset cell transforms.
+            if !targetChanged && !offsetsChanged {
+                let stale = list.indexPathsForVisibleItems.contains { path in
+                    guard path != fixedSource, let cell = list.cellForItem(at: path) else { return false }
+                    return abs(cell.transform.ty - (offsets[path] ?? 0)) > 0.5
+                }
+                if stale { UIView.performWithoutAnimation(animations) }
+                return
             }
             if UIAccessibility.isReduceMotionEnabled { animations() }
             else { UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: animations) }
@@ -1532,7 +1572,7 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
             parent.onSorting(false)
-            clearFixedFeedback(); fixedFrames = [:]; cellFrames = [:]; fixedSource = nil
+            clearFixedFeedback(); fixedFrames = [:]; cellFrames = [:]; compactShifts = [:]; fixedSource = nil
             finishDiagnostics()
             originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
             publishTarget(nil); dragFrames = nil; nativeRowTargets = [:]

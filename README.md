@@ -18,6 +18,10 @@ Choice cards also offer “None of these, explain in chat” without requiring a
 
 Day cards show the weather condition in the primary text color and the daily low~high temperature in gray. The current medium/large Today widget is an installable placeholder; trip and weather sharing is not enabled in Personal Team builds.
 
+AI chat accepts up to four photos per message through the native photo picker. Review or remove thumbnails before sending; photos are resized and uploaded using the existing image service. Image-only messages are supported, and sent photos remain in conversation history. Your configured model must support image input.
+
+Trip details offer **Share Long Image** below the day cards. Preview a locally generated image with expanded routes and gently tilted photo galleries, then use the system share sheet to send or save it. Export omits visit times and distances and uses cached weather.
+
 ## Features
 
 - **Save places and travel notes**: Search saved place titles together with map POIs, tap a map POI, or long-press the map to add a place. Matching saved places appear first, show their place icon and a saved label, and can be reused in itineraries. Keep travel tips, booking details, and memories with each place. Tap a place in the half-height or expanded day itinerary to open its details; closing restores the previous itinerary height. From its details, remove it from the current day while keeping the saved place and other days, or delete it entirely. The place editor shows its address, with location managed by map selection. Place details show each itinerary day with its full date. A checkmark identifies the currently selected day without a duplicate membership badge; the add action names its target day and date.

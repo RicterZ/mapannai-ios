@@ -290,6 +290,9 @@ struct JourneyDayCardContent: View {
     var onPhotoSelection: (String) -> Void = { _ in }
     var weatherPoints: [TripWeatherLocation.Point] = []
     var loadWeather = true
+    var sharing = false
+    var sharePhotos: [URL: UIImage] = [:]
+    var shareWeather: TripDayWeather? = nil
     #if DEBUG
     var reviewWeather: TripDayWeather? = nil
     #endif
@@ -322,7 +325,9 @@ struct JourneyDayCardContent: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Group {
-            if summary.photos.count > 1 {
+            if sharing {
+                JourneyShareGallery(photos: summary.photos, images: sharePhotos, dayIndex: index)
+            } else if summary.photos.count > 1 {
                 JourneyPhotoCarousel(photos: summary.photos, loadPhotos: loadPhotos, selectedIndex: $selectedPhotoIndex)
             } else if summary.coverURL != nil {
                 VStack(alignment: .trailing, spacing: 6) {
@@ -352,7 +357,7 @@ struct JourneyDayCardContent: View {
             if summary.count == 0 {
                 Text("还没有安排地点").font(.subheadline).foregroundStyle(.secondary)
             } else {
-                JourneyRoutePreview(summary: summary)
+                JourneyRoutePreview(summary: summary, expanded: sharing)
             }
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -367,9 +372,9 @@ struct JourneyDayCardContent: View {
             .padding(16)
             .backgroundPreferenceValue(WeatherPhotoBounds.self) { bounds in
                 GeometryReader { geometry in
-                if let code = dayWeather?.weatherCode, let style = JourneyWeatherStyle(code: code) {
-                    JourneyWeatherBackground(style: style, skyTop: bounds.map { geometry[$0].maxY } ?? 0)
-                } else { Color(uiColor: .systemBackground) }
+                    if let code = (shareWeather ?? dayWeather)?.weatherCode, let style = JourneyWeatherStyle(code: code) {
+                        JourneyWeatherBackground(style: style, skyTop: bounds.map { geometry[$0].maxY } ?? 0)
+                    } else { Color(uiColor: .systemBackground) }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -417,12 +422,12 @@ struct JourneyDayCardContent: View {
         }
     }
     private var placeCount: some View {
-        Text("\(summary.count) 个地点" + (summary.timing.map { " · " + $0 } ?? ""))
+        Text("\(summary.count) 个地点" + (sharing ? "" : (summary.timing.map { " · " + $0 } ?? "")))
             .font(.caption).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
     @ViewBuilder private var temperature: some View {
-        if let weather = dayWeather, weather.conditionName != nil || weather.temperatureRange != nil {
+        if let weather = shareWeather ?? dayWeather, weather.conditionName != nil || weather.temperatureRange != nil {
             HStack(spacing: 6) {
                 if let condition = weather.conditionName {
                     Text(condition).foregroundStyle(.primary)
@@ -477,15 +482,16 @@ private struct WeatherPhotoBounds: PreferenceKey {
 /// A preview, not a second full itinerary: keep separate routes and unordered members distinct.
 private struct JourneyRoutePreview: View {
     let summary: JourneyDaySummary
+    var expanded = false
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ForEach(Array(summary.routePreviews.prefix(2).enumerated()), id: \.offset) { routeIndex, names in
+            ForEach(Array(summary.routePreviews.prefix(expanded ? summary.routePreviews.count : 2).enumerated()), id: \.offset) { routeIndex, names in
                 VStack(alignment: .leading, spacing: 0) {
                     if summary.routePreviews.count > 1 {
                         Text("路线 \(routeIndex + 1)").font(.caption).foregroundStyle(.secondary).padding(.bottom, 8)
                     }
-                    let shown = Array(names.prefix(3))
+                    let shown = Array(names.prefix(expanded ? names.count : 3))
                     ForEach(Array(shown.enumerated()), id: \.offset) { index, name in
                         HStack(alignment: .top, spacing: 12) {
                             VStack(spacing: 0) {
@@ -495,7 +501,7 @@ private struct JourneyRoutePreview: View {
                                     .opacity(index < shown.count - 1 || names.count > shown.count ? 1 : 0)
                             }.frame(width: 10).accessibilityHidden(true)
                             Text(name).font(.subheadline).foregroundStyle(.primary)
-                                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                                .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 2)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.bottom, index < shown.count - 1 || names.count > shown.count ? 12 : 0)
                         }.fixedSize(horizontal: false, vertical: true)
@@ -506,17 +512,17 @@ private struct JourneyRoutePreview: View {
                     }
                 }
             }
-            if summary.routePreviews.count > 2 {
+            if !expanded && summary.routePreviews.count > 2 {
                 Text("还有 \(summary.routePreviews.count - 2) 条路线").font(.caption).foregroundStyle(.secondary)
             }
             if !summary.unplannedPlaces.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("未编排 · \(summary.unplannedPlaces.count) 个地点")
                         .font(.caption).foregroundStyle(.secondary)
-                    if summary.routePreviews.isEmpty {
+                    if expanded || summary.routePreviews.isEmpty {
                         Text(summary.unplannedPlaces.joined(separator: " · "))
                             .font(.subheadline).foregroundStyle(.secondary)
-                            .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+                            .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 2)
                     }
                 }.padding(.top, summary.routePreviews.isEmpty ? 0 : 2)
             }

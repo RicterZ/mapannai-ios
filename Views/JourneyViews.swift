@@ -24,6 +24,7 @@ struct JourneyDaysContents: View {
     @State private var photoTitles: [String: String] = [:]
     @State private var targetedDayID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sharingTrip = false
     @State private var editing = false
     @State private var deletion: TripDay?
     @State private var pendingInitialDayID: String?
@@ -122,6 +123,8 @@ struct JourneyDaysContents: View {
             }
             Section {
                 JourneyActionGroup(compact: true) {
+                    Button { sharingTrip = true } label: { Label("分享长图", systemImage: "square.and.arrow.up") }
+                        .accessibilityIdentifier("journey-share-image")
                     if !unscheduledPlaces.isEmpty || !store.demo {
                         Button { store.beginAddingPlace(tripID: trip.id) } label: {
                             Label("添加地点", systemImage: "plus")
@@ -178,6 +181,7 @@ struct JourneyDaysContents: View {
                     _ = assignPreviewPlaces(["trip-place/" + trip.id + "/" + id], to: day)
                 }
             })
+            .sheet(isPresented: $sharingTrip) { JourneyShareView(trip: trip, markers: store.markers) }
             .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: Binding(get: { archiveColorIndex != nil && store.dayEditorDraft?.tripID == trip.id ? store.dayEditorDraft : nil },
                 set: { if $0 == nil, archiveColorIndex != nil, store.dayEditorDraft?.tripID == trip.id { store.dayEditorDraft = nil } })) { draft in

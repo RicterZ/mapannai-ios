@@ -16,9 +16,9 @@ struct AIInteractionPrompt: Codable, Identifiable {
     }
     let id: String
     let token: String
-    let deadline: Double
+    let deadline: Double?
     let input: Input
-    var expires: Date { Date(timeIntervalSince1970: deadline / 1000) }
+    var expires: Date { deadline.map { Date(timeIntervalSince1970: $0 / 1000) } ?? .distantFuture }
     var supported: Bool {
         switch input.kind {
         case "ask_choice":
@@ -97,16 +97,16 @@ enum AIInteractionSelection: Codable {
 }
 
 extension AIPlannerService {
-    nonisolated func submitInteraction(_ prompt: AIInteractionPrompt, selection: AIInteractionSelection) async throws {
+    nonisolated func submitInteraction(_ prompt: AIInteractionPrompt, selection: AIInteractionSelection, apiKey: String = "") async throws {
         try prompt.validate(selection)
         guard prompt.expires > Date() else { throw AppError.message("此选择已结束，请在聊天中补充") }
-        struct Answer: Encodable { let id: String; let token: String; let selection: AIInteractionSelection }
+        struct Answer: Encodable { let id: String; let token: String; let selection: AIInteractionSelection; let apiKey: String }
         guard let url = URL(string: client.baseURL + "/api/ai/interactions") else { throw AppError.message("服务地址无效") }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"; request.timeoutInterval = 10
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !client.token.isEmpty { request.setValue("Bearer " + client.token, forHTTPHeaderField: "Authorization") }
-        request.httpBody = try JSONEncoder().encode(Answer(id: prompt.id, token: prompt.token, selection: selection))
+        request.httpBody = try JSONEncoder().encode(Answer(id: prompt.id, token: prompt.token, selection: selection, apiKey: apiKey))
         let session = URLSession(configuration: sessionConfiguration ?? .ephemeral, delegate: AITransportDelegate(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let (_, response) = try await session.data(for: request)
