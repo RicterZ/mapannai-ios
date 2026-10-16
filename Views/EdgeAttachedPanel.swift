@@ -28,15 +28,9 @@ private struct EdgePanelAdaptation: View {
     let content: AnyView
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var body: some View {
-        if horizontalSizeClass == .regular {
-            Color.clear.sheet(isPresented: $presented, onDismiss: onDismiss) {
-                content.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
-                    .interactiveDismissDisabled(!canDismiss)
-            }
-        } else {
-            EdgePanelPresenter(presented: $presented, detent: $detent, compactHeight: compactHeight,
-                canDismiss: canDismiss, dimsBackground: dimsBackground, backgroundColor: backgroundColor, animatesPresentation: animatesPresentation, topContentInset: topContentInset, fullTopInset: fullTopInset, onHeightChange: onHeightChange, onMotionChange: onMotionChange, onDismiss: onDismiss, content: content)
-        }
+        EdgePanelPresenter(presented: $presented, detent: $detent, compactHeight: compactHeight,
+            canDismiss: canDismiss, dimsBackground: dimsBackground, backgroundColor: backgroundColor, animatesPresentation: animatesPresentation, topContentInset: topContentInset, fullTopInset: fullTopInset, onHeightChange: onHeightChange, onMotionChange: onMotionChange, onDismiss: onDismiss, content: content)
+
     }
 }
 

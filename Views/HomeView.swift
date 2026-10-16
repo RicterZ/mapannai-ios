@@ -148,7 +148,7 @@ struct HomeView: View {
 
     private var mapWorkspace: some View {
         GeometryReader { geometry in
-            let sidebar = horizontalSizeClass == .regular && geometry.size.width >= 700
+            let sidebar = horizontalSizeClass == .regular && geometry.size.width >= 700 && geometry.size.width > geometry.size.height
             Group {
                 if sidebar { modalContent(mapPage, sidebar: sidebar) }
                 else if store.dayMapBrowsing { modalContent(mapPage) }
@@ -350,9 +350,15 @@ struct HomeView: View {
     private var mapPage: some View {
         GeometryReader { proxy in
             let layout = MapLayout(width: proxy.size.width, height: proxy.size.height,
-                                   regularWidth: horizontalSizeClass == .regular, expanded: expanded,
+                                   regularWidth: horizontalSizeClass == .regular, expanded: true,
                                    sheetHeight: store.placeSearchPresented ? (searchDetent == .compact ? 80 : searchDetent == .half ? proxy.size.height * 0.5 : proxy.size.height) : store.dayMapBrowsing && visibleDayPanelHeight > 0 ? max(0, visibleDayPanelHeight - proxy.safeAreaInsets.bottom) : store.dayMapBrowsing && sheetDetent == .compact ? DayMapPresentation.contentHeight - 16 : sheetDetent == .compact ? compactJourneyHeight : sheetDetent == .half ? proxy.size.height * 0.5 : proxy.size.height)
-            let cameraInsets = layout.insets
+            let cameraInsets: MapViewportInsets = {
+                var insets = layout.insets
+                if layout.usesSidebar && store.selectedMarker != nil && !store.placeSearchPresented {
+                    insets.right = layout.sidebarWidth + 24
+                }
+                return insets
+            }()
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
                     store.mapViewportInsets = cameraInsets
@@ -414,7 +420,7 @@ struct HomeView: View {
                 }
         }
         .sheet(isPresented: $showSettings) { SettingsView(settings: settings, store: store, aiPlanner: aiPlanner).presentationDragIndicator(.visible) }
-        .edgeAttachedPanel(isPresented: Binding(get: { (sidebar || !store.dayMapBrowsing) && !store.placeSearchPresented && store.selectedMarker != nil && store.draft == nil && !mapEditorActive }, set: {
+        .edgeAttachedPanel(isPresented: Binding(get: { !sidebar && !store.dayMapBrowsing && !store.placeSearchPresented && store.selectedMarker != nil && store.draft == nil && !mapEditorActive }, set: {
             if !$0, store.draft == nil, !mapEditorActive { store.selectedMarker = nil; restoreJourneyAfterMarker() }
         }), detent: $markerDetailDetent, compactHeight: (markerConfirmationHeight ?? 80) + mapBottomSafeArea, canDismiss: false, backgroundColor: .systemBackground, topContentInset: 14, onHeightChange: { markerDetailHeight = $0 }, onMotionChange: { markerPanelMoving = $0 }, onDismiss: {
             if store.draft != nil { mapDraftReady = true }
@@ -615,35 +621,19 @@ struct HomeView: View {
     @ViewBuilder private func journeyPage(_ destination: JourneyDestination?, sidebar: Bool) -> some View {
         let page = scope(destination)
         if let trip = page.trip, let day = page.day {
-            DayDetailPage(store: store, trip: trip, day: day, showsNavigation: sidebar,
+            DayDetailPage(store: store, trip: trip, day: day, showsNavigation: sidebar, sidebarNavigation: sidebar,
                 onClose: {
-                    store.select(trip: trip, focus: false)
-                    if !sidebar { setJourneyDetent(.compact) }
+                    mapEntered = false
                 }, onMap: {
-                    store.beginDayMapBrowsing(focus: false)
-                    if !sidebar { setJourneyDetent(.compact) }
+                    if sidebar { return }
+                    else {
+                        store.beginDayMapBrowsing(focus: false)
+                        setJourneyDetent(.compact)
+                    }
                 })
         } else {
-          Group {
-            if let trip = page.trip {
-                JourneyDaysContents(store: store, trip: trip, onSelectDay: { day in
-                    store.select(trip: trip, day: day, focus: false); store.beginDayMapBrowsing(); setJourneyDetent(.full)
-                })
-            } else {
-                Color.clear
-            }
-        }.listStyle(.insetGrouped).buttonStyle(.automatic)
-            .allowsHitTesting(sidebar || sheetDetent != .compact)
-            .scrollContentBackground(sidebar ? .visible : .hidden)
-            .contentMargins(.top, 0, for: .scrollContent).listSectionSpacing(8)
-            .id(ItineraryScrollIdentity(tripID: page.trip?.id, dayID: page.day?.id))
-            .scrollDismissesKeyboard(.interactively)
-            .accessibilityIdentifier("itinerary-marker-list")
-            .modifier(JourneyNavigationBackground())
-            .navigationTitle(journeyTitle(destination)).navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden()
-            .toolbar { journeyToolbar(sidebar: sidebar, destination: destination) }
-            .background(JourneyToolbarContainerOffset())
+            // NavigationStack builds its root before installing the selected day path.
+            Color.clear
         }
     }
 
@@ -655,10 +645,6 @@ struct HomeView: View {
         }
         if sidebar {
             journeyLeadingControl(destination: destination, sidebar: true)
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { togglePanel() } label: { toolbarActionIcon("sidebar.left") }
-                    .accessibilityLabel("收起行程").accessibilityIdentifier("itinerary-panel-toggle")
-            }
         } else {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { setJourneyDetent(.compact) } label: {
@@ -689,8 +675,8 @@ struct HomeView: View {
                         .modifier(JourneyCircleButtonStyle())
                         .frame(width: 44, height: 44).contentShape(Rectangle())
                         .accessibilityLabel("上一层").accessibilityIdentifier("journey-back")
-                } else {
-                    overviewToggleButton(sidebar: sidebar)
+                } else if !sidebar {
+                    overviewToggleButton(sidebar: false)
 
                 }
             }
@@ -747,20 +733,12 @@ struct HomeView: View {
             }
             if layout.usesSidebar {
                 HStack(spacing: 0) {
-                    if expanded {
-                        workspacePanel(topInset: topInset, bottomInset: bottomInset, leftInset: leftInset)
-                            .frame(width: layout.sidebarWidth + leftInset, height: layout.height + topInset + bottomInset)
-                            .background(.regularMaterial)
-                            .overlay(alignment: .trailing) { Rectangle().fill(Theme.ink.opacity(0.08)).frame(width: 1) }
-                            .accessibilityElement(children: .contain).accessibilityIdentifier("landscape-itinerary-sidebar")
-                            .offset(x: -leftInset, y: -topInset)
-                    } else {
-                        Button { togglePanel() } label: {
-                            Image(systemName: "sidebar.left")
-                                .font(.system(size: 20)).frame(width: 48, height: 48)
-                                .softSurface(fill: Theme.console)
-                        }.accessibilityLabel("展开行程").padding(.leading, 16).padding(.top, 8).frame(maxHeight: .infinity, alignment: .top)
-                    }
+                    workspacePanel(topInset: topInset, bottomInset: bottomInset, leftInset: leftInset)
+                        .frame(width: layout.sidebarWidth + leftInset, height: layout.height + topInset + bottomInset)
+                        .background(Color(uiColor: .systemBackground))
+                        .overlay(alignment: .trailing) { Rectangle().fill(Theme.ink.opacity(0.08)).frame(width: 1) }
+                        .accessibilityElement(children: .contain).accessibilityIdentifier("landscape-itinerary-sidebar")
+                        .offset(x: -leftInset, y: -topInset)
                     Spacer(minLength: 0)
                 }.frame(width: layout.width, height: layout.height, alignment: .topLeading)
                     .opacity(aiPresented ? 0 : 1)
@@ -768,6 +746,24 @@ struct HomeView: View {
                     .accessibilityHidden(aiPresented)
                 locationButton.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 20).padding(.bottom, 20)
+                if !store.placeSearchPresented, let marker = store.selectedMarker, store.draft == nil, !mapEditorActive {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        MarkerDetailView(store: store, marker: marker, edgeAttached: false,
+                            onConfirmationHeight: setMarkerConfirmationHeight, onClose: {
+                                store.selectedMarker = nil
+                                restoreJourneyAfterMarker()
+                            }, onNavigateItinerary: {
+                                store.beginDayMapBrowsing(focus: false)
+                                nativeJourneyPresented = true
+                            })
+                            .frame(width: layout.sidebarWidth)
+                            .frame(maxHeight: .infinity)
+                            .background(Color(uiColor: .systemBackground))
+                            .overlay(alignment: .leading) { Divider() }
+                    }
+                    .transition(reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity))
+                }
             }
             if !layout.usesSidebar, !store.placeSearchPresented, store.selectedMarker != nil, markerDetailDetent != .full {
                 Button { location.request { store.cycleLocationMode() } } label: {
@@ -794,20 +790,10 @@ struct HomeView: View {
                     .accessibilityHidden(journeyPanelMoving)
                     .animation(journeyPanelMoving || reduceMotion ? nil : .easeOut(duration: 0.22), value: journeyPanelMoving)
             }
-            let capsulesVisible = layout.usesSidebar && !store.placeSearchPresented && !aiPresented
-            ZStack {
-                if capsulesVisible {
-                    navigationCapsules.transition(.opacity)
-                }
-            }
-            .padding(.horizontal, 16).padding(.top, 8)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .allowsHitTesting(capsulesVisible)
-            .accessibilityHidden(!capsulesVisible)
-            .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: capsulesVisible)
-            .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.tripID != nil)
 
         }
+        .animation(AppMotion.presentation(reduceMotion: reduceMotion),
+            value: layout.usesSidebar && store.selectedMarker != nil && !store.placeSearchPresented && store.draft == nil && !mapEditorActive)
     }
 
     private var compactJourneyControls: some View {
@@ -913,9 +899,8 @@ struct HomeView: View {
 
     private var locationButton: some View {
         Button { location.request { store.cycleLocationMode() } } label: {
-            Image(systemName: store.locationMode.symbol).font(.system(size: 20, weight: .regular)).foregroundStyle(Theme.cyan)
-                .frame(width: 48, height: 48).background(.white, in: Circle())
-                .shadow(color: .black.opacity(0.15), radius: 5, y: 3)
+            Image(systemName: store.locationMode.symbol).font(.system(size: 20, weight: .regular)).foregroundStyle(.primary)
+                .frame(width: 48, height: 48).background(.regularMaterial, in: Circle())
         }.accessibilityLabel("定位到当前位置")
     }
     private func togglePanel() {

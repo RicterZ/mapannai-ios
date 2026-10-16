@@ -460,7 +460,9 @@ struct JourneyArchiveView: View {
             }
             photos = photos.filter { urls.contains($0.key) }
         }
-        .onPreferenceChange(ArchiveYearLayout.self) { if openedID == nil { yearLayout = $0 } }
+        .onPreferenceChange(ArchiveYearLayout.self) { value in
+            if openedID == nil, expandedYear != nil, !value.cards.isEmpty { yearLayout = value }
+        }
         .onPreferenceChange(ArchiveCardFrames.self) { if openedID == nil { cardFrames = $0 } }
         .onPreferenceChange(ArchiveSeparatorFrame.self) { if openedID == nil { separatorFrame = $0 } }
         .onPreferenceChange(ArchiveHeadingFrame.self) { if openedID == nil, !$0.isEmpty { archiveHeadingFrame = $0 } }
@@ -860,18 +862,19 @@ struct JourneyArchiveView: View {
         guard !detailVisible else { return }
         var previous = headerGeometry.frame
         var stableFrames = 0
-        while stableFrames < 2 {
+        for _ in 0..<90 {
+            if stableFrames >= 2 { break }
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             guard openedID == trip.id, !closing else { return }
             let current = headerGeometry.frame
-            if !current.isEmpty && current == previous { stableFrames += 1 }
+            if !current.isEmpty && abs(current.minX - previous.minX) < 1 && abs(current.minY - previous.minY) < 1 && abs(current.width - previous.width) < 1 && abs(current.height - previous.height) < 1 { stableFrames += 1 }
             else { stableFrames = 0 }
             previous = current
         }
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            destinationFrame = previous
+            destinationFrame = previous.isEmpty ? openingFrame : previous
         }
         detailVisible = true
     }
