@@ -236,24 +236,32 @@ private struct JourneyPhotoStack: View, Animatable {
             ForEach(0..<2) { order in
                 ZStack {
                     ForEach((basePage - 2)...(basePage + 3), id: \.self) { page in
-                        let distance = CGFloat(page) - position
-                        let depth = min(abs(distance), 1)
-                        let photoIndex = ((page % photos.count) + photos.count) % photos.count
-                        JourneyCarouselPhoto(photo: photos[photoIndex], loadPhotos: loadPhotos)
-                            .id(photos[photoIndex].url)
-                            .frame(width: cardWidth, height: size.height)
-                            .scaleEffect(1 - depth * 0.1)
-                            .shadow(color: .black.opacity(0.16 - Double(depth) * 0.08),
-                                    radius: 6 - depth * 2, x: 0, y: 2)
-                            .offset(x: max(-1, min(distance, 1)) * rearOffset)
-                            .opacity(max(0, min(1, 2 - abs(distance))))
-                            .zIndex(-Double(abs(page - (basePage + order))))
+                        card(page: page, front: basePage + order, width: cardWidth, rearOffset: rearOffset)
                     }
                 }
                 .compositingGroup()
                 .opacity(order == 0 ? 1 : easedBlend)
             }
         }
+    }
+
+    private func card(page: Int, front: Int, width: CGFloat, rearOffset: CGFloat) -> some View {
+        let distance: CGFloat = CGFloat(page) - position
+        let depth: CGFloat = min(abs(distance), 1)
+        let photoIndex: Int = ((page % photos.count) + photos.count) % photos.count
+        let shadowOpacity: Double = 0.16 - Double(depth) * 0.08
+        let shadowRadius: CGFloat = 6 - depth * 2
+        let offset: CGFloat = max(-1, min(distance, 1)) * rearOffset
+        let opacity: CGFloat = max(0, min(1, 2 - abs(distance)))
+        let layer: Double = -Double(abs(page - front))
+        return JourneyCarouselPhoto(photo: photos[photoIndex], loadPhotos: loadPhotos)
+            .id(photos[photoIndex].url)
+            .frame(width: width, height: size.height)
+            .scaleEffect(1 - depth * 0.1)
+            .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: 2)
+            .offset(x: offset)
+            .opacity(opacity)
+            .zIndex(layer)
     }
 }
 
