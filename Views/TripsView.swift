@@ -505,6 +505,7 @@ struct DayContentsView: View {
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.leading, 16))
                 case .unplanned:
                     AnyView(JourneyPlaceGroupHeading(title: "未安排", count: unlinked.count)
+                        .padding(.horizontal, 16)
                         .accessibilityIdentifier("day-unplanned-heading"))
                 }
             },

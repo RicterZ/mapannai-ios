@@ -141,7 +141,9 @@ struct DayPlaceReorderList: UIViewControllerRepresentable {
             self.collectionView = collectionView
             let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, DayReorderItem> { [unowned self] cell, _, item in
                 cell.contentConfiguration = UIHostingConfiguration { self.parent.cell(item) }
-                    .margins(.all, 0).margins(.leading, 16).minSize(height: 0)
+                    .margins(.all, 0).margins(.leading, 16)
+                    .margins(.trailing, { if case .detail = item { return 16 } else { return 0 } }())
+                    .minSize(height: 0)
                 var background = UIBackgroundConfiguration.listPlainCell()
                 background.backgroundColor = .systemBackground
                 cell.backgroundConfiguration = background
