@@ -42,6 +42,26 @@ Requires **iOS / iPadOS 17 or later**. Each release includes an unsigned `.ipa` 
 
 Use AltStore Classic, not AltStore PAL. Re-signing may change the Bundle ID, and the AMap key is tied to one. If the AMap background fails to load, switch to Apple Maps in Settings.
 
+## Build from source
+
+Requires Xcode 26 and [XcodeGen](https://github.com/yonaskolb/XcodeGen). The map SDK keys are embedded at build time; app users never enter them.
+
+| Key | Required | Purpose |
+| --- | --- | --- |
+| `AMAP_IOS_KEY` | For the AMap background | AMap iOS SDK key, bound to the app's Bundle ID (`me.mapannai.ios` by default) |
+| `GOOGLE_MAPS_IOS_KEY` | Optional | Google Maps iOS SDK key; without it the app uses Apple Maps instead |
+
+Apple Maps needs no key. Server addresses, API tokens and AI keys are entered in the app's Settings, not at build time.
+
+```sh
+python3 Scripts/fetch-sdk.py                         # download the official AMap SDK
+cp Config/Local.xcconfig.example Config/Local.xcconfig  # fill in the keys above
+xcodegen generate
+open MapAnNai.xcodeproj
+```
+
+`Config/Local.xcconfig` is ignored by Git. For GitHub Actions builds, set the same names as repository secrets.
+
 ## License
 
 [MIT](LICENSE). Map SDKs are subject to their own license terms.

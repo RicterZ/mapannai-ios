@@ -39,6 +39,26 @@ MapAnNai iOS 是 [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) 的�
 
 请使用 AltStore Classic，不要用 AltStore PAL。重签可能改变 Bundle ID，而高德 Key 与 Bundle ID 绑定；如果高德底图无法加载，可在设置中切换到系统地图。
 
+## 自行构建
+
+需要 Xcode 26 和 [XcodeGen](https://github.com/yonaskolb/XcodeGen)。地图 SDK Key 在编译时嵌入，使用者无需填写。
+
+| Key | 是否必需 | 用途 |
+| --- | --- | --- |
+| `AMAP_IOS_KEY` | 使用高德底图时必需 | 高德 iOS SDK Key，与应用 Bundle ID 绑定（默认 `me.mapannai.ios`） |
+| `GOOGLE_MAPS_IOS_KEY` | 可选 | Google Maps iOS SDK Key；未配置时使用系统地图 |
+
+系统地图（Apple MapKit）无需 Key。服务地址、API token 和 AI Key 都在应用设置中填写，不参与编译。
+
+```sh
+python3 Scripts/fetch-sdk.py                         # 下载官方高德 SDK
+cp Config/Local.xcconfig.example Config/Local.xcconfig  # 填入上面的 Key
+xcodegen generate
+open MapAnNai.xcodeproj
+```
+
+`Config/Local.xcconfig` 已被 Git 忽略。使用 GitHub Actions 构建时，在仓库 Secrets 中配置同名变量。
+
 ## 许可
 
 [MIT](LICENSE)。地图 SDK 遵循其各自的授权条款。
