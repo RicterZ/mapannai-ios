@@ -15,6 +15,7 @@ struct DayDetailPage: View {
     let trip: Trip
     let day: TripDay
     var showsNavigation = true
+    var sidebarNavigation = false
     var closeIdentifier = "archive-day-close"
     var mapIdentifier = "archive-day-map"
     let onClose: () -> Void
@@ -33,7 +34,7 @@ struct DayDetailPage: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            if !showsNavigation {
+            if !showsNavigation || sidebarNavigation {
                 HStack(spacing: 4) {
                     DayMapDateStrip(store: store, trip: trip, day: day, identifierPrefix: "day-detail-date-", pagingProgress: pagingProgress)
                         .disabled(editingPlaces)
@@ -85,13 +86,17 @@ struct DayDetailPage: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(action: onClose) {
-                        Image(systemName: "xmark").font(.system(size: 20, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel("关闭日详情").accessibilityIdentifier(closeIdentifier)
+                        Image(systemName: sidebarNavigation ? "chevron.left" : "xmark").font(.system(size: 20, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel(sidebarNavigation ? "返回旅途" : "关闭日详情").accessibilityIdentifier(closeIdentifier)
                 }.journeyBareBackground
                 ToolbarItem(placement: .topBarTrailing) {
                     if editingPlaces { DayEditingDoneButton(editing: $editingPlaces) }
-                    else {
-                        Button(action: onMap) { Label("地图", systemImage: "map").foregroundStyle(Color(uiColor: .label)) }
+                    else if !sidebarNavigation {
+                        Button(action: onMap) {
+                            Image(systemName: sidebarNavigation ? "sidebar.left" : "map")
+                                .font(.system(size: 20, weight: .regular)).foregroundStyle(Color(uiColor: .label))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }.accessibilityLabel(sidebarNavigation ? "收起行程" : "地图")
                             .accessibilityIdentifier(mapIdentifier).buttonStyle(.plain)
                     }
                 }.journeyBareBackground
@@ -240,29 +245,30 @@ struct DayContentsView: View {
     @State private var editingDistances: [String: Double] = [:]
     @State private var deletingDay = false
     @State private var deletingChain: Int?
-    @State private var nativeRouteGeometry = NativeRouteGeometryStorage()
-    private var nativeRouteFrames: [String: CGRect] { nativeRouteGeometry.frames }
     @State private var collapsedRoutes: Set<Int> = []
-    @State private var dragDiagnosticUpdates = 0
-    @State private var sortingPlaces = false
     @Binding var editingPlaces: Bool
     @State private var selectedPlaces: Set<DayPlaceReference> = []
     @State private var transferRequest: DayPlaceTransferRequest?
     @State private var deletingPlaces: Set<DayPlaceReference> = []
+    private var summaryHeader: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let title = day.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(title).font(.system(size: dayTitleSize, weight: .semibold)).foregroundStyle(.primary)
+            }
+            Text("\(day.markerIds.count) 个地点 · \(day.chains.count) 条路线").font(.caption).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 16)
+            .accessibilityIdentifier("day-detail-summary")
+    }
     var body: some View {
+        Group {
+        if editingPlaces { editingList } else {
         List(selection: $selectedPlaces) {
             if showsDaySummary {
                 Section {
-                    VStack(alignment: .leading, spacing: 5) {
-                        if let title = day.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text(title).font(.system(size: dayTitleSize, weight: .semibold)).foregroundStyle(.primary)
-                        }
-                        Text("\(day.markerIds.count) 个地点 · \(day.chains.count) 条路线").font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 16)
+                    summaryHeader
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 12))
-                    .accessibilityIdentifier("day-detail-summary")
                 }
             }
             Group {
@@ -276,80 +282,33 @@ struct DayContentsView: View {
                             let position = slot.position
                             let reference = DayPlaceReference(markerID: id, routeIndex: index)
                             if let marker = store.markers.first(where: { $0.id == id }) {
-                                VStack(spacing: 0) {
-                                    RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker, tint: routeTint, editing: editingPlaces, selected: selectedPlaces.contains(reference), toggleSelection: {
-                                        if selectedPlaces.contains(reference) { selectedPlaces.remove(reference) }
-                                        else { selectedPlaces.insert(reference) }
-                                    }, stop: day.scheduledRoute(at: index)?.stops[position], showsSchedule: !editingPlaces, editPlaces: { beginPlaceEditing() }, editSchedule: {
-                                        if let route = day.scheduledRoute(at: index) { openSchedule(route, position: position, transport: false) }
-                                    })
-
-                                }
-                                .padding(.bottom, editingPlaces ? 0 : position == chain.count - 1 ? 8 : 0)
+                                RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker, tint: routeTint,
+                                    stop: day.scheduledRoute(at: index)?.stops[position], editPlaces: { beginPlaceEditing() })
+                                .padding(.bottom, position == chain.count - 1 ? 8 : 0)
                                 .background {
                                     RouteSequenceLine(first: position == 0, last: position == chain.count - 1)
-                                        .stroke(routeTint.opacity(editingPlaces ? 0 : 0.24), lineWidth: 1)
+                                        .stroke(routeTint.opacity(0.24), lineWidth: 1)
                                         .allowsHitTesting(false).accessibilityHidden(true)
                                 }
-                    .background(GeometryReader { geometry in
-                        Color.clear.preference(key: NativeRouteFrames.self, value: ["\(index)/\(position)": geometry.frame(in: .global)])
-                    })
-                                .listRowBackground(Group {
-                                    Color(uiColor: .systemBackground)
-                                })
+                                .listRowBackground(Color(uiColor: .systemBackground))
                                 .listRowSeparator(.hidden, edges: .all)
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .modifier(DayPlaceEditingDrag(enabled: editingPlaces && store.canEditItinerary,
-                                    payload: "day-place/" + day.id + "/" + id + "/" + String(index)))
                                 .tag(reference)
                                 .selectionDisabled()
-                                .environment(\.editMode, .constant(.inactive))
-
                                 .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id, from: index) }
-                                if editingPlaces, let route = day.scheduledRoute(at: index) {
-                                    RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index,
-                                        marker: marker, tint: routeTint, editing: true, stop: route.stops[position],
-                                        showsIdentity: false, editSchedule: { openSchedule(route, position: position, transport: false) })
-                                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                        .listRowSeparator(.hidden).listRowBackground(Color(uiColor: .systemBackground))
-                                        .moveDisabled(true).selectionDisabled()
-                                        .environment(\.editMode, .constant(.inactive))
-                                        .modifier(ArrangementDuringSorting(collapsed: sortingPlaces))
-                                }
                                 if position + 1 < chain.count {
                                     transportRow(chain: chain, index: index, position: position)
                                         .background {
-                                            if !editingPlaces {
-                                                RouteSequenceLine(first: false, last: false)
-                                                    .stroke(routeTint.opacity(0.24), lineWidth: 1)
-                                                    .allowsHitTesting(false).accessibilityHidden(true)
-                                            }
+                                            RouteSequenceLine(first: false, last: false)
+                                                .stroke(routeTint.opacity(0.24), lineWidth: 1)
+                                                .allowsHitTesting(false).accessibilityHidden(true)
                                         }
                                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                                         .listRowSeparator(.hidden)
-                                        .moveDisabled(true).selectionDisabled()
-                                        .environment(\.editMode, .constant(.inactive))
-                                        .modifier(ArrangementDuringSorting(collapsed: sortingPlaces && editingPlaces))
+                                        .selectionDisabled()
                                 }
-
                             }
                         }
-                        .onMove { offsets, destination in
-                            guard store.canEditItinerary,
-                                  store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) == day else {
-                                store.errorMessage = "行程已更新，请重新排序。"; return
-                            }
-                            var orders = day.chains
-                            orders[index].move(fromOffsets: offsets, toOffset: destination)
-                            var updated = day; updated.setRouteOrders(orders)
-                            if store.tripPlacesPreview,
-                               let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
-                               let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) {
-                                store.trips[ti].days[di] = updated
-                                store.rebuildRoutes(preservingPlannedGeometry: true)
-                            } else { _ = store.saveDayInBackground(updated) }
-                        }
-                        .moveDisabled(!editingPlaces || !store.canEditItinerary)
                     }
 
                 }
@@ -357,42 +316,19 @@ struct DayContentsView: View {
             let linked = Set(day.chains.flatMap { $0 })
             let available = Set(store.markers.map(\.id))
             let unlinked = day.markerIds.filter { !linked.contains($0) && available.contains($0) }
-            if editingPlaces || !unlinked.isEmpty {
+            if !unlinked.isEmpty {
             Section {
                     JourneyPlaceGroupHeading(title: "未安排", count: unlinked.count)
                         .accessibilityIdentifier("day-unplanned-heading")
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                        .background(GeometryReader { geometry in
-                            Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global)])
-                        })
-                    if unlinked.isEmpty {
-                        Color.clear.frame(height: 60)
-                            .contentShape(Rectangle())
-                            .accessibilityLabel("未安排地点拖放区域")
-                            .accessibilityIdentifier("day-unplanned-drop-area")
-                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                            .background(GeometryReader { geometry in
-                                Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global)])
-                            })
-                    }
                     ForEach(unlinked, id: \.self) { id in
                         let reference = DayPlaceReference(markerID: id, routeIndex: nil)
                         if let marker = store.markers.first(where: { $0.id == id }) {
                             RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: nil,
-                                marker: marker, tint: .secondary, editing: editingPlaces,
-                                selected: selectedPlaces.contains(reference), toggleSelection: {
-                                    if selectedPlaces.contains(reference) { selectedPlaces.remove(reference) }
-                                    else { selectedPlaces.insert(reference) }
-                                }, editPlaces: { beginPlaceEditing() })
+                                marker: marker, tint: .secondary, editPlaces: { beginPlaceEditing() })
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .background(GeometryReader { geometry in
-                                    Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global), "source/" + id: geometry.frame(in: .global)])
-                                })
-                                .modifier(DayPlaceEditingDrag(enabled: editingPlaces && store.canEditItinerary,
-                                    payload: "day-place/" + day.id + "/" + id))
                                 .tag(reference)
                                 .selectionDisabled()
-                                .environment(\.editMode, .constant(.inactive))
                                 .accessibilityAction(named: "从当天移除") {
                                     Task { await store.removeMarker(id, from: day, animated: !reduceMotion) }
                                 }
@@ -419,16 +355,16 @@ struct DayContentsView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Color(uiColor: .label))
                 .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                .background(GeometryReader { geometry in
-                    Color.clear.preference(key: NativeRouteFrames.self, value: ["unplanned": geometry.frame(in: .global)])
-                })
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }.font(.body)
             }
 
         }
-        .environment(\.editMode, .constant(editingPlaces ? .active : .inactive))
+        .listSectionSpacing(8)
+        .environment(\.defaultMinListRowHeight, 0)
+        }
+        }
         .animation(AppMotion.listMutation(reduceMotion: reduceMotion), value: editingPlaces)
         .onChange(of: editingPlaces) { _, editing in if !editing { selectedPlaces = [] } }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -476,31 +412,6 @@ struct DayContentsView: View {
         .onChange(of: day.placeReferences) { _, _ in selectedPlaces = [] }
         .onChange(of: day.chains) { _, _ in selectedPlaces = [] }
         .onChange(of: day.id) { _, _ in selectedPlaces = []; editingPlaces = false }
-        .listSectionSpacing(8)
-        .environment(\.defaultMinListRowHeight, 0)
-        .onPreferenceChange(NativeRouteFrames.self) { nativeRouteGeometry.frames = $0 }
-        .background(NativePlaceListDrop(frames: nativeRouteFrames, frameSource: { nativeRouteGeometry.frames }, prefix: "day-place/" + day.id + "/", onDiagnostics: { dragDiagnosticUpdates = $0 }, onDrop: { store.finishRouteDrop() }, onSorting: { active in
-            // Collapse immediately so drop feedback measures the settled layout.
-            if active {
-                var transaction = Transaction(); transaction.disablesAnimations = true
-                withTransaction(transaction) { sortingPlaces = true }
-            } else {
-                withAnimation(AppMotion.crossfade(reduceMotion: reduceMotion)) { sortingPlaces = false }
-            }
-        }, sourceTargets: Dictionary(uniqueKeysWithValues: day.chains.enumerated().flatMap { route, ids in
-            ids.enumerated().map { position, id in (id + "/" + String(route), "\(route)/\(position)") }
-        })) { id, route in
-            let payload = id.split(separator: "/")
-            guard let marker = payload.first else { return }
-            let markerID = String(marker)
-            let source = payload.count > 1 ? Int(payload[1]) : nil
-            if route == "unplanned" { makeDayPlaceUnplanned(markerID, from: source, animated: false); return }
-            let parts = route.split(separator: "/")
-            guard let first = parts.first, let index = Int(first) else { return }
-            let position = parts.count > 1 ? Int(parts[1]) : nil
-            let insertion = position.map { $0 + (parts.last == "after" ? 1 : 0) }
-            moveDayPlace(markerID, from: source, to: index, at: insertion)
-        })
         .sheet(item: $chainEditor) { ChainEditorView(store: store, request: $0) }
         .sheet(item: Binding(get: { isEditingWorkspace ? nil : scheduleEditor }, set: { if !isEditingWorkspace { scheduleEditor = $0 } })) {
             RouteScheduleEditor(store: store, request: $0)
@@ -574,6 +485,85 @@ struct DayContentsView: View {
         .accessibilityIdentifier("day-place-editing-bar")
     }
     private var routeTint: Color { DayRouteTint.color(day.colorIndex ?? 0) }
+
+    private var editingList: some View {
+        let available = Set(store.markers.map(\.id))
+        let linked = Set(day.chains.flatMap { $0 })
+        let unlinked = day.markerIds.filter { !linked.contains($0) && available.contains($0) }
+        var sections: [(section: DayReorderSection, items: [DayReorderItem])] = day.chains.enumerated().map { index, chain in
+            (.route(index), chain.map { DayReorderItem.place(markerID: $0, route: index) })
+        }
+        sections.append((.unplanned, unlinked.isEmpty ? [.placeholder] : unlinked.map { .place(markerID: $0, route: nil) }))
+        return DayPlaceReorderList(
+            sections: sections,
+            canReorder: store.canEditItinerary,
+            header: showsDaySummary ? AnyView(summaryHeader.padding(.vertical, 8)) : nil,
+            sectionHeader: { section in
+                switch section {
+                case .route(let index):
+                    AnyView(Text("路线 \(index + 1)").font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.leading, 16))
+                case .unplanned:
+                    AnyView(JourneyPlaceGroupHeading(title: "未安排", count: unlinked.count)
+                        .accessibilityIdentifier("day-unplanned-heading"))
+                }
+            },
+            cell: { item in AnyView(editingCell(item)) },
+            onSelect: { item in
+                guard case .place(let id, let route) = item else { return }
+                let reference = DayPlaceReference(markerID: id, routeIndex: route)
+                if selectedPlaces.contains(reference) { selectedPlaces.remove(reference) } else { selectedPlaces.insert(reference) }
+            },
+            commit: { orders in
+                guard store.canEditItinerary,
+                      store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) == day else {
+                    store.errorMessage = "行程已更新，请重新排序。"; return false
+                }
+                guard orders.allSatisfy({ Set($0).count == $0.count }) else { return false }
+                guard orders != day.chains else { return true }
+                var updated = day; updated.setRouteOrders(orders)
+                if store.tripPlacesPreview,
+                   let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
+                   let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) {
+                    store.trips[ti].days[di] = updated
+                    store.rebuildRoutes(preservingPlannedGeometry: true)
+                    return true
+                }
+                return store.saveDayInBackground(updated, animated: false)
+            })
+    }
+
+    @ViewBuilder private func editingCell(_ item: DayReorderItem) -> some View {
+        switch item {
+        case .placeholder:
+            Text("拖到这里移出路线").font(.footnote).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 60)
+                .accessibilityIdentifier("day-unplanned-drop-area")
+        case .place(let id, let route):
+            if let marker = store.markers.first(where: { $0.id == id }) {
+                let reference = DayPlaceReference(markerID: id, routeIndex: route)
+                let chain = route.flatMap { day.chains.indices.contains($0) ? day.chains[$0] : nil } ?? []
+                let position = chain.firstIndex(of: id)
+                VStack(spacing: 0) {
+                    RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: route, marker: marker,
+                        tint: route == nil ? .secondary : routeTint, editing: true,
+                        selected: selectedPlaces.contains(reference), toggleSelection: {
+                            if selectedPlaces.contains(reference) { selectedPlaces.remove(reference) } else { selectedPlaces.insert(reference) }
+                        },
+                        stop: route.flatMap { r in position.flatMap { day.scheduledRoute(at: r)?.stops[$0] } },
+                        showsSchedule: true,
+                        editSchedule: {
+                            if let route, let position, let scheduled = day.scheduledRoute(at: route) {
+                                openSchedule(scheduled, position: position, transport: false)
+                            }
+                        })
+                    if let route, let position, position + 1 < chain.count {
+                        transportRow(chain: chain, index: route, position: position)
+                    }
+                }
+            }
+        }
+    }
     private var daySummary: String {
         let days = store.trips.first { $0.id == day.tripId }?.days.sorted { $0.date < $1.date } ?? []
         let index = days.firstIndex { $0.id == day.id } ?? 0
@@ -675,16 +665,7 @@ struct DayContentsView: View {
                             }.buttonStyle(.borderless).foregroundStyle(.secondary)
                                 .accessibilityLabel("路线操作").accessibilityIdentifier("route-actions-\(index)")
                         }
-                        if ProcessInfo.processInfo.arguments.contains("--route-drag-diagnostics"), index == 0 {
-                            Text(String(dragDiagnosticUpdates)).font(.caption)
-                                .accessibilityLabel("Route drag diagnostics")
-                                .accessibilityIdentifier("route-drag-diagnostics")
-                                .accessibilityValue(String(dragDiagnosticUpdates))
-                        }
                     }
-                    .background(GeometryReader { geometry in
-                        Color.clear.preference(key: NativeRouteFrames.self, value: ["\(index)/header": geometry.frame(in: .global)])
-                    })
                     .accessibilityAction(named: "编辑行程") { beginPlaceEditing() }
                     .selectionDisabled()
                     .font(.body)
@@ -1418,8 +1399,12 @@ struct NativePlaceListDrop: UIViewRepresentable {
                         }
                     }
                     for (key, frame) in parent.currentFrames where key != "unplanned" && !key.hasPrefix("source/") {
-                        let point = collectionView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
-                        if let path = collectionView.indexPathForItem(at: point) { nativeRowTargets[path] = key }
+                        let collapsing = key.hasPrefix("collapse/")
+                        // Collapsed content is zero-height at the top of its still full-height cell.
+                        let point = collectionView.convert(CGPoint(x: frame.midX, y: collapsing ? frame.minY + 0.5 : frame.midY), from: window)
+                        guard let path = collectionView.indexPathForItem(at: point) else { continue }
+                        if collapsing, let existing = nativeRowTargets[path], !existing.hasPrefix("collapse/") { continue }
+                        nativeRowTargets[path] = key
                     }
                 }
             }
@@ -1449,14 +1434,11 @@ struct NativePlaceListDrop: UIViewRepresentable {
             }
         }
         private func updateCompactShifts() {
-            let routeSections = Set(nativeRowTargets.compactMap { path, key in
-                key == "unplanned" || key.hasPrefix("source/") ? nil : path.section
-            })
             var removed: CGFloat = 0
             compactShifts = [:]
             for path in cellFrames.keys.sorted() {
                 compactShifts[path] = -removed
-                if routeSections.contains(path.section), nativeRowTargets[path] == nil, path != fixedSource {
+                if nativeRowTargets[path]?.hasPrefix("collapse/") == true, path != fixedSource {
                     removed += cellFrames[path]?.height ?? 0
                 }
             }
@@ -1646,13 +1628,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
     }
 }
-/// Layout measurements feed drop hit-testing, not SwiftUI rendering. Native
-/// reordering changes these every animation frame; publishing them as @State
-/// invalidates the List while UIKit is in the middle of moving its own cells.
-private final class NativeRouteGeometryStorage {
-    var frames: [String: CGRect] = [:]
-}
-
 private struct NativeRouteFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
@@ -1854,27 +1829,6 @@ struct DayPlaceTransferPicker: View {
     }
 }
 
-private struct ArrangementDuringSorting: ViewModifier {
-    let collapsed: Bool
-    func body(content: Content) -> some View {
-        content
-            .frame(height: collapsed ? 0 : nil, alignment: .top)
-            .opacity(collapsed ? 0 : 1)
-            .clipped()
-            .allowsHitTesting(!collapsed)
-            .accessibilityHidden(collapsed)
-    }
-}
-
-private struct DayPlaceEditingDrag: ViewModifier {
-    let enabled: Bool
-    let payload: String
-    func body(content: Content) -> some View {
-        if enabled { content.onDrag { NativePlaceItemProvider(payload: payload) } }
-        else { content }
-    }
-}
-
 private struct EditingDistanceSnapshot: Equatable {
     let day: TripDay
     let markers: [Marker]
@@ -1903,6 +1857,12 @@ private struct DayEditingWorkspace: View {
                         }
                     }
                     .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button { dismiss() } label: { Image(systemName: "xmark") }
+                                .accessibilityLabel("关闭编辑行程")
+                                .accessibilityIdentifier("day-edit-close")
+                        }.journeyBareBackground
+
                         ToolbarItem(placement: .confirmationAction) {
                             Button("完成") { dismiss() }.accessibilityIdentifier("day-edit-done")
                         }.journeyBareBackground
