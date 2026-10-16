@@ -2,6 +2,19 @@ import XCTest
 @testable import MapAnNai
 
 final class DayMapJourneyTests: XCTestCase {
+    @MainActor func testItineraryDraftDoesNotMutateOriginalOrWriteImmediately() {
+        let store = AppStore(settings: Settings(), demo: true)
+        let original = store.trips[0]
+        let draft = store.makeItineraryDraft()
+        var day = original.days[0]
+        day.title = "Draft only"
+        XCTAssertTrue(draft.saveDayInBackground(day))
+        XCTAssertEqual(store.trips[0], original)
+        XCTAssertEqual(draft.trips[0].days[0].title, "Draft only")
+        XCTAssertEqual(draft.draftWrites.count, 1)
+        XCTAssertFalse(draft.saving)
+    }
+
     @MainActor func testLeavingDayMapClearsPlaceDetailBeforeReentering() {
         let store = AppStore(settings: Settings(), demo: true)
         let trip = store.trips[0], day = trip.days[0]

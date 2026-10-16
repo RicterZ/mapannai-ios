@@ -1848,16 +1848,32 @@ private struct DayEditingWorkspace: View {
     let dayID: String
     @Environment(\.dismiss) private var dismiss
     @State private var editing = true
+    @State private var draftStore: AppStore?
+    @State private var originalTrip: Trip?
+    @State private var selectedDayID: String?
     var body: some View {
+        Group {
+            if let draftStore {
+                workspace(draftStore)
+            } else { ProgressView() }
+        }.onAppear {
+            guard draftStore == nil else { return }
+            originalTrip = store.trips.first { $0.id == tripID }
+            selectedDayID = dayID
+            draftStore = store.makeItineraryDraft()
+        }
+    }
+    private func workspace(_ draft: AppStore) -> some View {
         NavigationStack {
-            if let day = store.trips.first(where: { $0.id == tripID })?.days.first(where: { $0.id == dayID }) {
-                DayContentsView(store: store, day: day, showsDaySummary: true, showsEditingDone: false,
+            if let day = draft.trips.first(where: { $0.id == tripID })?.days.first(where: { $0.id == (selectedDayID ?? dayID) }) {
+                DayContentsView(store: draft, day: day, showsDaySummary: true, showsEditingDone: false,
                     isEditingWorkspace: true, editingPlaces: $editing)
+                    .id(day.id)
                     .listStyle(.insetGrouped).scrollContentBackground(.hidden)
                     .background(Color(uiColor: .systemBackground))
                     .navigationTitle("编辑行程").navigationBarTitleDisplayMode(.inline)
                     .safeAreaInset(edge: .top, spacing: 0) {
-                        if let trip = store.trips.first(where: { $0.id == tripID }) {
+                        if let trip = draft.trips.first(where: { $0.id == tripID }) {
                             editingDates(trip: trip, day: day)
                         }
                     }
@@ -1869,7 +1885,9 @@ private struct DayEditingWorkspace: View {
                         }.journeyBareBackground
 
                         ToolbarItem(placement: .confirmationAction) {
-                            Button("完成") { dismiss() }.accessibilityIdentifier("day-edit-done")
+                            Button("完成") {
+                                if let originalTrip, store.commitItineraryDraft(draft, original: originalTrip) { dismiss() }
+                            }.accessibilityIdentifier("day-edit-done")
                         }.journeyBareBackground
 
                     }
@@ -1881,6 +1899,7 @@ private struct DayEditingWorkspace: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 0) {
                     ForEach(Array(trip.days.sorted { $0.date < $1.date }.enumerated()), id: \.element.id) { index, date in
+                        Button { selectedDayID = date.id } label: {
                         VStack(spacing: 5) {
                             Text("第 \(index + 1) 天").font(.caption).foregroundStyle(.secondary)
                             Text(Date.fromDay(date.date), format: .dateTime.month(.defaultDigits).day())
@@ -1889,6 +1908,7 @@ private struct DayEditingWorkspace: View {
                         }.foregroundStyle(date.id == day.id ? .primary : .secondary)
                             .frame(width: 84).padding(.vertical, 12).id(date.id)
                             .accessibilityIdentifier("edit-day-date-\(date.id)")
+                        }.buttonStyle(.plain)
                     }
                 }.padding(.horizontal, 20)
             }.scrollIndicators(.hidden)

@@ -101,6 +101,36 @@ struct DayEditorDraft: Identifiable {
     private var itineraryWriteTail: Task<Void, Never>?
     private var itineraryWriteGeneration = UUID()
     private var itineraryRollbacks: [() -> Void] = []
+    var itineraryDraftOnly = false
+    var draftWrites: [(APIClient) async throws -> Void] = []
+
+    func makeItineraryDraft() -> AppStore {
+        let draft = AppStore(settings: settings, demo: false)
+        draft.itineraryDraftOnly = true
+        draft.trips = trips; draft.markers = markers
+        return draft
+    }
+
+    func commitItineraryDraft(_ draft: AppStore, original: Trip) -> Bool {
+        guard canEditItinerary, let index = trips.firstIndex(where: { $0.id == original.id }),
+              trips[index] == original, let updated = draft.trips.first(where: { $0.id == original.id }) else {
+            errorMessage = "行程已更新，请退出编辑后重试。"; return false
+        }
+        guard !draft.draftWrites.isEmpty else { return true }
+        let writes = draft.draftWrites
+        let client = api
+        trips[index] = updated
+        saving = true
+        rebuildRoutes(preservingPlannedGeometry: true)
+        enqueueItineraryWrite(using: client, rollback: { [weak self] in
+            guard let self, let i = self.trips.firstIndex(where: { $0.id == original.id }) else { return }
+            self.trips[i] = original
+        }) {
+            for write in writes { try await write(client) }
+        }
+        return true
+    }
+
     var canEditItinerary: Bool { !saving || !itineraryRollbacks.isEmpty }
 
     private func enqueueItineraryWrite(using client: APIClient, rollback: @escaping () -> Void,
@@ -772,6 +802,34 @@ struct DayEditorDraft: Identifiable {
               latest.routeChains?.contains(request.route) == true else {
             errorMessage = "路线已更新，请重新打开安排"; return false
         }
+        if itineraryDraftOnly {
+            guard let ti = trips.firstIndex(where: { $0.id == latest.tripId }),
+                  let di = trips[ti].days.firstIndex(where: { $0.id == latest.id }),
+                  let ri = latest.routeChains?.firstIndex(where: { $0.id == request.route.id }) else { return false }
+            do {
+                var day = latest
+                var route = request.route
+                if let fields = (patch["stops"] as? [[String: Any]])?.first,
+                   let si = route.stops.firstIndex(where: { $0.id == fields["stopId"] as? String }) {
+                    route.stops[si].startTime = fields["startTime"] as? String
+                    route.stops[si].durationMinutes = fields["durationMinutes"] as? Int
+                    route.stops[si].note = fields["note"] as? String
+                }
+                if let fields = (patch["legs"] as? [[String: Any]])?.first,
+                   let from = fields["fromStopId"] as? String, let to = fields["toStopId"] as? String {
+                    route.legs.removeAll { $0.fromStopId == from && $0.toStopId == to }
+                    if fields["remove"] as? Bool != true {
+                        let data = try JSONSerialization.data(withJSONObject: fields)
+                        route.legs.append(try JSONDecoder().decode(ChainLeg.self, from: data))
+                    }
+                }
+                day.routeChains?[ri] = route
+                trips[ti].days[di] = day
+                let path = Self.dayPath(latest) + "/chains/" + APIClient.id(route.id)
+                draftWrites.append { client in try await client.mutate(path, method: "PATCH", body: patch) }
+                return true
+            } catch { report(error); return false }
+        }
         let revision = connectionRevision
         return await perform(expectedRevision: revision) { client in
             let updated: TripDay = try await (suppliedClient ?? client).request(Self.dayPath(request.day) + "/chains/" + APIClient.id(request.route.id), method: "PATCH", body: patch)
@@ -959,6 +1017,13 @@ struct DayEditorDraft: Identifiable {
         }
     }
     private func persistDayInBackground(_ day: TripDay, animated: Bool, using suppliedClient: APIClient? = nil, operation: @escaping (APIClient) async throws -> Void) -> Bool {
+        if itineraryDraftOnly {
+            guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
+                  let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return false }
+            trips[ti].days[di] = day
+            draftWrites.append(operation)
+            return true
+        }
         guard !demo || suppliedClient != nil else { errorMessage = "当前为只读示例，无法保存。"; return false }
         guard canEditItinerary else { errorMessage = "请等待当前保存完成"; return false }
         guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
@@ -1000,6 +1065,10 @@ struct DayEditorDraft: Identifiable {
         guard !ordered.isEmpty else { return false }
         let updatedDestination = originalDestination.addingToDefaultRoute(ordered)
         let updatedSource = copy ? originalSource : references.map { originalSource.removingReferences($0) } ?? ordered.reduce(originalSource) { $0.removing($1) }
+        if itineraryDraftOnly {
+            guard saveDayInBackground(updatedDestination) else { return false }
+            return copy || saveDayInBackground(updatedSource)
+        }
         let destinationWrite: RouteOrderWrite, sourceWrite: RouteOrderWrite
         do {
             destinationWrite = try RouteOrderWrite(previous: originalDestination, updated: updatedDestination)
@@ -1615,6 +1684,10 @@ struct DayEditorDraft: Identifiable {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--cover-resize-preview") {
             markers[2].content.headerImage = "https://example.invalid/cover.jpg"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--tmp-carousel") {
+            markers[0].content.headerImage = "https://example.invalid/a.jpg"
+            markers[1].content.headerImage = "https://example.invalid/b.jpg"
         }
         if ProcessInfo.processInfo.arguments.contains("--long-note-preview") {
             markers[1].content.markdownContent = (1...24).map { "<p>第\($0)段旅行笔记：查看地点信息与当天安排。</p>" }.joined() + "<p>长笔记结束</p>"
