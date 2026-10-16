@@ -17,9 +17,19 @@ import SwiftUI
     var body: some Scene {
         WindowGroup {
             ZStack {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--temperature-review") {
+                    DayTemperatureReview().zIndex(100)
+                }
+                if ProcessInfo.processInfo.arguments.contains("--widget-style-review") {
+                    WidgetStyleReview().zIndex(100)
+                }
+                #endif
+                if !ProcessInfo.processInfo.arguments.contains("--widget-style-review") && !ProcessInfo.processInfo.arguments.contains("--temperature-review") {
                 HomeView(store: store, settings: settings)
                     .allowsHitTesting(!launchVisible)
                     .accessibilityHidden(launchVisible)
+                }
                 if launchVisible {
                     GeometryReader { geometry in
                         LaunchMapView()

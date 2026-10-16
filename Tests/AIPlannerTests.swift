@@ -31,7 +31,9 @@ final class AIPlannerTests: XCTestCase {
             "search_destinations", "search_places", "search_web", "fetch_web", "get_place_details", "get_directions",
             "get_walking_directions", "list_trips", "get_trip_detail", "create_trip", "add_day_to_trip",
             "assign_marker_to_trip", "remove_marker_from_trip", "assign_marker_to_day", "plan_trip_day",
-            "create_day_chain", "update_day_chain", "delete_day_chain", "reorder_day_markers", "delete_trip", "change_title"]
+            "create_day_chain", "update_day_chain", "delete_day_chain", "reorder_day_markers", "delete_trip", "change_title", "update_trip", "update_trip_day", "delete_trip_day",
+            "record_plan_skeleton", "finish_planning_day", "submit_trip_review",
+            "ask_choice", "ask_datetime", "preview_itinerary"]
         for name in tools { XCTAssertNotEqual(AIToolLabel.text(name), name, name) }
     }
     @MainActor func testClosingKeepsReplyRunningAndReopeningPreservesConversation() async throws {

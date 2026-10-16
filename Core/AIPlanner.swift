@@ -93,6 +93,9 @@ enum AIToolLabel {
     static func text(_ name: String) -> String {
         let labels = [
             "ask_choice": "选择偏好", "ask_datetime": "选择日期时间", "preview_itinerary": "预览行程",
+            "record_plan_skeleton": "制定全程骨架", "finish_planning_day": "核实当天安排",
+            "submit_trip_review": "提交行程审阅", "update_trip": "更新旅行",
+            "update_trip_day": "更新每日安排", "delete_trip_day": "删除行程日",
             "change_title": "修改会话标题", "list_markers": "查看已收藏地点",
             "create_marker": "收藏地点", "update_marker": "更新地点", "delete_marker": "删除地点",
             "search_places": "搜索地点", "search_place": "搜索地点", "get_place_details": "查询地点详情",

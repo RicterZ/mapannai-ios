@@ -2,6 +2,23 @@ import XCTest
 @testable import MapAnNai
 
 final class TripWeatherServiceTests: XCTestCase {
+    func testWeatherConditionNamesFollowCodesAndUnknownIsHidden() {
+        for (code, name) in [(0, "晴"), (2, "多云"), (3, "阴"), (61, "小雨"), (75, "大雪"), (95, "雷雨")] {
+            XCTAssertEqual(TripDayWeather(date: "test", weatherCode: code, minimumCelsius: nil, maximumCelsius: nil, precipitationProbability: nil).conditionName, name)
+        }
+        XCTAssertNil(TripDayWeather(date: "test", weatherCode: 999, minimumCelsius: nil, maximumCelsius: nil, precipitationProbability: nil).conditionName)
+    }
+    func testTemperatureRangeRequiresCompleteFiniteOrderedValues() {
+        func weather(_ low: Double?, _ high: Double?) -> TripDayWeather {
+            TripDayWeather(date: "2026-10-16", weatherCode: 0, minimumCelsius: low, maximumCelsius: high, precipitationProbability: nil)
+        }
+        XCTAssertEqual(weather(16.6, 24.2).temperatureRange, "17°~24°")
+        XCTAssertEqual(weather(-5, -1).temperatureRange, "-5°~-1°")
+        XCTAssertNil(weather(nil, 24).temperatureRange)
+        XCTAssertNil(weather(.nan, 24).temperatureRange)
+        XCTAssertNil(weather(25, 24).temperatureRange)
+    }
+
     func testTokyoHistoryResolvesTimeZoneWithoutAppleGeocoding() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory); MockURLProtocol.handler = nil }

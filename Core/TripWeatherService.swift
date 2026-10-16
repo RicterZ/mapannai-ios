@@ -7,6 +7,34 @@ struct TripDayWeather: Codable, Equatable {
     let minimumCelsius: Double?
     let maximumCelsius: Double?
     let precipitationProbability: Int?
+    var conditionName: String? {
+        switch weatherCode {
+        case 0: return "晴"
+        case 1: return "大部晴朗"
+        case 2: return "多云"
+        case 3: return "阴"
+        case 45, 48: return "雾"
+        case 51, 53, 55: return "毛毛雨"
+        case 56, 57, 66, 67: return "冻雨"
+        case 61: return "小雨"
+        case 63: return "中雨"
+        case 65: return "大雨"
+        case 71: return "小雪"
+        case 73: return "中雪"
+        case 75: return "大雪"
+        case 77: return "雪粒"
+        case 80, 81, 82: return "阵雨"
+        case 85, 86: return "阵雪"
+        case 95: return "雷雨"
+        case 96, 99: return "雷雨伴冰雹"
+        default: return nil
+        }
+    }
+    var temperatureRange: String? {
+        guard let low = minimumCelsius, let high = maximumCelsius,
+              low.isFinite, high.isFinite, low <= high else { return nil }
+        return String(format: "%.0f°~%.0f°", low.rounded() == 0 ? 0 : low.rounded(), high.rounded() == 0 ? 0 : high.rounded())
+    }
 }
 
 // Separate from the authenticated map API: no app credentials are sent to Open-Meteo.

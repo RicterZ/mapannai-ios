@@ -37,6 +37,7 @@ targets:
     sources:
       - App
       - Core
+      - Shared
       - Map
       - Views
       - path: Vendor/MAMapKit.framework/AMap.bundle
@@ -44,6 +45,8 @@ targets:
         type: file
     dependencies:
       - package: GoogleMaps
+      - target: MapAnNaiWidget
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.mapannai.ios
@@ -66,6 +69,22 @@ targets:
     settings:
       base:
         SWIFT_OBJC_BRIDGING_HEADER: ''
+  MapAnNaiWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widget
+      - Shared
+      - Views/JourneyWeatherBackground.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.mapannai.ios.widget
+        SWIFT_OBJC_BRIDGING_HEADER: ''
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        'OTHER_LDFLAGS[sdk=iphoneos*]': '$(inherited)'
+        INFOPLIST_FILE: Widget/Info.plist
+        TARGETED_DEVICE_FAMILY: '1,2'
 schemes:
   MapAnNai:
     build:

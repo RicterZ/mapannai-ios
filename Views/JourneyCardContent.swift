@@ -290,6 +290,9 @@ struct JourneyDayCardContent: View {
     var onPhotoSelection: (String) -> Void = { _ in }
     var weatherPoints: [TripWeatherLocation.Point] = []
     var loadWeather = true
+    #if DEBUG
+    var reviewWeather: TripDayWeather? = nil
+    #endif
     @State private var dayWeather: TripDayWeather?
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var photo: UIImage?
@@ -351,9 +354,14 @@ struct JourneyDayCardContent: View {
             } else {
                 JourneyRoutePreview(summary: summary)
             }
-            Text("\(summary.count) 个地点" + (summary.timing.map { " · " + $0 } ?? ""))
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    placeCount
+                    Spacer(minLength: 4)
+                    temperature
+                }
+                VStack(alignment: .leading, spacing: 6) { placeCount; temperature }
+            }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
@@ -379,6 +387,9 @@ struct JourneyDayCardContent: View {
             }
         }
         .task(id: WeatherRequest(date: day.date, points: weatherPoints, enabled: loadWeather)) {
+            #if DEBUG
+            if let reviewWeather { dayWeather = reviewWeather; return }
+            #endif
             dayWeather = nil
             guard loadWeather else { return }
             let location = await TripWeatherLocationCache.shared.representative(weatherPoints)
@@ -403,6 +414,27 @@ struct JourneyDayCardContent: View {
             guard !Task.isCancelled else { return }
             var transaction = Transaction(); transaction.disablesAnimations = true
             withTransaction(transaction) { photo = image; loadedURL = url }
+        }
+    }
+    private var placeCount: some View {
+        Text("\(summary.count) 个地点" + (summary.timing.map { " · " + $0 } ?? ""))
+            .font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+    @ViewBuilder private var temperature: some View {
+        if let weather = dayWeather, weather.conditionName != nil || weather.temperatureRange != nil {
+            HStack(spacing: 6) {
+                if let condition = weather.conditionName {
+                    Text(condition).foregroundStyle(.primary)
+                }
+                if let range = weather.temperatureRange {
+                    Text(range).monospacedDigit().foregroundStyle(.secondary)
+                        .accessibilityLabel("最低到最高气温，" + range + "摄氏度")
+                }
+            }
+            .font(.caption).fixedSize()
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("day-weather-temperature")
         }
     }
     private var dayTitle: some View {

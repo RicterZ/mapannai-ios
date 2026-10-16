@@ -460,3 +460,9 @@ Chat requests declare `supportsInteractions: true`. NDJSON `interaction` events 
 ## Server-owned AI background execution
 
 Native chat starts `POST /api/ai/runs` with stable conversationId/requestId and a random x-run-token, then polls `GET /api/ai/runs/:id?after=cursor` (100-event pages). Explicit Stop calls DELETE; background expiry only detaches polling. Foreground/relaunch resumes persisted pending runs. Cumulative `partial` replaces preview text; sequenced final events and cursor checkpoint together with conversation history. Creation identity/context/model are frozen before POST; retries reuse the same identity, including a lost creation response. Capability, model credential snapshot and pending interaction tokens are held in Keychain, not history JSON. No automatic replay of original chat writes or legacy streaming fallback. Server process interruption is terminal, not automatically restarted. Tests use URLProtocol/mock data, never production AI writes.
+
+日卡片底部统计行右侧显示按WMO天气码映射的中文天气（正文色），以及用~分隔的最低到最高摄氏温度（secondary灰色），数值缺失、非有限或顺序无效时隐藏；大字/窄宽度使用ViewThatFits纵向回退。与原天气背景共享同一缓存/更新生命周期，不新增天气请求。四种照片/主题组合均使用JourneyDayCardContent；DEBUG审阅页使用明确标注的固定天气样本，不写入天气缓存。
+
+## Widget prototype signing
+
+The widget extension is embedded in the app and supports medium/large families, but currently displays a placeholder rather than live itinerary data. App Group entitlements are kept as reference files and deliberately NOT applied in project.yml so Personal Team signing can install the extension. Shared snapshot writing is a prototype; without signed App Group membership the widget cannot read app data. Shared/TodayWidgetCard and DEBUG review screens are design fixtures, not a completed WidgetKit data/UI integration. Enabling shared data requires an eligible signing team, the same registered App Group on both App IDs, and further widget integration work. Do not claim current placeholder installation validates live widgets.

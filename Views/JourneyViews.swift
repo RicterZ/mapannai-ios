@@ -468,7 +468,7 @@ struct JourneyArchiveView: View {
             if let openedID, !ids.contains(openedID) { close() }
         }
         .sheet(item: $independentDetail, onDismiss: { store.selectedMarker = nil }) { marker in
-            MarkerDetailView(store: store, marker: marker, onClose: { independentDetail = nil }, onNavigateItinerary: {
+            MarkerDetailView(store: store, marker: marker, usesDayContext: false, onClose: { independentDetail = nil }, onNavigateItinerary: {
                 if let trip = store.trip {
                     let day = store.day
                     independentDetail = nil

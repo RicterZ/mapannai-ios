@@ -8,6 +8,7 @@ struct MarkerDetailView: View {
     var edgeAttached = false
     var embedded = false
     var compact = false
+    var usesDayContext = true
     var onExpand: () -> Void = {}
     var onConfirmationHeight: (CGFloat?) -> Void = { _ in }
     var searchPlace: Place?
@@ -29,6 +30,7 @@ struct MarkerDetailView: View {
         (!embedded ? store.selectedMarker : nil) ?? store.markers.first(where: { $0.id == marker.id }) ?? marker
     }
     private var targetDay: TripDay? {
+        guard usesDayContext else { return nil }
         guard embedded else { return store.day }
         guard let target = store.addPlaceDay else { return nil }
         return store.trips.first(where: { $0.id == target.tripId })?.days.first(where: { $0.id == target.id })

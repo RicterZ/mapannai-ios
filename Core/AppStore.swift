@@ -245,6 +245,7 @@ struct DayEditorDraft: Identifiable {
             if selection != updated { selectedMarker = updated }
         } else if selectedMarker != nil { selectedMarker = nil }
         if geometry != nextGeometry || changedTrips { rebuildRoutes() }
+        WidgetSnapshotWriter.write(trips: trips, markers: markers)
         applyStartupCamera()
         applyStartupLocationFallback()
     }
