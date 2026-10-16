@@ -692,11 +692,16 @@ struct DayContentsView: View {
     }
 
     private func openSchedule(_ route: RouteChain, position: Int, transport: Bool) {
-        guard editingPlaces, route.stops.indices.contains(position), !transport || route.stops.indices.contains(position + 1) else { return }
+        guard editingPlaces,
+              let currentDay = store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }),
+              let currentRoute = currentDay.routeChains?.first(where: { $0.id == route.id }),
+              route.stops.indices.contains(position),
+              let currentPosition = currentRoute.stops.firstIndex(where: { $0.id == route.stops[position].id }),
+              !transport || currentRoute.stops.indices.contains(currentPosition + 1) else { return }
         let names = Dictionary(store.markers.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
-        scheduleEditor = RouteScheduleRequest(day: day, route: route, position: position, isTransport: transport,
-            fromTitle: names[route.stops[position].markerId] ?? "地点",
-            toTitle: transport ? names[route.stops[position + 1].markerId] ?? "地点" : nil)
+        scheduleEditor = RouteScheduleRequest(day: currentDay, route: currentRoute, position: currentPosition, isTransport: transport,
+            fromTitle: names[currentRoute.stops[currentPosition].markerId] ?? "地点",
+            toTitle: transport ? names[currentRoute.stops[currentPosition + 1].markerId] ?? "地点" : nil)
     }
     private func routeDistance(chain: [String], index: Int, position: Int) -> String? {
         #if DEBUG
@@ -1854,7 +1859,8 @@ private struct DayEditingWorkspace: View {
     var body: some View {
         Group {
             if let draftStore {
-                workspace(draftStore)
+                ItineraryDraftContents(store: store, draft: draftStore, tripID: tripID, dayID: dayID,
+                    originalTrip: originalTrip, selectedDayID: $selectedDayID, editing: $editing)
             } else { ProgressView() }
         }.onAppear {
             guard draftStore == nil else { return }
@@ -1863,7 +1869,19 @@ private struct DayEditingWorkspace: View {
             draftStore = store.makeItineraryDraft()
         }
     }
-    private func workspace(_ draft: AppStore) -> some View {
+ }
+
+private struct ItineraryDraftContents: View {
+    @ObservedObject var store: AppStore
+    @ObservedObject var draft: AppStore
+    let tripID: String
+    let dayID: String
+    let originalTrip: Trip?
+    @Binding var selectedDayID: String?
+    @Binding var editing: Bool
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+
         NavigationStack {
             if let day = draft.trips.first(where: { $0.id == tripID })?.days.first(where: { $0.id == (selectedDayID ?? dayID) }) {
                 DayContentsView(store: draft, day: day, showsDaySummary: true, showsEditingDone: false,

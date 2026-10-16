@@ -107,7 +107,7 @@ struct RouteScheduleEditor: View {
                         .accessibilityLabel("返回").accessibilityIdentifier("schedule-cancel").disabled(submitting)
                 }.journeyBareBackground }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") { save(clear: false) }
+                    Button(store.itineraryDraftOnly ? "完成" : "保存") { save(clear: false) }
                         .disabled(submitting || store.saving)
                         .accessibilityIdentifier("schedule-save")
                 }.journeyBareBackground
@@ -257,9 +257,9 @@ struct RouteTransportRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 if let leg { TransportArtwork(mode: leg.mode) }
-                else { Image(systemName: "plus").foregroundStyle(editing ? Color.accentColor : .secondary) }
+                else { Image(systemName: "plus").foregroundStyle(.secondary) }
                 Text([leg?.mode.label ?? (editing ? "安排交通" : "交通"), distance].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.footnote).foregroundStyle(editing && leg == nil ? Color.accentColor : .primary)
+                    .font(.footnote).foregroundStyle(.primary)
                 if let leg, let service = leg.serviceNumber, !service.isEmpty {
                     Text(service).font(.caption.weight(.medium)).lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -280,12 +280,7 @@ struct RouteTransportRow: View {
                     .contentShape(Rectangle())
                 }
         }.padding(12)
-            .background(editing && leg == nil ? Color.clear : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                if editing && leg == nil {
-                    RoundedRectangle(cornerRadius: 8).strokeBorder(Color(uiColor: .separator), style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
-                }
-            }
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
         }
         }
