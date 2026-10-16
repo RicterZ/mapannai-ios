@@ -399,7 +399,9 @@ struct JourneyArchiveView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if openedID == nil && !trips.isEmpty && yearMotion == nil {
+            let createVisible = (openedID == nil || closing) &&
+                (expandedYear == nil || yearMotion?.returning == true)
+            if !trips.isEmpty {
                 Button { creating = true } label: {
                     Image(systemName: "plus").font(.system(size: 23, weight: .regular))
                         .frame(width: 52, height: 52)
@@ -409,6 +411,11 @@ struct JourneyArchiveView: View {
                         .contentShape(Circle())
                 }.buttonStyle(.plain).accessibilityLabel("创建旅行").accessibilityIdentifier("archive-create")
                     .padding(.trailing, 24).padding(.bottom, 16)
+                    .offset(x: createVisible || reduceMotion ? 0 : 100)
+                    .opacity(createVisible ? 1 : 0)
+                    .allowsHitTesting(createVisible && yearMotion == nil && !closing)
+                    .accessibilityHidden(!createVisible)
+                    .animation(reduceMotion ? .linear(duration: 0.15) : .easeInOut(duration: 0.35), value: createVisible)
             }
         }
         .background { Color(uiColor: .systemGroupedBackground).ignoresSafeArea() }
