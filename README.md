@@ -2,68 +2,47 @@
 
 English | [中文](README.zh.md) · [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) · [Download IPA](https://github.com/RicterZ/mapannai-ios/releases/latest)
 
-Put the places you want to visit on a map, then take your day-by-day travel plan with you.
+Put the places you want to visit on a map, then carry your day-by-day travel plan in your pocket.
 
-MapAnNai iOS is the native iPhone and iPad client for MapAnNai Plus. Save restaurants, hotels, and sights, add photos and notes, and arrange visits by trip and day. The client and web app share the places and trips stored on your server, so you can plan on your computer and keep viewing or editing on your phone.
+MapAnNai iOS is the native iPhone and iPad app for [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus). It works with your own server, so a trip planned on the web is ready on your phone, and changes made on the road show up everywhere.
 
-The app opens on My Trips, with its title inside the scrolling page. Pull down the home card list to refresh your trips and places. Ongoing trips appear first as fully visible cards with space between them and a muted green “On the trip” indicator. When none are ongoing, the closest upcoming departure has a full card at the top; the remaining trips stack below, newest first, with year cards separating departure years. When there are no ongoing or upcoming trips, the trip whose departure date is closest to today leads the stack. Each year has a fixed, automatically generated color and pattern; tap a year card to lift it to the top and unfold that year’s trips into full, front-facing cards in newest-first order. Back restores the archive stack. Tap a card to open its full-page itinerary, browse each day, or switch to the map. Each opening from home starts at today’s chapter when the trip contains your device’s local date, including empty days; otherwise it opens as before. Within the next seven days, day cards can show subtle weather illustrations based on the densest nearby group of planned places, or the trip’s first destination when that day has no places; photos keep their original colors, and unavailable forecasts leave the card white unless a saved forecast is available. Saved weather backgrounds remain on past days; missing historical backgrounds are filled from historical weather data when available and then cached without replacement. Current and upcoming days retain their background until an updated forecast arrives. When both temperatures are available, day cards show the daily low–high in Celsius beside the place count. Weather data is provided by Open-Meteo. Days unfold as continuous chapters with a day number, date, optional theme, wide place photo and caption, visit order, and saved timing. Route previews use connected stop nodes, with unscheduled places shown separately rather than mixed into the route text. Days without a theme or unused photo omit that content without adding placeholders. Within a trip, photos already used by an earlier day are skipped; the trip cover does not exclude photos from day cards. A day with multiple photos shows a manually swiped stack within the same banner area, with neighboring photos visible on both sides; a single photo keeps the full-width banner. Use the day’s ellipsis menu to edit its optional theme and places. Adding a day opens the same editor with only the current trip’s saved places; no title or place selection is required. Submission updates the itinerary immediately while saving in the background; failed saves offer Continue Editing. In Edit Trip, update the destination list with the same city search used during creation and choose a cover from a three-column grid of the trip’s place photos, or keep automatic selection. Trips without place photos show an empty-state hint. Trip cards use place photos as a subdued background and show an automatic No. 001-style number assigned by departure date, oldest first. Close the trip to return to the cards. Stored trip cards use a gentle 3D tilt and flatten into the existing detail page when tapped; fully displayed top trips stay front-facing, and illustrated year cards remain in the stack. Settings is a quiet text entry below the home card list; the floating plus button at the lower right creates a trip. With no trips yet, three full-size archive cards introduce the first journey, with a single Create Trip button instead of the floating plus.
+## What you can do
 
-The home page also offers “Chat About the Next Trip”: enter an idea to start a new AI conversation, or open Conversation History to resume without sending a new message. If AI is not configured, submitting opens Chat with a configuration alert and keeps your input. Configure the AI API and model in Settings to send it. Chat opens full screen, with readable assistant text, collapsible tool batches, and a conversation list; scrolling up pauses automatic following. The back arrow or a swipe from the left edge returns to the app without stopping the reply; reopen the running conversation to follow progress. AI requests run independently on the server. Leaving the app pauses result fetching, not planning; returning or reopening resumes from the saved event cursor. Stop explicitly cancels the server task.
+- **Collect places.** Search, tap a point of interest, or long-press the map to save restaurants, hotels and sights. Add a cover photo and notes such as booking details or travel tips.
+- **Plan trips day by day.** Create a trip with its destinations and dates, then add places to each day. Group them into routes, reorder visits, and note visit times, transport, train numbers and departures.
+- **See your plan on the map.** Each day has its own color. Routes connect places in visit order, with planned distances between stops. Tap a place or route to open it.
+- **Look back at your trips.** My Trips shows upcoming and ongoing trips first. Past trips are stacked as cards and grouped by year. Each day reads like a chapter, with photos, the route and the day's weather.
+- **Plan with AI.** Describe your next trip in chat. The assistant can ask follow-up questions, suggest dates and draft an itinerary for you to review. AI runs on your server and uses a model you configure.
+- **Share a trip.** Export the whole trip as a long image with routes and photos, ready to send or save to Photos.
+- **Navigate when it's time to go.** Open any place in Apple Maps, AMap or Google Maps.
 
-Saved places that are not part of a trip appear above the AI chat entry as horizontal cards, with cover photos when available and category artwork otherwise. Tap a card to open its place details.
+Works on iPhone and iPad. On iPad, the map and itinerary sit side by side. The map can use Apple Maps, AMap or Google Maps.
 
-AI chat supports inline single/multiple-choice questions, destination-local date and time pickers, and day-by-day draft itinerary reviews. Interaction cards and selections remain in conversation history. Dates reuse the trip calendar. A timeout is not consent, and reviewing a draft does not save it.
+## Getting started
 
-Choice cards also offer “None of these, explain in chat” without requiring a selection.
+1. Set up a MapAnNai Plus server by following the [deployment guide](https://github.com/RicterZ/mapannai-plus#deploy-your-own-server).
+2. Open Settings in the app, then enter the server address and, if required, its API token.
+3. Tap ＋ on My Trips to create a trip. Choose destinations, a name, an icon and dates.
+4. Search for or long-press places to save them, then add them to each day.
+5. On the road, open today's itinerary to check places, read your notes, or start navigation.
 
-Day cards show the weather condition in the primary text color and the daily low~high temperature in gray. The current medium/large Today widget is an installable placeholder; trip and weather sharing is not enabled in Personal Team builds.
+Searching, saving and route planning require a network connection.
 
-AI chat accepts up to four photos per message through the native photo picker. Review or remove thumbnails before sending; photos are resized and uploaded using the existing image service. Image-only messages are supported, and sent photos remain in conversation history. Your configured model must support image input.
+## Install
 
-Trip details offer **Share Long Image** below the day cards. Preview a locally generated image with expanded routes and gently tilted photo galleries, then use the system share sheet to send or save it. Export omits visit times and distances and uses cached weather.
+Requires **iOS / iPadOS 17 or later**. Each release includes an unsigned `.ipa` that you can sign and install with **AltStore Classic**.
 
-## Features
+1. Install AltServer on your computer and AltStore Classic on your device by following the [AltStore guide](https://faq.altstore.io/altstore-classic/how-to-install-altstore). Enable Developer Mode if prompted.
+2. On your device, download the latest IPA from [Releases](https://github.com/RicterZ/mapannai-ios/releases/latest) and save it to Files.
+3. In AltStore Classic, open **My Apps**, tap **＋**, choose the IPA, then follow the prompts.
+4. Apps installed with a free Apple account usually need to be refreshed every **7 days** in AltStore.
 
-- **Save places and travel notes**: Search saved place titles together with map POIs, tap a map POI, or long-press the map to add a place. Matching saved places appear first, show their place icon and a saved label, and can be reused in itineraries. Keep travel tips, booking details, and memories with each place. Tap a place in the half-height or expanded day itinerary to open its details; closing restores the previous itinerary height. From its details, remove it from the current day while keeping the saved place and other days, or delete it entirely. The place editor shows its address, with location managed by map selection. Place details show each itinerary day with its full date. A checkmark identifies the currently selected day without a duplicate membership badge; the add action names its target day and date.
-- **Plan each day**: Create a trip, keep places in its unscheduled list, and drag them into a day when ready. Add places to its daily itinerary: an empty day starts Route 1, a day with one route appends there, and a day with multiple routes keeps new places unscheduled. Edit a trip using the same name, icon and date-range controls as creation. Move its dates or extend the trip while retaining existing days and plans. Remove individual days from the itinerary, and reuse places you have already saved. When deleting a trip or day, optionally remove its exclusive places while keeping shared places.
-- **Arrange visits your way**: Create routes with one or more places within a day and change the visit order to organize different activities. Use Edit Mode or the route action menu to enter selection and reordering, then remove, move, or copy places. Place rows and route headings do not enter editing on long press; day rows do not have swipe actions. Editing opens a full-screen workspace using the existing place and transport artwork. Select a place’s time action or a transport block there to edit visit timing, transport modes, service numbers, departure times, durations, and notes. Browsing keeps these details read-only. Planned segment distances update asynchronously while editing; unsupported segments omit the distance. Reordering within a route preserves visit times; transport reappears when its original departure and arrival become adjacent in the same direction again.
-- **Browse a day on the map**: Open a day in a full-height itinerary that still leaves a strip of map visible, or pull it down to half height. Swipe the expanded day itinerary left or right to browse adjacent days; paging follows your finger and pauses during place selection and reordering. Place headings show category artwork, a two-line name, a single-line address, and arrival time with secondary stay duration; photos and expandable notes follow below. Neutral transport blocks retain service numbers, departure times, planned durations, and expandable notes; edit them in the full-screen itinerary workspace. Collapse to a compact horizontal chain of subtly outlined gray place cards without photos. Names, addresses, and transport labels stay on one line with an ellipsis when needed. Transport sits above and below the connecting arrow; the next card peeks in from the edge, while the last card uses the available width without a fading edge. Swiping highlights each place on the map; after manual map movement it does not reset your view. Date switching, location, and search remain available.
-- **See the whole plan on a map**: View saved places and daily routes. Colors distinguish days; tap a saved place to open a white, edge-attached half-height detail panel, pull up for more content or down to return to your itinerary or a route to see its itinerary. In a day view, small, evenly spaced static arrows show the direction between adjacent places, consistently across System Maps, AMap, and Google Maps.
-- **View routes and open directions**: Route planning follows each segment’s transport arrangement; the server chooses a mode when none is set. Unsupported routes appear as dashed curves. When you are ready to go, open a place in Apple Maps, AMap, or Google Maps for navigation. Choose your preferred app in Settings → Map and Routes → Navigation Map. Saved official POIs retain their platform identity when available, so System Maps and Google Maps can open the matching place; places without an identity still open by coordinates.
-- **Use it on your phone or tablet**: Switch trip dates from the collapsed Liquid Glass itinerary capsule on iOS 26 and later (with a frosted material on earlier systems), pull it up for details, or view the map and itinerary side by side on iPad to compare places and organize your plans.
-- **Share travel data with the web app**: Connect to your own MapAnNai Plus server and continue editing the same trip on the web, iPhone, or iPad.
-
-The default background is System Maps (Apple MapKit). Choose System Maps, AMap, or Google Maps in Settings → Map and Routes → Map Background. Google Maps is also available in builds configured with a Google Maps SDK key; otherwise it quietly uses System Maps. This changes the in-app map; search and route planning continue to use your connected server.
-
-
-## Plan your first trip
-
-1. Connect to your MapAnNai Plus server in the app's settings.
-2. Search, tap a map POI, or long-press the map to save places, with notes and photos.
-3. Tap the ＋ in My Trips or on the collapsed panel. Search for and select destination cities or provinces first. The empty name field cycles through playful destination-and-theme suggestions; these are hints, not a saved name. Give your trip a name, choose an icon from the grid, and select its departure and return dates together on the calendar, then tap Create Trip. Add places to each day and arrange their visit order within routes.
-4. Open the day's itinerary while traveling to check places, read your notes, or start navigation. Tap a route title to view it on the map; use its right-hand arrow to show or hide its places.
-
-With route planning enabled, each planned segment's distance appears between its places. Map lines simplify small loops and short backtracks to emphasize visit order; distances retain the original planned values. Opposite-direction overlapping legs are slightly separated near street-level zoom.
-
-Need a server? Follow the [MapAnNai Plus deployment guide](https://github.com/RicterZ/mapannai-plus#deploy-your-own-server), then enter its address and API token, if required, in the client. Searching, saving changes, and route planning require a network connection.
-
-On launch, the map prioritizes your date-based itinerary. When no itinerary provides a location, allowing location access centers the map on your current position. Adding a place shows saved places within 30 km of the map center. Search, results and place previews share the same bottom panel; drag it down to keep just the search field, or tap Back to leave. Selecting a marker previews it; only the Add action changes your itinerary. Travel icons use the illustrated SVG artwork shared with the Web dashboard.
-
-## Install on iPhone or iPad
-
-Requires **iOS / iPadOS 17 or later**. Releases provide an unsigned `.ipa` that you can sign and install with **AltStore Classic**.
-
-1. Follow the [official AltStore guide](https://faq.altstore.io/altstore-classic/how-to-install-altstore) to install AltServer on your computer and AltStore Classic on your iPhone or iPad. Enable Developer Mode if prompted.
-2. Open [Releases](https://github.com/RicterZ/mapannai-ios/releases/latest) on your device, download `MapAnNai-0.0.1-unsigned.ipa`, and save it to Files.
-3. Open AltStore Classic → **My Apps** → **＋** in the upper-left corner. Select the IPA and follow the prompts to sign and install it. Keep AltServer reachable as required by AltStore.
-4. Apps installed with a free Apple account usually need to be refreshed every **7 days**. Refresh the app in AltStore; see the [AltStore user guide](https://faq.altstore.io/altstore-classic/your-altstore) for connection and automatic refresh instructions.
-
-Use **AltStore Classic**, not AltStore PAL. Re-signing may change the app's Bundle ID, while the AMap key is tied to a Bundle ID. If map authentication fails after installation, rebuild with a key registered for the final Bundle ID; see the [build guide (Chinese)](docs/development.md). Map access has not been verified for arbitrary accounts used to re-sign the app.
+Use AltStore Classic, not AltStore PAL. Re-signing may change the Bundle ID, and the AMap key is tied to one. If the AMap background fails to load, switch to Apple Maps in Settings, or rebuild with a matching key ([build guide, Chinese](docs/development.md)).
 
 ## Build from source
 
-See the [build guide (Chinese)](docs/development.md). Pushes to main and manual GitHub Actions runs build an unsigned IPA. Version tags automatically publish a release after the build succeeds.
+See the [build guide (Chinese)](docs/development.md).
 
 ## License
 
-[MIT](LICENSE). The AMap SDK is subject to its own license terms.
+[MIT](LICENSE). Map SDKs are subject to their own license terms.
