@@ -187,6 +187,21 @@ final class JourneyDaySummaryTests: XCTestCase {
 }
 
 final class ArchiveStorageAngleTests: XCTestCase {
+    func testHorizontalPoseUsesOnlyHorizontalPackingAndYAxisRotation() {
+        let size = CGSize(width: 424, height: 239)
+        let flat = ArchiveStorage.horizontalTransform(midX: 100, viewportWidth: 700, size: size, enabled: true)
+        XCTAssertEqual(flat.m42, 0)
+        XCTAssertLessThan(flat.m41, 0)
+        XCTAssertEqual(flat.m22, 1)
+        let tilted = ArchiveStorage.horizontalTransform(midX: 700, viewportWidth: 700, size: size, enabled: true)
+        XCTAssertEqual(tilted.m22, 1)
+        XCTAssertNotEqual(tilted.m13, 0)
+        let disabled = ArchiveStorage.horizontalTransform(midX: 700, viewportWidth: 700, size: size, enabled: false)
+        XCTAssertEqual(disabled.m41, 0)
+        XCTAssertEqual(disabled.m13, 0)
+        XCTAssertEqual(disabled.m34, 0)
+    }
+
     func testFirstStorageCardAnchorsLinearTiltBelowMidpoint() {
         for base: CGFloat in [200, 500, 716, 900] {
             XCTAssertEqual(ArchiveStorage.angle(midY: base, viewportHeight: 800, baseMidY: base), 0)

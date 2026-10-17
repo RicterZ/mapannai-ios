@@ -391,6 +391,9 @@ struct JourneyArchiveView: View {
     @State private var yearMotion: ArchiveYearMotion?
     @State private var yearViewportSize = CGSize.zero
     @State private var yearScreenTop: CGFloat = 0
+    @State private var wideArchive = false
+    @State private var recallScrollX: CGFloat = 0
+    @State private var horizontalPoses: [String: ArchiveHorizontalPose] = [:]
 
     private var openedTrip: Trip? { trips.first { $0.id == openedID } }
     private var independent: [Marker] {
@@ -424,7 +427,7 @@ struct JourneyArchiveView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 Group {
-                    if UIDevice.current.userInterfaceIdiom == .pad && geometry.size.width > geometry.size.height {
+                    if usesLandscapeArchive(geometry.size) {
                         landscapeArchive(size: geometry.size)
                     } else {
                         archive(height: slotViewportHeight ?? geometry.size.height)
@@ -481,7 +484,7 @@ struct JourneyArchiveView: View {
                             .task(id: trip.id) { await beginTransition(trip) }
                         if transitionStarted {
                             ArchiveCardTransition(heading: transferHeading, separatorFrame: transferSeparatorFrame, cards: transferCards, dividers: transferDividers, selectedID: trip.id,
-                                destination: destinationFrame, height: slotViewportHeight ?? geometry.size.height,
+                                destination: destinationFrame, height: slotViewportHeight ?? geometry.size.height, width: geometry.size.width,
                                 expanded: detailVisible, handedOff: cardInList, reduceMotion: reduceMotion) {
                                     if detailVisible && !closing {
                                         cardInList = true
@@ -509,7 +512,8 @@ struct JourneyArchiveView: View {
                 Rectangle().ignoresSafeArea(.container)
             }
         }
-        .overlay(alignment: .bottomTrailing) {
+        .onGeometryChange(for: Bool.self) { usesLandscapeArchive($0.size) } action: { wideArchive = $0 }
+        .overlay(alignment: wideArchive ? .topTrailing : .bottomTrailing) {
             let createVisible = (openedID == nil || closing) &&
                 (expandedYear == nil || yearMotion?.returning == true)
             if !trips.isEmpty {
@@ -521,7 +525,7 @@ struct JourneyArchiveView: View {
                         .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
                         .contentShape(Circle())
                 }.buttonStyle(.plain).accessibilityLabel("创建旅行").accessibilityIdentifier("archive-create")
-                    .padding(.trailing, 24).padding(.bottom, 16)
+                    .padding(.trailing, 24).padding(.bottom, wideArchive ? 0 : 16).padding(.top, wideArchive ? -26 : 0)
                     .offset(x: createVisible || reduceMotion ? 0 : 100)
                     .opacity(createVisible ? 1 : 0)
                     .allowsHitTesting(createVisible && yearMotion == nil && !closing)
@@ -585,6 +589,7 @@ struct JourneyArchiveView: View {
         .onPreferenceChange(ArchiveYearLayout.self) { value in
             if openedID == nil, expandedYear != nil, !value.cards.isEmpty { yearLayout = value }
         }
+        .onPreferenceChange(ArchiveHorizontalPoses.self) { if openedID == nil { horizontalPoses = $0 } }
         .onPreferenceChange(ArchiveCardFrames.self) { if openedID == nil { cardFrames = $0 } }
         .onPreferenceChange(ArchiveSeparatorFrame.self) { if openedID == nil { separatorFrame = $0 } }
         .onPreferenceChange(ArchiveHeadingFrame.self) { if openedID == nil, !$0.isEmpty { archiveHeadingFrame = $0 } }
@@ -616,80 +621,117 @@ struct JourneyArchiveView: View {
         .journeyError(store: store, enabled: !mapVisible && store.dayEditorDraft == nil)
     }
 
+    private func usesLandscapeArchive(_ size: CGSize) -> Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && size.width > size.height && !typeSize.isAccessibilitySize
+    }
+
     private func landscapeArchive(size: CGSize) -> some View {
-        VStack(alignment: .leading, spacing: 28) {
+        let today = Date.now.dayString
+        let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: today).map(\.id))
+        let entries = Array(trips.enumerated())
+        let tops = entries.filter { topIDs.contains($0.element.id) }
+        let recalls = entries.filter { !topIDs.contains($0.element.id) }
+        let cardHeight = min(300, max(204, size.height * 0.30))
+        let cardWidth = cardHeight * 362 / 204
+        let topWidth = tops.isEmpty ? 0 : cardWidth + 40
+        let recallWidth = max(cardWidth, size.width - 48 - topWidth)
+        let step: CGFloat = 160
+        let motion = !reduceMotion
+        let reserve = motion ? ArchiveStorage.packingReserve(viewportHeight: recallWidth) : 0
+        return VStack(alignment: .leading, spacing: 0) {
             ArchiveHeading()
+                .padding(.trailing, 72)
                 .background(GeometryReader { proxy in
                     Color.clear.preference(key: ArchiveHeadingFrame.self,
                         value: proxy.frame(in: .named("journey-archive")))
                 })
                 .opacity(openedID == nil || !transitionStarted ? 1 : 0)
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 0) {
-                    let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
-                    ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
-                        let isTop = topIDs.contains(trip.id)
-                        if index > 0, !isTop, topIDs.contains(trips[index - 1].id) {
-                            Capsule().fill(Color(uiColor: .tertiaryLabel))
-                                .frame(width: 2, height: 40)
-                                .frame(width: 96, height: 204)
-                                .background(GeometryReader { proxy in
-                                    Color.clear.preference(key: ArchiveSeparatorFrame.self,
-                                        value: proxy.frame(in: .named("journey-archive")))
-                                })
-                                .allowsHitTesting(false).accessibilityHidden(true)
+                .padding(.bottom, 28)
+            HStack(alignment: .bottom, spacing: 0) {
+                if !tops.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if tops.count > 1 {
+                            Text("当前 · \(tops.count) 个旅途")
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                         }
-                        if let group = yearGroups[index] {
-                            JourneyArchiveYearCard(year: group.year, count: group.count)
-                                .frame(width: 362, height: 204)
-                                .modifier(HorizontalArchiveTransform(viewportWidth: size.width - 48,
-                                    enabled: !reduceMotion && !typeSize.isAccessibilitySize))
-                                .frame(width: 112, alignment: .leading)
-                                .background(GeometryReader { proxy in
-                                    Color.clear.preference(key: ArchiveDividerFrames.self,
-                                        value: [index: proxy.frame(in: .named("journey-archive"))])
-                                })
-                                .zIndex(Double(index) - 0.5)
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 16) {
+                                ForEach(tops, id: \.element.id) { index, trip in
+                                    landscapeCard(trip, index: index, size: size, width: cardWidth, height: cardHeight,
+                                        transform: false, viewport: recallWidth)
+                                }
+                            }
+                            .scrollTargetLayout()
+                            .padding(.vertical, 20)
                         }
-                        Button { open(trip, index: index, viewportHeight: size.height) } label: {
-                            JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
-                                .frame(width: 362, height: 204)
-                        }
-                        .buttonStyle(ArchiveCardButtonStyle())
-                        .contextMenu {
-                            Button("编辑旅途", systemImage: "pencil") { editing = trip }
-                            DestructiveMenuButton(title: "删除旅途", systemImage: "trash") { deleting = trip }
-                        }
-                        .modifier(HorizontalArchiveTransform(viewportWidth: size.width - 48,
-                            enabled: !isTop && !reduceMotion && !typeSize.isAccessibilitySize))
-                        .background(GeometryReader { proxy in
-                            Color.clear.preference(key: ArchiveCardFrames.self,
-                                value: [trip.id: proxy.frame(in: .named("journey-archive"))])
-                        })
-                        .frame(width: isTop || index == trips.count - 1 || typeSize.isAccessibilitySize ? 362 : 112, alignment: .leading)
-                        .padding(.trailing, isTop && index + 1 < trips.count && topIDs.contains(trips[index + 1].id) ? 24 : 0)
-                        .zIndex(isTop ? Double(trips.count + index) : Double(index))
-                        .accessibilityIdentifier("archive-trip-\(trip.id)")
+                        .scrollTargetBehavior(.viewAligned)
+                        .scrollIndicators(.hidden)
+                        .scrollDisabled(tops.count < 2)
+                        .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+                        .frame(width: cardWidth, height: cardHeight + 40)
                     }
-                    if trips.isEmpty {
-                        Button { creating = true } label: {
-                            Label("创建旅途", systemImage: "plus")
-                        }.buttonStyle(JourneyActionStyle())
+                    Divider()
+                        .frame(height: cardHeight)
+                        .frame(width: 40)
+                        .padding(.bottom, 20)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    if !recalls.isEmpty {
+                        Text("回忆 · \(recalls.count) 次旅途")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .opacity(detailVisible ? 0 : 1)
+                    }
+                    ScrollView(.horizontal) {
+                        HStack(alignment: .top, spacing: 0) {
+                            ForEach(recalls, id: \.element.id) { index, trip in
+                                if let group = yearGroups[index] {
+                                    JourneyArchiveYearCard(year: group.year, count: group.count)
+                                        .frame(width: cardWidth, height: cardHeight)
+                                        .modifier(HorizontalArchiveTransform(viewportWidth: recallWidth, enabled: motion, poseID: "year-\(index)"))
+                                        .frame(width: step, alignment: .leading)
+                                        .zIndex(Double(index) - 0.5)
+                                }
+                                landscapeCard(trip, index: index, size: size, width: cardWidth, height: cardHeight,
+                                    transform: motion, viewport: recallWidth)
+                                    .frame(width: index == trips.count - 1 ? cardWidth : step, alignment: .leading)
+                                    .zIndex(Double(index))
+                            }
+                            if trips.isEmpty {
+                                Button { creating = true } label: {
+                                    Label("创建旅途", systemImage: "plus")
+                                }.buttonStyle(JourneyActionStyle())
+                            }
+                        }
+                        .padding(.leading, reserve)
+                        .padding(.trailing, max(24, recallWidth / 2 - cardWidth / 2 + reserve))
+                        .padding(.vertical, 20)
+                        .onGeometryChange(for: CGFloat.self) { -$0.frame(in: .named("horizontal-archive")).minX } action: { recallScrollX = $0 }
+                    }
+                    .scrollIndicators(.hidden)
+                    .coordinateSpace(name: "horizontal-archive")
+                    .frame(height: cardHeight + 40)
+                    .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+                    .mask {
+                        HStack(spacing: 0) {
+                            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: min(20, max(0, recallScrollX) / 2))
+                            Color.black
+                        }
                     }
                 }
-                .padding(.trailing, max(24, (size.width - 48) / 2 - 181 + ArchiveStorage.packingReserve(viewportHeight: size.width - 48)))
-                .padding(.vertical, 20)
+                .padding(.trailing, -24)
             }
-            .scrollIndicators(.hidden)
-            .coordinateSpace(name: "horizontal-archive")
-            .frame(height: 250)
-            .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+            Divider().padding(.vertical, 28)
             HStack(alignment: .top, spacing: 40) {
                 ArchiveChatEntry(planner: planner, store: store, mapVisible: mapVisible)
-                    .frame(maxWidth: 560)
+                    .frame(width: tops.isEmpty ? 420 : cardWidth)
                 VStack(alignment: .leading, spacing: 14) {
-                    if !independent.isEmpty {
-                        Text("收藏地点").font(.headline)
+                    Text("收藏地点").font(.headline)
+                        .accessibilityIdentifier("archive-saved-places-heading")
+                    if independent.isEmpty {
+                        Text("在地图上长按即可收藏地点").font(.subheadline).foregroundStyle(.secondary)
+                    } else {
                         ScrollView(.horizontal) {
                             HStack(spacing: 12) {
                                 ForEach(independent) { marker in
@@ -700,17 +742,33 @@ struct JourneyArchiveView: View {
                             }
                         }.scrollIndicators(.hidden)
                     }
-                    Button(action: onOpenSettings) {
-                        Label("设置", systemImage: "gearshape").foregroundStyle(.secondary)
-                            .frame(minHeight: 44)
-                    }.buttonStyle(.plain).accessibilityIdentifier("archive-settings")
                 }
-
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .opacity(detailVisible ? 0 : 1)
-            Spacer(minLength: 0)
+            Spacer(minLength: 16)
+            Button(action: onOpenSettings) {
+                Label("设置", systemImage: "gearshape").foregroundStyle(.secondary)
+                    .frame(minHeight: 44)
+            }.buttonStyle(.plain).accessibilityIdentifier("archive-settings")
+                .opacity(detailVisible ? 0 : 1)
         }
-        .padding(.horizontal, 24).padding(.top, 20)
+        .padding(.horizontal, 24).padding(.top, -24).padding(.bottom, 8)
+    }
+
+    private func landscapeCard(_ trip: Trip, index: Int, size: CGSize, width: CGFloat, height: CGFloat,
+                               transform: Bool, viewport: CGFloat) -> some View {
+        Button { open(trip, index: index, viewportHeight: size.height) } label: {
+            JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
+                .frame(width: width, height: height)
+        }
+        .buttonStyle(ArchiveCardButtonStyle())
+        .contextMenu {
+            Button("编辑旅途", systemImage: "pencil") { editing = trip }
+            DestructiveMenuButton(title: "删除旅途", systemImage: "trash") { deleting = trip }
+        }
+        .modifier(HorizontalArchiveTransform(viewportWidth: viewport, enabled: transform, poseID: trip.id))
+        .accessibilityIdentifier("archive-trip-\(trip.id)")
     }
 
     private func archive(height: CGFloat) -> some View {
@@ -1042,7 +1100,8 @@ struct JourneyArchiveView: View {
     }
 
     private func open(_ trip: Trip, index: Int, viewportHeight: CGFloat) {
-        let activeFrames = expandedYear == nil ? cardFrames : yearLayout.cards
+        let horizontal = wideArchive && expandedYear == nil
+        let activeFrames = expandedYear == nil ? (horizontal ? horizontalPoses.mapValues(\.frame) : cardFrames) : yearLayout.cards
         let headingFrame = expandedYear == nil ? archiveHeadingFrame : yearLayout.heading
         guard openedID == nil else {
             return
@@ -1063,18 +1122,23 @@ struct JourneyArchiveView: View {
         transferCards = trips.enumerated().compactMap { position, value in
             guard expandedYear == nil || Int(value.startDate.prefix(4)) == expandedYear else { return nil }
             return activeFrames[value.id].map { ArchiveTransferCard(trip: value, index: position, number: number(for: value), frame: $0,
-                photo: coverPhoto(value), isTop: expandedYear != nil || topIDs.contains(value.id)) }
+                photo: coverPhoto(value), isTop: expandedYear != nil || topIDs.contains(value.id),
+                horizontalPose: horizontal ? horizontalPoses[value.id] : nil) }
         }
         if let expandedYear, !yearLayout.year.isEmpty {
             let frame = yearLayout.year
             transferDividers = [ArchiveTransferDivider(index: 0, frame: frame, year: expandedYear,
                 count: transferCards.count, isFlat: true)]
         } else {
-        transferDividers = dividerFrames.compactMap { position, frame in
-            yearGroups[position].map { group in
-                ArchiveTransferDivider(index: position, frame: frame, year: group.year, count: group.count)
+            let frames = horizontal ? Dictionary(uniqueKeysWithValues: yearGroups.keys.compactMap { index in
+                horizontalPoses["year-\(index)"].map { (index, $0.frame) }
+            }) : dividerFrames
+            transferDividers = frames.compactMap { position, frame in
+                yearGroups[position].map { group in
+                    ArchiveTransferDivider(index: position, frame: frame, year: group.year, count: group.count,
+                        horizontalPose: horizontal ? horizontalPoses["year-\(position)"] : nil)
+                }
             }
-        }
         }
         assert(!headingFrame.isEmpty, "Archive heading geometry must be ready before opening a card")
         let renderer = ImageRenderer(content: ArchiveHeading()
@@ -1261,6 +1325,7 @@ private struct ArchiveTransferDivider {
     let year: Int
     let count: Int
     var isFlat = false
+    var horizontalPose: ArchiveHorizontalPose? = nil
 }
 
 private struct ArchiveCardFrames: PreferenceKey {
@@ -1374,6 +1439,16 @@ private struct ArchiveCardButtonStyle: ButtonStyle {
 }
 
 enum ArchiveStorage {
+    static func horizontalTransform(midX: CGFloat, viewportWidth: CGFloat, size: CGSize, enabled: Bool) -> CATransform3D {
+        guard enabled else { return CATransform3DIdentity }
+        var perspective = CATransform3DIdentity
+        perspective.m34 = -0.362 / max(1, max(size.width, size.height))
+        let rotation = CATransform3DRotate(perspective,
+            -ArchiveStorage.angle(midY: midX, viewportHeight: viewportWidth) * 25 / 60, 0, 1, 0)
+        return CATransform3DConcat(rotation, CATransform3DMakeTranslation(
+            ArchiveStorage.packingOffset(midY: midX, viewportHeight: viewportWidth), 0, 0))
+    }
+
     static func packingReserve(viewportHeight: CGFloat, enabled: Bool = true) -> CGFloat {
         enabled ? max(0, min(48, viewportHeight * 0.12)) : 0
     }
@@ -1491,6 +1566,7 @@ private struct ArchiveTransferCard: Identifiable {
     let frame: CGRect
     let photo: UIImage?
     let isTop: Bool
+    var horizontalPose: ArchiveHorizontalPose? = nil
     var id: String { trip.id }
 }
 
@@ -1503,6 +1579,7 @@ private struct ArchiveCardTransition: UIViewRepresentable {
     let selectedID: String
     let destination: CGRect
     let height: CGFloat
+    let width: CGFloat
     let expanded: Bool
     let handedOff: Bool
     let reduceMotion: Bool
@@ -1522,19 +1599,19 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         for card in cards where card.trip.id == selectedID ||
             (card.frame.minY < height + 204 && card.frame.minY + 408 > 0) {
             let renderer = ImageRenderer(content: JourneyArchiveCard(trip: card.trip, colorIndex: card.index, number: card.number, photo: card.photo)
-                .frame(width: card.frame.width, height: 204)
+                .frame(width: card.frame.width, height: card.horizontalPose == nil ? 204 : card.frame.height)
                 .environment(\.colorScheme, colorScheme)
                 .environment(\.dynamicTypeSize, typeSize))
             renderer.scale = displayScale
             guard let image = renderer.uiImage else { continue }
             let view = UIImageView(image: image)
-            view.frame = CGRect(x: card.frame.minX, y: card.frame.minY, width: card.frame.width, height: 204)
+            view.frame = CGRect(x: card.frame.minX, y: card.frame.minY, width: card.frame.width, height: card.horizontalPose == nil ? 204 : card.frame.height)
             let plane = UIView(frame: CGRect(x: 0, y: 0, width: card.frame.maxX, height: height))
             plane.layer.zPosition = CGFloat(card.index) + 1
             container.addSubview(plane)
             plane.addSubview(view)
             context.coordinator.planes[card.id] = plane
-            view.layer.transform = ArchiveStorage.transform(enabled: !card.isTop && !typeSize.isAccessibilitySize && !reduceMotion, midY: card.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
+            view.layer.transform = card.horizontalPose?.transform ?? ArchiveStorage.transform(enabled: !card.isTop && !typeSize.isAccessibilitySize && !reduceMotion, midY: card.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
             context.coordinator.views[card.id] = view
             // The absent card retains its original slot pose throughout the round trip.
             if card.id == selectedID {
@@ -1546,19 +1623,19 @@ private struct ArchiveCardTransition: UIViewRepresentable {
         }
         for divider in dividers where divider.frame.minY < height + 204 && divider.frame.minY + 408 > 0 {
             let renderer = ImageRenderer(content: JourneyArchiveYearCard(year: divider.year, count: divider.count)
-                .frame(width: divider.frame.width, height: 204)
+                .frame(width: divider.frame.width, height: divider.horizontalPose == nil ? 204 : divider.frame.height)
                 .environment(\.colorScheme, colorScheme)
                 .environment(\.dynamicTypeSize, typeSize))
             renderer.scale = displayScale
             if let image = renderer.uiImage {
                 let view = UIImageView(image: image)
-                view.frame = CGRect(x: divider.frame.minX, y: divider.frame.minY, width: divider.frame.width, height: 204)
+                view.frame = CGRect(x: divider.frame.minX, y: divider.frame.minY, width: divider.frame.width, height: divider.horizontalPose == nil ? 204 : divider.frame.height)
                 let plane = UIView(frame: CGRect(x: 0, y: 0, width: divider.frame.maxX, height: height))
                 plane.layer.zPosition = CGFloat(divider.index) + 0.5
                 container.addSubview(plane)
                 plane.addSubview(view)
                 context.coordinator.dividerPlanes[divider.index] = plane
-                view.layer.transform = ArchiveStorage.transform(enabled: !divider.isFlat && !typeSize.isAccessibilitySize && !reduceMotion, midY: divider.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
+                view.layer.transform = divider.horizontalPose?.transform ?? ArchiveStorage.transform(enabled: !divider.isFlat && !typeSize.isAccessibilitySize && !reduceMotion, midY: divider.frame.minY + 102, viewportHeight: height, baseMidY: baseMidY)
                 context.coordinator.dividerViews[divider.index] = view
             }
         }
@@ -1642,6 +1719,14 @@ private struct ArchiveCardTransition: UIViewRepresentable {
                 selected.layer.transform = expanded ? CATransform3DIdentity : sourceTransform
             }
         }
+        let horizontal = card.horizontalPose != nil
+        func rackTranslation(before: Bool) -> CGAffineTransform {
+            guard expanded && !reduceMotion else { return .identity }
+            if horizontal {
+                return CGAffineTransform(translationX: before ? -width - 300 : width + 300, y: 0)
+            }
+            return CGAffineTransform(translationX: 0, y: before ? upperExit : max(0, height - lowerTop) + 252)
+        }
         let moveRack: () -> Void = {
             if let separator = coordinator.separatorView {
                 if reduceMotion { separator.alpha = expanded ? 0 : 1 }
@@ -1655,13 +1740,11 @@ private struct ArchiveCardTransition: UIViewRepresentable {
             }
             for other in cards where other.id != selectedID {
                 if reduceMotion { coordinator.views[other.id]?.alpha = expanded ? 0 : 1 }
-                coordinator.planes[other.id]?.transform = CGAffineTransform(translationX: 0,
-                    y: expanded && !reduceMotion ? (other.index < card.index ? upperExit : max(0, height - lowerTop) + 252) : 0)
+                coordinator.planes[other.id]?.transform = rackTranslation(before: other.index < card.index)
             }
             for divider in dividers {
                 if reduceMotion { coordinator.dividerViews[divider.index]?.alpha = expanded ? 0 : 1 }
-                coordinator.dividerPlanes[divider.index]?.transform = CGAffineTransform(translationX: 0,
-                    y: expanded && !reduceMotion ? (divider.index <= card.index ? upperExit : max(0, height - lowerTop) + 252) : 0)
+                coordinator.dividerPlanes[divider.index]?.transform = rackTranslation(before: divider.index <= card.index)
             }
         }
         animator.addAnimations(moveRack)
@@ -1913,18 +1996,39 @@ private struct ArchiveChatFrame: PreferenceKey {
     }
 }
 
-/// The portrait archive's perspective follows the horizontal viewport on iPad.
+private struct ArchiveHorizontalPose: Equatable {
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.frame == rhs.frame && CATransform3DEqualToTransform(lhs.transform, rhs.transform)
+    }
+    let frame: CGRect
+    let transform: CATransform3D
+}
+
+private struct ArchiveHorizontalPoses: PreferenceKey {
+    static let defaultValue: [String: ArchiveHorizontalPose] = [:]
+    static func reduce(value: inout [String: ArchiveHorizontalPose], nextValue: () -> [String: ArchiveHorizontalPose]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+/// Measure the full, untransformed card, never its narrow stacking slot.
 private struct HorizontalArchiveTransform: ViewModifier {
     let viewportWidth: CGFloat
     let enabled: Bool
+    let poseID: String
     @State private var midX: CGFloat = 0
+    @State private var cardSize = CGSize.zero
+
+
     func body(content: Content) -> some View {
         content
-            .rotation3DEffect(.radians(-ArchiveStorage.angle(midY: midX,
-                viewportHeight: viewportWidth, enabled: enabled)),
-                axis: (x: 0, y: 1, z: 0), perspective: 0.362)
-            .offset(x: ArchiveStorage.packingOffset(midY: midX,
-                viewportHeight: viewportWidth, enabled: enabled))
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("horizontal-archive")).midX } action: { midX = $0 }
+            .projectionEffect(ProjectionTransform(ArchiveStorage.horizontalTransform(midX: midX, viewportWidth: viewportWidth, size: cardSize, enabled: enabled)))
+            .background(GeometryReader { proxy in
+                let x = proxy.frame(in: .named("horizontal-archive")).midX
+                Color.clear.preference(key: ArchiveHorizontalPoses.self, value: [poseID: ArchiveHorizontalPose(
+                    frame: proxy.frame(in: .named("journey-archive")), transform: ArchiveStorage.horizontalTransform(midX: x, viewportWidth: viewportWidth, size: proxy.size, enabled: enabled))])
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("horizontal-archive")).midX } action: { midX = $0 }
+            })
     }
 }
