@@ -523,14 +523,7 @@ struct DayContentsView: View {
                 guard orders.allSatisfy({ Set($0).count == $0.count }) else { return false }
                 guard orders != day.chains else { return true }
                 var updated = day; updated.setRouteOrders(orders)
-                if store.tripPlacesPreview,
-                   let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
-                   let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) {
-                    store.trips[ti].days[di] = updated
-                    store.rebuildRoutes(preservingPlannedGeometry: true)
-                    return true
-                }
-                return store.saveDayInBackground(updated, animated: false)
+                return commitDay(updated, animated: false)
             })
     }
 
@@ -581,41 +574,20 @@ struct DayContentsView: View {
               store.canEditItinerary else { return }
         var current = store.trips[ti].days[di]
         guard current == day, let source, current.chains.indices.contains(source) else { return }
-        current = current.removingReferences([DayPlaceReference(markerID: id, routeIndex: source)], keepMembership: true)
-        if store.tripPlacesPreview {
-            withAnimation(animated ? AppMotion.listMutation(reduceMotion: reduceMotion) : nil) { store.trips[ti].days[di] = current }
-            store.rebuildRoutes(preservingPlannedGeometry: true)
-        } else {
-            _ = store.saveDayInBackground(current, animated: animated && !reduceMotion)
-        }
+        commitDay(current.removingReferences([DayPlaceReference(markerID: id, routeIndex: source)], keepMembership: true),
+            animated: animated && !reduceMotion)
     }
 
-    private func moveDayPlace(_ id: String, from source: Int?, to index: Int, at insertion: Int? = nil) {
-        guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
-              let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
-        var current = store.trips[ti].days[di]
-        guard store.canEditItinerary, current.chains.indices.contains(index),
-              current.chains == day.chains, current.markerIds.contains(id) else { return }
-        let previous = current.chains
-        var orders = current.chains
-        var destination = min(current.chains[index].count, max(0, insertion ?? current.chains[index].count))
-        if let source {
-            guard current.chains.indices.contains(source), let old = current.chains[source].firstIndex(of: id) else { return }
-            orders[source].remove(at: old)
-            if source == index, old < destination { destination -= 1 }
+    /// Preview data has no backend, so it is edited in place.
+    @discardableResult private func commitDay(_ updated: TripDay, animated: Bool) -> Bool {
+        guard store.tripPlacesPreview,
+              let ti = store.trips.firstIndex(where: { $0.id == updated.tripId }),
+              let di = store.trips[ti].days.firstIndex(where: { $0.id == updated.id }) else {
+            return store.saveDayInBackground(updated, animated: animated)
         }
-        if !orders[index].contains(id) {
-            orders[index].insert(id, at: min(destination, orders[index].count))
-        }
-        current.setRouteOrders(orders)
-        guard current.chains != previous else { return }
-        if store.tripPlacesPreview {
-            var transaction = Transaction(); transaction.disablesAnimations = true
-            withTransaction(transaction) { store.trips[ti].days[di] = current }
-            store.rebuildRoutes(preservingPlannedGeometry: true)
-        } else {
-            _ = store.saveDayInBackground(current, animated: false)
-        }
+        withAnimation(animated ? AppMotion.listMutation(reduceMotion: reduceMotion) : nil) { store.trips[ti].days[di] = updated }
+        store.rebuildRoutes(preservingPlannedGeometry: true)
+        return true
     }
 
     private func routeHeader(index: Int, chain: [String]) -> some View {
@@ -777,7 +749,7 @@ private struct RoutePlaceSelectionButton: View {
             }
             Button {
                 if editing { toggleSelection() }
-                else if store.canActivateRouteRow { store.selectMapMarker(marker) }
+                else { store.selectMapMarker(marker) }
             } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
@@ -1270,19 +1242,12 @@ final class NativePlaceItemProvider: NSItemProvider {
 /// Attach UIKit drop handling to the native list, whose SwiftUI rows are reused.
 struct NativePlaceListDrop: UIViewRepresentable {
     let frames: [String: CGRect]
-    var frameSource: (() -> [String: CGRect])? = nil
-    var currentFrames: [String: CGRect] { frameSource?() ?? frames }
     let prefix: String
-    var onDiagnostics: (Int) -> Void = { _ in }
-    var onDrop: () -> Void = {}
-    var onSorting: (Bool) -> Void = { _ in }
-    var sourceTargets: [String: String] = [:]
     var onTarget: (String?) -> Void = { _ in }
     let accept: (String, String) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> UIView { UIView() }
     func updateUIView(_ view: UIView, context: Context) {
-        context.coordinator.recordViewUpdate()
         context.coordinator.parent = self
         DispatchQueue.main.async {
             var ancestor: UIView? = view
@@ -1295,36 +1260,12 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
     }
     static func dismantleUIView(_ view: UIView, coordinator: Coordinator) { coordinator.detach() }
-    final class Coordinator: NSObject, UIDropInteractionDelegate, UICollectionViewDropDelegate, UICollectionViewDragDelegate {
+    final class Coordinator: NSObject, UIDropInteractionDelegate, UICollectionViewDropDelegate {
         var parent: NativePlaceListDrop
         weak var host: UIView?
-        var dragFrames: [String: CGRect]?
-        var nativeRowTargets: [IndexPath: String] = [:]
         private var publishedTarget: String?
-        private var fixedFrames: [String: CGRect] = [:]
-        private var cellFrames: [IndexPath: CGRect] = [:]
-        private var fixedSource: IndexPath?
-        private var feedbackTarget: String?
-        private var feedbackOffsets: [IndexPath: CGFloat] = [:]
-        private let reorderFeedback = UIImpactFeedbackGenerator(style: .medium)
-
-        let recordsDragUpdates = ProcessInfo.processInfo.arguments.contains("--route-drag-diagnostics")
-        private var diagnosticDragActive = false
-        private var diagnosticUpdates = 0
-        func recordViewUpdate() {
-            guard recordsDragUpdates, diagnosticDragActive else { return }
-            diagnosticUpdates += 1
-            NSLog("ROUTEDRAG view-update-during-drag")
-        }
-        private func finishDiagnostics() {
-            guard recordsDragUpdates else { return }
-            diagnosticDragActive = false
-            parent.onDiagnostics(diagnosticUpdates)
-            NSLog("ROUTEDRAG finished updates=%d", diagnosticUpdates)
-        }
         var interaction: UIDropInteraction?
         weak var originalDropDelegate: (any UICollectionViewDropDelegate)?
-        weak var originalDragDelegate: (any UICollectionViewDragDelegate)?
         init(_ parent: NativePlaceListDrop) { self.parent = parent }
         func findList(_ view: UIView) -> UIView? {
             if view is UICollectionView || view is UITableView { return view }
@@ -1336,8 +1277,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
             detach()
             if let list = view as? UICollectionView {
                 originalDropDelegate = list.dropDelegate
-                originalDragDelegate = list.dragDelegate
-                list.dragDelegate = self
                 list.dropDelegate = self; host = list
                 return
             }
@@ -1345,289 +1284,64 @@ struct NativePlaceListDrop: UIViewRepresentable {
             view.addInteraction(interaction); host = view; self.interaction = interaction
         }
         func detach() {
-            clearFixedFeedback()
             if let list = host as? UICollectionView, list.dropDelegate === self { list.dropDelegate = originalDropDelegate }
-            if let list = host as? UICollectionView, list.dragDelegate === self { list.dragDelegate = originalDragDelegate }
             if let interaction { host?.removeInteraction(interaction) }
             interaction = nil; host = nil
         }
-        func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
-            originalDragDelegate?.collectionView(collectionView, itemsForBeginning: session, at: indexPath) ?? []
-        }
-        func collectionView(_ collectionView: UICollectionView, itemsForAddingTo session: UIDragSession, at indexPath: IndexPath, point: CGPoint) -> [UIDragItem] {
-            originalDragDelegate?.collectionView?(collectionView, itemsForAddingTo: session, at: indexPath, point: point) ?? []
-        }
-        func collectionView(_ collectionView: UICollectionView, dragPreviewParametersForItemAt indexPath: IndexPath) -> UIDragPreviewParameters? {
-            originalDragDelegate?.collectionView?(collectionView, dragPreviewParametersForItemAt: indexPath)
-        }
-        func collectionView(_ collectionView: UICollectionView, dragSessionWillBegin session: UIDragSession) {
-            originalDragDelegate?.collectionView?(collectionView, dragSessionWillBegin: session)
-            if parent.prefix.hasPrefix("day-place/") { parent.onSorting(true) }
-        }
-        func collectionView(_ collectionView: UICollectionView, dragSessionDidEnd session: UIDragSession) {
-            originalDragDelegate?.collectionView?(collectionView, dragSessionDidEnd: session)
-            parent.onSorting(false)
-        }
-        func collectionView(_ collectionView: UICollectionView, dragSessionAllowsMoveOperation session: UIDragSession) -> Bool {
-            originalDragDelegate?.collectionView?(collectionView, dragSessionAllowsMoveOperation: session) ?? true
-        }
-        func collectionView(_ collectionView: UICollectionView, dragSessionIsRestrictedToDraggingApplication session: UIDragSession) -> Bool {
-            originalDragDelegate?.collectionView?(collectionView, dragSessionIsRestrictedToDraggingApplication: session) ?? true
-        }
         func target(_ session: UIDropSession) -> String? {
-            guard let host, let window = host.window else { return nil }
+            guard let window = host?.window else { return nil }
             let point = session.location(in: window)
-            let frames = parent.prefix.hasPrefix("trip-place/") ? parent.currentFrames : (dragFrames ?? parent.currentFrames)
-            if parent.prefix.hasPrefix("day-place/"),
-               host.bounds.contains(session.location(in: host)),
-               let pool = frames["unplanned"], point.y >= pool.minY {
-                return "unplanned"
-            }
-            guard let match = frames.sorted(by: { $0.key.split(separator: "/").count > $1.key.split(separator: "/").count }).first(where: { $0.value.contains(point) }) else { return nil }
-            let parts = match.key.split(separator: "/")
-            if parts.count == 2, Int(parts[1]) != nil {
-                return match.key + (point.y < match.value.midY ? "/before" : "/after")
-            }
-            return match.key
+            return parent.frames.first { $0.value.contains(point) }?.key
         }
-        func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool {
-            if dragFrames == nil {
-                diagnosticDragActive = true; diagnosticUpdates = 0
-                reorderFeedback.prepare()
-                dragFrames = parent.currentFrames
-                cellFrames = Dictionary(uniqueKeysWithValues: collectionView.indexPathsForVisibleItems.compactMap { path in
-                    collectionView.cellForItem(at: path).map { (path, $0.frame) }
-                })
-                nativeRowTargets = [:]
-                if let window = collectionView.window {
-                    if let pool = parent.currentFrames["unplanned"] {
-                        for path in collectionView.indexPathsForVisibleItems {
-                            if let cell = collectionView.cellForItem(at: path) {
-                                let point = cell.convert(CGPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: window)
-                                if pool.contains(point) { nativeRowTargets[path] = "unplanned" }
-                            }
-                        }
-                    }
-                    for (key, frame) in parent.currentFrames where key != "unplanned" && !key.hasPrefix("source/") {
-                        let collapsing = key.hasPrefix("collapse/")
-                        // Collapsed content is zero-height at the top of its still full-height cell.
-                        let point = collectionView.convert(CGPoint(x: frame.midX, y: collapsing ? frame.minY + 0.5 : frame.midY), from: window)
-                        guard let path = collectionView.indexPathForItem(at: point) else { continue }
-                        if collapsing, let existing = nativeRowTargets[path], !existing.hasPrefix("collapse/") { continue }
-                        nativeRowTargets[path] = key
-                    }
-                }
-            }
-            if fixedFrames.isEmpty {
-                for (path, key) in nativeRowTargets {
-                    if let frame = cellFrames[path] { fixedFrames[key] = fixedFrames[key].map { $0.union(frame) } ?? frame }
-                }
-                if let payload = localPayload(session) {
-                    let parts = payload.dropFirst(parent.prefix.count).split(separator: "/")
-                    if parts.count == 2, let key = parent.sourceTargets[String(parts[0]) + "/" + String(parts[1])] {
-                        fixedSource = nativeRowTargets.first { $0.value == key }?.key
-                    } else if let marker = parts.first, let window = collectionView.window,
-                              let frame = parent.currentFrames["source/" + String(marker)] {
-                        let point = collectionView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
-                        fixedSource = collectionView.indexPathForItem(at: point)
-                    }
-                }
-            }
-            return session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
+        private func canHandle(_ session: UIDropSession) -> Bool {
+            session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
         }
-        /// The List keeps collapsed schedule/transport cells at their old height while
-        /// a drag is active, so sorting removes that space visually for every later row.
-        private var compactShifts: [IndexPath: CGFloat] = [:]
-        private var compactFrames: [IndexPath: CGRect] {
-            cellFrames.reduce(into: [:]) { result, entry in
-                result[entry.key] = entry.value.offsetBy(dx: 0, dy: compactShifts[entry.key] ?? 0)
-            }
-        }
-        private func updateCompactShifts() {
-            var removed: CGFloat = 0
-            compactShifts = [:]
-            for path in cellFrames.keys.sorted() {
-                compactShifts[path] = -removed
-                if nativeRowTargets[path]?.hasPrefix("collapse/") == true, path != fixedSource {
-                    removed += cellFrames[path]?.height ?? 0
-                }
-            }
-        }
-        private func fixedTarget(_ session: UIDropSession) -> String? {
-            guard let list = host as? UICollectionView else { return nil }
-            // Keep stable row identities, but follow their shrinking layout and scrolling.
-            for path in Array(cellFrames.keys) {
-                if let attributes = list.layoutAttributesForItem(at: path) { cellFrames[path] = attributes.frame }
-            }
-            updateCompactShifts()
-            fixedFrames = [:]
-            for (path, key) in nativeRowTargets {
-                if let frame = compactFrames[path] { fixedFrames[key] = fixedFrames[key].map { $0.union(frame) } ?? frame }
-            }
-            let point = session.location(in: list)
-            guard list.bounds.contains(point) else { return nil }
-            return NativeRouteDropGeometry.target(at: point, frames: fixedFrames)
-        }
-        private func updateFixedFeedback(_ target: String?, list: UICollectionView) {
-            let targetChanged = feedbackTarget != target
-            feedbackTarget = target
-            var offsets: [IndexPath: CGFloat] = [:]
-            let cellFrames = compactFrames
-            if let target, let route = target.split(separator: "/").first, Int(route) != nil {
-                let rows = nativeRowTargets.filter { _, key in
-                    let parts = key.split(separator: "/")
-                    return parts.count == 2 && parts.first == route && Int(parts[1]) != nil
-                }.keys.sorted()
-                let parts = target.split(separator: "/")
-                let boundary = (parts.count > 1 ? Int(parts[1]) : nil).map { $0 + (parts.last == "after" ? 1 : 0) }
-                    ?? rows.compactMap { nativeRowTargets[$0]?.split(separator: "/").last.flatMap { Int($0) } }.map { $0 + 1 }.max() ?? 0
-                let sourceHeight = fixedSource.flatMap { cellFrames[$0]?.height } ?? 44
-                if let source = fixedSource, rows.contains(source) {
-                    var order = rows.filter { $0 != source }
-                    let insertion = order.filter { path in
-                        Int(nativeRowTargets[path]?.split(separator: "/").last ?? "") ?? 0 < boundary
-                    }.count
-                    order.insert(source, at: insertion)
-                    var top = rows.compactMap { cellFrames[$0]?.minY }.min() ?? 0
-                    for path in order {
-                        guard let frame = cellFrames[path] else { continue }
-                        if path != source { offsets[path] = top - frame.minY }
-                        top += frame.height
-                    }
-                } else {
-                    // Incoming pool/cross-route place uses the very same frozen
-                    // insertion boundary. Only the space needed by the source differs.
-                    let insertionY = rows.first { path in
-                        (Int(nativeRowTargets[path]?.split(separator: "/").last ?? "") ?? 0) >= boundary
-                    }.flatMap { cellFrames[$0]?.minY } ?? rows.compactMap { cellFrames[$0]?.maxY }.max()
-                    if let source = fixedSource, let sourceFrame = cellFrames[source], let insertionY {
-                        for (path, frame) in cellFrames where path != source {
-                            if sourceFrame.minY >= insertionY, frame.minY >= insertionY, frame.minY < sourceFrame.minY {
-                                offsets[path] = sourceHeight
-                            } else if sourceFrame.minY < insertionY, frame.minY > sourceFrame.minY, frame.minY < insertionY {
-                                offsets[path] = -sourceHeight
-                            }
-                        }
-                    } else {
-                        for path in rows {
-                            let ordinal = Int(nativeRowTargets[path]?.split(separator: "/").last ?? "") ?? 0
-                            if ordinal >= boundary { offsets[path] = sourceHeight }
-                        }
-                    }
-                }
-            }
-            let changedOffsets = offsets.filter { abs($0.value) > 0.5 }
-            for (path, shift) in compactShifts { offsets[path, default: 0] += shift }
-            let offsetsChanged = changedOffsets != feedbackOffsets
-            if target != nil, offsetsChanged {
-                reorderFeedback.impactOccurred()
-                reorderFeedback.prepare()
-            }
-            feedbackOffsets = changedOffsets
-            let animations = {
-                for path in list.indexPathsForVisibleItems where path != self.fixedSource {
-                    list.cellForItem(at: path)?.transform = CGAffineTransform(translationX: 0, y: offsets[path] ?? 0)
-                }
-            }
-            // Self-sizing passes reapply layout attributes and reset cell transforms.
-            if !targetChanged && !offsetsChanged {
-                let stale = list.indexPathsForVisibleItems.contains { path in
-                    guard path != fixedSource, let cell = list.cellForItem(at: path) else { return false }
-                    return abs(cell.transform.ty - (offsets[path] ?? 0)) > 0.5
-                }
-                if stale { UIView.performWithoutAnimation(animations) }
-                return
-            }
-            if UIAccessibility.isReduceMotionEnabled { animations() }
-            else { UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: animations) }
-        }
-        private func clearFixedFeedback() {
-            if let list = host as? UICollectionView {
-                for cell in list.visibleCells { cell.layer.removeAllAnimations(); cell.transform = .identity }
-            }
-            feedbackTarget = nil; feedbackOffsets = [:]
-        }
-        private func resolvedTarget(_ session: UIDropSession, destination: IndexPath?) -> String? {
-            if parent.prefix.hasPrefix("day-place/"), host is UICollectionView { return fixedTarget(session) }
-            return target(session)
-        }
+        func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool { canHandle(session) }
+        func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool { canHandle(session) }
         func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: UIDropSession,
                             withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
-            let target = resolvedTarget(session, destination: destinationIndexPath)
-            if recordsDragUpdates, feedbackTarget != target { NSLog("ROUTEDRAG boundary=%@ source=%@", target ?? "nil", fixedSource?.description ?? "nil") }
+            let target = target(session)
             publishTarget(target)
-            if parent.prefix.hasPrefix("day-place/") {
-                updateFixedFeedback(target, list: collectionView)
-                return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: .unspecified)
-            }
             return UICollectionViewDropProposal(operation: target == nil ? .cancel : .move, intent: .insertIntoDestinationIndexPath)
         }
-        func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
-            parent.onSorting(false)
-            clearFixedFeedback(); fixedFrames = [:]; cellFrames = [:]; compactShifts = [:]; fixedSource = nil
-            finishDiagnostics()
-            originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
-            publishTarget(nil); dragFrames = nil; nativeRowTargets = [:]
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+            let target = target(session)
+            publishTarget(target)
+            return UIDropProposal(operation: target == nil ? .cancel : .move)
         }
+        func collectionView(_ collectionView: UICollectionView, dropSessionDidEnd session: UIDropSession) {
+            originalDropDelegate?.collectionView?(collectionView, dropSessionDidEnd: session)
+            publishTarget(nil)
+        }
+        func collectionView(_ collectionView: UICollectionView, dropSessionDidExit session: UIDropSession) { publishTarget(nil) }
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) { publishTarget(nil) }
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) { publishTarget(nil) }
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            finishDiagnostics()
-            guard let target = resolvedTarget(coordinator.session, destination: coordinator.destinationIndexPath) else { return }
-            clearFixedFeedback()
+            guard let target = target(coordinator.session) else { return }
             publishTarget(nil)
             acceptDrop(coordinator.session, target: target)
-            parent.onSorting(false)
-            // The native lifted snapshot contains the old ordinal. A day move
-            // commits the actual row synchronously; do not keep that frozen image
-            // over it with a second landing animation.
-            if !parent.prefix.hasPrefix("day-place/"),
-               let destination = coordinator.destinationIndexPath,
+            if let destination = coordinator.destinationIndexPath,
                let attributes = collectionView.layoutAttributesForItem(at: destination) {
                 for item in coordinator.items {
                     coordinator.drop(item.dragItem, to: UIDragPreviewTarget(container: collectionView, center: attributes.center))
                 }
             }
-
-        }
-        func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
-            session.localDragSession != nil && session.canLoadObjects(ofClass: NSString.self)
-        }
-        private func publishTarget(_ target: String?) {
-            guard publishedTarget != target else { return }
-            publishedTarget = target
-            DispatchQueue.main.async { self.parent.onTarget(target) }
-        }
-        func collectionView(_ collectionView: UICollectionView, dropSessionDidExit session: UIDropSession) {
-            clearFixedFeedback()
-            publishTarget(nil)
-        }
-        func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
-            let target = resolvedTarget(session, destination: nil)
-            publishTarget(target)
-            return UIDropProposal(operation: target == nil ? .cancel : .move)
-        }
-        func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
-            publishTarget(nil)
-        }
-        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
-            publishTarget(nil)
         }
         func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
             guard let target = publishedTarget else { return }
             publishTarget(nil)
             acceptDrop(session, target: target)
         }
-        private func localPayload(_ session: UIDropSession) -> String? {
-            guard session.localDragSession != nil, let item = session.items.first else { return nil }
-            let payload = (item.localObject as? String)
-                ?? (item.itemProvider as? NativePlaceItemProvider)?.payload
-                ?? item.itemProvider.suggestedName
-            guard let payload, payload.hasPrefix(parent.prefix) else { return nil }
-            return payload
+        private func publishTarget(_ target: String?) {
+            guard publishedTarget != target else { return }
+            publishedTarget = target
+            DispatchQueue.main.async { self.parent.onTarget(target) }
         }
         private func acceptDrop(_ session: UIDropSession, target: String) {
-            parent.onDrop()
             let prefix = parent.prefix, accept = parent.accept
-            if let payload = localPayload(session) {
+            if let item = session.items.first,
+               let payload = (item.localObject as? String) ?? (item.itemProvider as? NativePlaceItemProvider)?.payload ?? item.itemProvider.suggestedName,
+               payload.hasPrefix(prefix) {
                 accept(String(payload.dropFirst(prefix.count)), target)
                 return
             }
@@ -1638,40 +1352,6 @@ struct NativePlaceListDrop: UIViewRepresentable {
         }
     }
 }
-private struct NativeRouteFrames: PreferenceKey {
-    static let defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { $0.union($1) })
-    }
-}
-
-/// Horizontal card margins are valid too. Within a route, every vertical gap
-/// belongs to its nearest visit boundary; only the header appends to the end.
-enum NativeRouteDropGeometry {
-    static func target(at point: CGPoint, frames: [String: CGRect]) -> String? {
-        // The caller bounds this to the list viewport; blank space below the pool is valid too.
-        if let pool = frames["unplanned"], point.y >= pool.minY { return "unplanned" }
-        let routes = Set(frames.keys.compactMap { Int($0.split(separator: "/").first ?? "") })
-        for route in routes.sorted() {
-            let prefix = String(route) + "/"
-            let entries = frames.filter { $0.key.hasPrefix(prefix) }
-            guard let top = entries.values.map(\.minY).min(), let bottom = entries.values.map(\.maxY).max(),
-                  point.y >= top - 8, point.y <= bottom + 8 else { continue }
-            if let header = entries[prefix + "header"], point.y <= header.maxY { return prefix + "header" }
-            let rows = entries.compactMap { key, frame -> (Int, CGRect)? in
-                guard let position = Int(key.dropFirst(prefix.count)) else { return nil }
-                return (position, frame)
-            }.sorted { $0.0 < $1.0 }
-            for (position, frame) in rows {
-                if point.y < frame.midY { return prefix + String(position) + "/before" }
-            }
-            if let last = rows.last { return prefix + String(last.0) + "/after" }
-            return prefix + "header"
-        }
-        return nil
-    }
-}
-
 
 struct SearchPlaceDetail: View {
     @ObservedObject var store: AppStore

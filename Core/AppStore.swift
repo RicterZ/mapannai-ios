@@ -792,10 +792,6 @@ struct DayEditorDraft: Identifiable {
         let body: [String: Any] = ["title": day.title ?? "", "emoji": day.emoji ?? "", "markerIds": day.markerIds, "chains": day.chains]
         return await perform { try await $0.mutate(Self.dayPath(day), method: "PUT", body: body) }
     }
-    private var routeDropClickDeadline: Date = .distantPast
-    var canActivateRouteRow: Bool { Date.now >= routeDropClickDeadline }
-    func finishRouteDrop() { routeDropClickDeadline = .now.addingTimeInterval(0.35) }
-    func beginRouteLongPress() { routeDropClickDeadline = .distantFuture }
     func saveRouteSchedule(_ request: RouteScheduleRequest, patch: [String: Any], using suppliedClient: APIClient? = nil) async -> Bool {
         guard let latest = trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }),
               latest.chains == request.day.chains,
@@ -1710,10 +1706,6 @@ struct DayEditorDraft: Identifiable {
             trips[0].days[0].routeChains = [RouteChain(id: "preview-route", stops: stops,
                 legs: [ChainLeg(fromStopId: stops[0].id, toStopId: stops[1].id, mode: .subway,
                     serviceNumber: "10号线", startTime: "10:30", durationMinutes: 15, note: "陕西南路站 · 往虹桥火车站方向")])]
-            if ProcessInfo.processInfo.arguments.contains("--isolated-transport-drag-preview") {
-                trips[0].days[0].markerIds.append("demo-3")
-            }
-
         }
         #endif
         #if DEBUG

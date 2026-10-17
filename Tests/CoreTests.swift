@@ -161,14 +161,6 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(isolated.placeReferences.contains(DayPlaceReference(markerID: "a", routeIndex: nil)))
     }
 
-    @MainActor func testRecognizedRouteLongPressSuppressesReleaseClick() {
-        let store = AppStore(settings: Settings(), demo: true)
-        XCTAssertTrue(store.canActivateRouteRow)
-        store.beginRouteLongPress()
-        XCTAssertFalse(store.canActivateRouteRow)
-        store.finishRouteDrop()
-        XCTAssertFalse(store.canActivateRouteRow)
-    }
     func testDateIndicatorInterpolatesActualButtonCenters() {
         XCTAssertEqual(DayDateIndicator.center(position: 0.3, centers: [40, 140, 260]), 70)
         XCTAssertEqual(DayDateIndicator.center(position: 1.5, centers: [40, 140, 260]), 200)
