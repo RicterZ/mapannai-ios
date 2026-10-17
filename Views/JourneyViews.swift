@@ -423,7 +423,13 @@ struct JourneyArchiveView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                archive(height: slotViewportHeight ?? geometry.size.height)
+                Group {
+                    if UIDevice.current.userInterfaceIdiom == .pad && geometry.size.width > geometry.size.height {
+                        landscapeArchive(size: geometry.size)
+                    } else {
+                        archive(height: slotViewportHeight ?? geometry.size.height)
+                    }
+                }
                     .opacity(yearMotion == nil && (expandedYear == nil || !yearReady) ? 1 : 0)
                     .allowsHitTesting(openedID == nil && expandedYear == nil && yearMotion == nil)
                     .disabled(expandedYear != nil || openedID != nil || yearMotion != nil)
@@ -608,6 +614,103 @@ struct JourneyArchiveView: View {
             TripCreationView(store: store, initial: draft)
         }
         .journeyError(store: store, enabled: !mapVisible && store.dayEditorDraft == nil)
+    }
+
+    private func landscapeArchive(size: CGSize) -> some View {
+        VStack(alignment: .leading, spacing: 28) {
+            ArchiveHeading()
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: ArchiveHeadingFrame.self,
+                        value: proxy.frame(in: .named("journey-archive")))
+                })
+                .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 0) {
+                    let topIDs = Set(JourneyArchiveOrdering.topTrips(store.trips, today: Date.now.dayString).map(\.id))
+                    ForEach(Array(trips.enumerated()), id: \.element.id) { index, trip in
+                        let isTop = topIDs.contains(trip.id)
+                        if index > 0, !isTop, topIDs.contains(trips[index - 1].id) {
+                            Capsule().fill(Color(uiColor: .tertiaryLabel))
+                                .frame(width: 2, height: 40)
+                                .frame(width: 96, height: 204)
+                                .background(GeometryReader { proxy in
+                                    Color.clear.preference(key: ArchiveSeparatorFrame.self,
+                                        value: proxy.frame(in: .named("journey-archive")))
+                                })
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                        if let group = yearGroups[index] {
+                            JourneyArchiveYearCard(year: group.year, count: group.count)
+                                .frame(width: 362, height: 204)
+                                .modifier(HorizontalArchiveTransform(viewportWidth: size.width - 48,
+                                    enabled: !reduceMotion && !typeSize.isAccessibilitySize))
+                                .frame(width: 112, alignment: .leading)
+                                .background(GeometryReader { proxy in
+                                    Color.clear.preference(key: ArchiveDividerFrames.self,
+                                        value: [index: proxy.frame(in: .named("journey-archive"))])
+                                })
+                                .zIndex(Double(index) - 0.5)
+                        }
+                        Button { open(trip, index: index, viewportHeight: size.height) } label: {
+                            JourneyArchiveCard(trip: trip, colorIndex: index, number: number(for: trip), photo: coverPhoto(trip))
+                                .frame(width: 362, height: 204)
+                        }
+                        .buttonStyle(ArchiveCardButtonStyle())
+                        .contextMenu {
+                            Button("编辑旅途", systemImage: "pencil") { editing = trip }
+                            DestructiveMenuButton(title: "删除旅途", systemImage: "trash") { deleting = trip }
+                        }
+                        .modifier(HorizontalArchiveTransform(viewportWidth: size.width - 48,
+                            enabled: !isTop && !reduceMotion && !typeSize.isAccessibilitySize))
+                        .background(GeometryReader { proxy in
+                            Color.clear.preference(key: ArchiveCardFrames.self,
+                                value: [trip.id: proxy.frame(in: .named("journey-archive"))])
+                        })
+                        .frame(width: isTop || index == trips.count - 1 || typeSize.isAccessibilitySize ? 362 : 112, alignment: .leading)
+                        .padding(.trailing, isTop && index + 1 < trips.count && topIDs.contains(trips[index + 1].id) ? 24 : 0)
+                        .zIndex(isTop ? Double(trips.count + index) : Double(index))
+                        .accessibilityIdentifier("archive-trip-\(trip.id)")
+                    }
+                    if trips.isEmpty {
+                        Button { creating = true } label: {
+                            Label("创建旅途", systemImage: "plus")
+                        }.buttonStyle(JourneyActionStyle())
+                    }
+                }
+                .padding(.trailing, max(24, (size.width - 48) / 2 - 181 + ArchiveStorage.packingReserve(viewportHeight: size.width - 48)))
+                .padding(.vertical, 20)
+            }
+            .scrollIndicators(.hidden)
+            .coordinateSpace(name: "horizontal-archive")
+            .frame(height: 250)
+            .opacity(openedID == nil || !transitionStarted ? 1 : 0)
+            HStack(alignment: .top, spacing: 40) {
+                ArchiveChatEntry(planner: planner, store: store, mapVisible: mapVisible)
+                    .frame(maxWidth: 560)
+                VStack(alignment: .leading, spacing: 14) {
+                    if !independent.isEmpty {
+                        Text("收藏地点").font(.headline)
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 12) {
+                                ForEach(independent) { marker in
+                                    Button { store.selectedMarker = marker; independentDetail = marker } label: {
+                                        ArchiveSavedPlaceCard(marker: marker)
+                                    }.buttonStyle(.plain)
+                                }
+                            }
+                        }.scrollIndicators(.hidden)
+                    }
+                    Button(action: onOpenSettings) {
+                        Label("设置", systemImage: "gearshape").foregroundStyle(.secondary)
+                            .frame(minHeight: 44)
+                    }.buttonStyle(.plain).accessibilityIdentifier("archive-settings")
+                }
+
+            }
+            .opacity(detailVisible ? 0 : 1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 24).padding(.top, 20)
     }
 
     private func archive(height: CGFloat) -> some View {
@@ -1807,5 +1910,21 @@ private struct ArchiveChatFrame: PreferenceKey {
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         let next = nextValue()
         if !next.isEmpty { value = next }
+    }
+}
+
+/// The portrait archive's perspective follows the horizontal viewport on iPad.
+private struct HorizontalArchiveTransform: ViewModifier {
+    let viewportWidth: CGFloat
+    let enabled: Bool
+    @State private var midX: CGFloat = 0
+    func body(content: Content) -> some View {
+        content
+            .rotation3DEffect(.radians(-ArchiveStorage.angle(midY: midX,
+                viewportHeight: viewportWidth, enabled: enabled)),
+                axis: (x: 0, y: 1, z: 0), perspective: 0.362)
+            .offset(x: ArchiveStorage.packingOffset(midY: midX,
+                viewportHeight: viewportWidth, enabled: enabled))
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("horizontal-archive")).midX } action: { midX = $0 }
     }
 }
