@@ -16,7 +16,7 @@ MapAnNai iOS 是 [MapAnNai Plus](https://github.com/RicterZ/mapannai-plus) 的�
 - **分享旅途**：把整趟旅途导出为带路线和照片的长图，可直接发送或存入相册。
 - **一键导航**：出发时，从任意地点打开系统地图、高德地图或 Google 地图。
 
-支持 iPhone 和 iPad，iPad 上地图与行程并排显示。底图可选系统地图、高德或 Google 地图。
+支持 iPhone 和 iPad，iPad 上地图与行程并排显示；横屏旅途详情可左右滑动浏览旅行信息与每日篇章，标题卡与每日内容卡顶部对齐。底图可选系统地图、高德或 Google 地图。
 
 ## 快速上手
 

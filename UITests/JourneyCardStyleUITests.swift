@@ -1,6 +1,30 @@
 import XCTest
 
 final class JourneyCardStyleUITests: XCTestCase {
+    @MainActor func testIPadLandscapeDetailScreenshot() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-card-style-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        XCUIDevice.shared.orientation = .portrait
+        app.swipeDown()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        let trip = app.buttons["archive-trip-demo-trip"].firstMatch
+        XCTAssertTrue(trip.waitForExistence(timeout: 15))
+        trip.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let horizontal = app.scrollViews["ipad-journey-horizontal-days"]
+        XCTAssertTrue(horizontal.waitForExistence(timeout: 15))
+        let day = app.buttons["journey-day-day-1"]
+        XCTAssertTrue(day.waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        try app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/Users/sakana/Projects/mapannai-ios/output/design/ipad-native-landscape.png"))
+        horizontal.swipeLeft()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        try app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/Users/sakana/Projects/mapannai-ios/output/design/ipad-native-landscape-scrolled.png"))
+    }
+
     @MainActor func testChapterCacheOpenCloseAndReopen() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--archive-preview", "--today-chapter-preview"]

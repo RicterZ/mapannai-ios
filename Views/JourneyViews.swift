@@ -7,6 +7,7 @@ struct JourneyDaysContents: View {
     @ObservedObject var store: AppStore
     let trip: Trip
     var onSelectDay: ((TripDay) -> Void)? = nil
+    var landscapeLayout = false
     var archiveColorIndex: Int? = nil
     var archiveNumber: Int? = nil
     var archiveHeaderVisible = true
@@ -22,6 +23,8 @@ struct JourneyDaysContents: View {
     }
     @State private var nativeDayFrames: [String: CGRect] = [:]
     @State private var photoTitles: [String: String] = [:]
+    @State private var landscapeAvailableHeight: CGFloat = 500
+    @State private var landscapeHeaderHeight: CGFloat = 57
     @State private var targetedDayID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sharingTrip = false
@@ -34,6 +37,10 @@ struct JourneyDaysContents: View {
         let days = chapters.days
         let summaries = chapters.summaries
         ScrollViewReader { reader in
+        Group {
+        if landscapeLayout {
+            landscapeContents(days: days, summaries: summaries)
+        } else {
         List {
             if let archiveColorIndex {
                 Section {
@@ -181,6 +188,8 @@ struct JourneyDaysContents: View {
                     _ = assignPreviewPlaces(["trip-place/" + trip.id + "/" + id], to: day)
                 }
             })
+        }
+        }
             .sheet(isPresented: $sharingTrip) { JourneyShareView(trip: trip, markers: store.markers) }
             .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: Binding(get: { archiveColorIndex != nil && store.dayEditorDraft?.tripID == trip.id ? store.dayEditorDraft : nil },
@@ -192,6 +201,94 @@ struct JourneyDaysContents: View {
             }
         }
     }
+    private func landscapeContents(days: [TripDay], summaries: [JourneyDaySummary]) -> some View {
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: 28) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if let archiveColorIndex {
+                            JourneyArchiveCard(trip: trip, colorIndex: archiveColorIndex,
+                                number: archiveNumber, photo: archivePhoto)
+                                .frame(height: 204)
+                                .opacity(archiveHeaderVisible ? 1 : 0)
+                                .transaction { $0.disablesAnimations = true }
+                                .accessibilityIdentifier("archive-detail-card")
+                                .background(GeometryReader { proxy in
+                                    Color.clear.preference(key: ArchiveHeaderFrame.self,
+                                        value: proxy.frame(in: .global))
+                                })
+                        }
+                        ViewThatFits(in: .horizontal) {
+                            landscapeActions
+                            VStack(alignment: .leading, spacing: 10) { landscapeActionButtons }
+                        }.buttonStyle(JourneyActionStyle(compact: true))
+                        if !unscheduledPlaces.isEmpty {
+                            JourneyPlaceGroupHeading(title: "未安排日期", count: unscheduledPlaces.count)
+                            ForEach(unscheduledPlaces) { marker in
+                                Button { store.focus(marker) } label: {
+                                    DayPlaceIdentity(marker: marker)
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.top, landscapeHeaderHeight)
+                }
+                .contentMargins(.top, 0, for: .scrollContent)
+                .frame(width: 362, alignment: .top)
+                    ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
+                        VStack(alignment: .leading, spacing: 0) {
+                            ZStack(alignment: .topTrailing) {
+                                Button {
+                                    if let onSelectDay { onSelectDay(day) }
+                                    else { store.select(trip: trip, day: day); store.beginDayMapBrowsing() }
+                                } label: {
+                                    dayRow(day, index: index, summary: summaries[index]) {
+                                        photoTitles[day.id] = $0
+                                    }
+                                }.buttonStyle(.plain)
+                                    .disabled(day.id.hasPrefix("pending-day-"))
+                                    .accessibilityIdentifier("journey-day-\(day.id)")
+                                Menu { dayActions(day) } label: {
+                                    Image(systemName: "ellipsis").font(.body.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                                }.buttonStyle(.borderless)
+                                    .accessibilityLabel("第\(index + 1)天的操作")
+                                    .accessibilityIdentifier("journey-day-menu-\(day.id)")
+                            }
+                        }
+                        .contentMargins(.top, 0, for: .scrollContent)
+                        .frame(width: 354, alignment: .top).id(day.id)
+                    }
+            }
+            .scrollTargetLayout()
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .contentMargins(.top, 0, for: .scrollContent)
+        .scrollTargetBehavior(.viewAligned)
+        .accessibilityIdentifier("ipad-journey-horizontal-days")
+        .padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 24)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { landscapeAvailableHeight = $0 }
+        .opacity(archiveContentVisible ? 1 : 0)
+        .onPreferenceChange(ArchiveHeaderFrame.self) { if !$0.isEmpty { onArchiveHeaderFrame($0) } }
+    }
+
+    private var landscapeActions: some View {
+        HStack(spacing: 10) { landscapeActionButtons }
+    }
+
+    @ViewBuilder private var landscapeActionButtons: some View {
+        Button { store.beginDayEditor(trip: trip) } label: {
+            Label("添加一天", systemImage: "plus")
+        }.disabled(store.saving).accessibilityIdentifier("journey-add-day")
+        Button { store.beginAddingPlace(tripID: trip.id) } label: {
+            Label("添加地点", systemImage: "plus")
+        }.accessibilityIdentifier("trip-add-place")
+        Button { sharingTrip = true } label: {
+            Label("分享长图", systemImage: "square.and.arrow.up")
+        }.accessibilityIdentifier("journey-share-image")
+    }
+
     @ViewBuilder private func dayActions(_ day: TripDay) -> some View {
         Button("编辑", systemImage: "pencil") {
             store.beginDayEditor(trip: trip, day: day)
@@ -227,7 +324,14 @@ struct JourneyDaysContents: View {
 
     private func dayRow(_ day: TripDay, index: Int, summary: JourneyDaySummary, onPhotoSelection: @escaping (String) -> Void) -> some View {
         return JourneyDayCardContent(day: day, index: index, summary: summary,
-            loadPhotos: archiveColorIndex == nil || archiveHeaderVisible, onPhotoSelection: onPhotoSelection,
+            loadPhotos: archiveColorIndex == nil || archiveHeaderVisible,
+            maximumCardHeight: landscapeLayout ? max(1, landscapeAvailableHeight - 40 - landscapeHeaderHeight) : nil,
+            expandsRoutePreview: landscapeLayout,
+            onChapterHeaderHeight: { height in
+                if landscapeLayout && index == 0 && abs(landscapeHeaderHeight - height) > 0.5 {
+                    landscapeHeaderHeight = height
+                }
+            }, onPhotoSelection: onPhotoSelection,
             weatherPoints: TripWeatherLocation.points(day: day, trip: trip, markers: store.markers),
             loadWeather: !store.demo)
             .contentShape(Rectangle())
@@ -348,7 +452,7 @@ struct JourneyArchiveView: View {
                 }
                 if let trip = openedTrip {
                     ZStack(alignment: .topLeading) {
-                        JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, archiveColorIndex: openingIndex, archiveNumber: number(for: trip),
+                        JourneyDaysContents(store: store, trip: trip, onSelectDay: { onSelect(trip, $0) }, landscapeLayout: UIDevice.current.userInterfaceIdiom == .pad && geometry.size.width > geometry.size.height, archiveColorIndex: openingIndex, archiveNumber: number(for: trip),
                             archiveHeaderVisible: cardInList,
                             archiveContentVisible: detailVisible,
                             initialDayID: initialDayID,
@@ -364,7 +468,7 @@ struct JourneyArchiveView: View {
                             .scrollClipDisabled()
                             .modifier(ArchiveDetailScrollEdges())
                             .scrollContentBackground(.hidden)
-                            .frame(maxWidth: 640).frame(maxWidth: .infinity)
+                            .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad && geometry.size.width > geometry.size.height ? .infinity : 640).frame(maxWidth: .infinity)
                             .allowsHitTesting(detailVisible && !closing)
                             .zIndex(Double(openingIndex))
                             .task(id: trip.id) { await beginTransition(trip) }

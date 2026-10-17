@@ -2,6 +2,20 @@ import XCTest
 @testable import MapAnNai
 
 final class DayMapJourneyTests: XCTestCase {
+    @MainActor func testSelectingAnotherDayMovesCameraToItsValidPlaces() {
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = store.trips[0]
+        store.select(trip: trip, day: trip.days[0])
+        let previousCamera = store.camera?.id
+        let next = trip.days[1]
+        store.select(trip: trip, day: next)
+        let ids = Set(next.markerIds + next.chains.flatMap { $0 })
+        let expected = store.markers.filter { ids.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
+        XCTAssertEqual(store.dayID, next.id)
+        XCTAssertNotEqual(store.camera?.id, previousCamera)
+        XCTAssertEqual(store.camera?.points, expected)
+    }
+
     @MainActor func testItineraryDraftDoesNotMutateOriginalOrWriteImmediately() {
         let store = AppStore(settings: Settings(), demo: true)
         let original = store.trips[0]

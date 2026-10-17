@@ -19,7 +19,7 @@ MapAnNai iOS is the native iPhone and iPad app for [MapAnNai Plus](https://githu
 - **Share a trip.** Export the whole trip as a long image with routes and photos, ready to send or save to Photos.
 - **Navigate when it's time to go.** Open any place in Apple Maps, AMap or Google Maps.
 
-Works on iPhone and iPad. On iPad, the map and itinerary sit side by side. The map can use Apple Maps, AMap or Google Maps.
+Works on iPhone and iPad. On iPad, the map and itinerary sit side by side. In landscape, swipe horizontally through the trip information and daily chapters, with their content cards aligned at the top. The map can use Apple Maps, AMap or Google Maps.
 
 ## Getting started
 

@@ -295,6 +295,9 @@ struct JourneyDayCardContent: View {
     let index: Int
     let summary: JourneyDaySummary
     var loadPhotos = true
+    var maximumCardHeight: CGFloat? = nil
+    var expandsRoutePreview = false
+    var onChapterHeaderHeight: (CGFloat) -> Void = { _ in }
     var onPhotoSelection: (String) -> Void = { _ in }
     var weatherPoints: [TripWeatherLocation.Point] = []
     var loadWeather = true
@@ -326,6 +329,9 @@ struct JourneyDayCardContent: View {
                 }
                 Spacer(minLength: 8)
                 Color.clear.frame(width: 44, height: 34).accessibilityHidden(true)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                onChapterHeaderHeight(height + 16)
             }
             VStack(alignment: .leading, spacing: 16) {
             if let theme = summary.theme {
@@ -365,7 +371,7 @@ struct JourneyDayCardContent: View {
             if summary.count == 0 {
                 Text("还没有安排地点").font(.subheadline).foregroundStyle(.secondary)
             } else {
-                JourneyRoutePreview(summary: summary, expanded: sharing)
+                JourneyRoutePreview(summary: summary, expanded: sharing || expandsRoutePreview)
             }
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -378,6 +384,7 @@ struct JourneyDayCardContent: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
+            .modifier(JourneyCardHeightLimit(maximumHeight: maximumCardHeight))
             .backgroundPreferenceValue(WeatherPhotoBounds.self) { bounds in
                 GeometryReader { geometry in
                     if let code = (shareWeather ?? dayWeather)?.weatherCode, let style = JourneyWeatherStyle(code: code) {
@@ -534,6 +541,26 @@ private struct JourneyRoutePreview: View {
                     }
                 }.padding(.top, summary.routePreviews.isEmpty ? 0 : 2)
             }
+        }
+    }
+}
+
+/// Only landscape tablet chapters cap their body; the date heading stays outside.
+private struct JourneyCardHeightLimit: ViewModifier {
+    let maximumHeight: CGFloat?
+    @State private var contentHeight: CGFloat = 1
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let maximumHeight {
+            ScrollView(.vertical) {
+                content
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .scrollDisabled(contentHeight <= maximumHeight)
+            .frame(height: min(contentHeight, maximumHeight))
+        } else {
+            content
         }
     }
 }
