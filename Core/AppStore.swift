@@ -176,8 +176,6 @@ struct DayEditorDraft: Identifiable {
     func cycleLocationMode() { locationMode = locationMode.next; locating = UUID() }
     func stopLocationFollowing() { locationMode = .idle }
     @Published var mapViewportInsets: MapViewportInsets = .phone
-    var mapSidebarWidth: Double?
-    var mapUsesBottomSheet = true
     var bounds: SearchBounds?
     let demo: Bool
     private var routeTask: Task<Void, Never>?
@@ -342,7 +340,7 @@ struct DayEditorDraft: Identifiable {
         let points = markers.filter { dayIDs.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
             + mapDisplayRoutes.filter { $0.dayID == day.id }.flatMap(\.points)
         guard !points.isEmpty else { return }
-        camera = CameraCommand(points: points, singlePointZoom: 15, sidebarRightInset: mapSidebarWidth == nil ? nil : 55)
+        camera = CameraCommand(points: points, singlePointZoom: 15)
     }
     func focusDayMapMarker(_ id: String, moveCamera: Bool = true) {
         guard dayMapBrowsing, let marker = mapMarkers.first(where: { $0.id == id }) else { return }
@@ -356,7 +354,7 @@ struct DayEditorDraft: Identifiable {
         dayMapFocusID = id
         selectedMarker = marker
         camera = CameraCommand(points: [marker.coordinates], detailLayout: MarkerDetailLayout(marker: marker,
-            itineraryCount: MarkerPresentation.itineraries(for: id, trips: trips).count, hasSelectedDay: day != nil), sidebarDetailWidth: mapSidebarWidth)
+            itineraryCount: MarkerPresentation.itineraries(for: id, trips: trips).count, hasSelectedDay: day != nil))
     }
     private func applyStartupLocationFallback() {
         guard let location = startupLocation, !startupLocationFinished, !startupMapInteracted else { return }
@@ -1186,7 +1184,7 @@ struct DayEditorDraft: Identifiable {
         if let day {
             let ids = Set(day.markerIds + day.chains.flatMap { $0 })
             let points = markers.filter { ids.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
-            if !points.isEmpty { camera = CameraCommand(points: points, singlePointZoom: 15, sidebarRightInset: mapSidebarWidth == nil ? nil : 55) }
+            if !points.isEmpty { camera = CameraCommand(points: points, singlePointZoom: 15) }
         } else if let trip {
             let ids = Set((trip.markerIds ?? []) + trip.days.flatMap { $0.markerIds + $0.chains.flatMap { $0 } })
             let points = markers.filter { ids.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
@@ -1235,7 +1233,7 @@ struct DayEditorDraft: Identifiable {
             itineraryCount: MarkerPresentation.itineraries(for: marker.id, trips: trips).count,
             hasSelectedDay: day != nil)
         selectedMarker = marker
-        camera = CameraCommand(points: [marker.coordinates], detailLayout: detail, sidebarDetailWidth: mapSidebarWidth)
+        camera = CameraCommand(points: [marker.coordinates], detailLayout: detail)
     }
     func fly(_ points: [Coordinate]) { if !points.isEmpty { camera = CameraCommand(points: points) } }
     func create(at coordinate: Coordinate, poiName: String? = nil, placeReferences: PlaceReferences? = nil) {
@@ -1855,16 +1853,12 @@ struct CameraCommand: Identifiable {
     var points: [Coordinate]
     var singlePointZoom: Double = 15
     var detailLayout: MarkerDetailLayout? = nil
-    var sidebarRightInset: Double? = nil
-    var sidebarDetailWidth: Double? = nil
     var revealDraft = false
     var bottomSheetFraction: Double? = nil
     var bottomSheetHeight: Double? = nil
     func viewportInsets(base: MapViewportInsets, height: Double, bottomSafeArea: Double,
                         bottomSheet: Bool) -> MapViewportInsets {
         var insets = base
-        if let sidebarRightInset, !bottomSheet { insets.right = sidebarRightInset }
-        if let sidebarDetailWidth, !bottomSheet { insets.right = sidebarDetailWidth + 24 }
         if let bottomSheetFraction {
             insets = MapViewportInsets(top: 80, left: 25, bottom: height * min(0.5, bottomSheetFraction) + bottomSafeArea + 25, right: 25)
         }

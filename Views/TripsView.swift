@@ -59,7 +59,7 @@ struct DayDetailPage: View {
             .background(DayPagingInteraction(enabled: !editingPlaces, progress: pagingProgress, dayIndex: days.firstIndex { $0.id == day.id } ?? 0) {
                 guard let id = pagingDayID, id != day.id, !editingPlaces,
                       let next = days.first(where: { $0.id == id }) else { return }
-                store.select(trip: trip, day: next, focus: false)
+                store.select(trip: trip, day: next)
             })
         }
             .onChange(of: day.id) { _, id in pagingDayID = id }

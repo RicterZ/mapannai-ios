@@ -186,7 +186,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
                         currentZoom: Double(map.zoomLevel), targetZoom: nil, fitting: true,
                         reduceMotion: UIAccessibility.isReduceMotionEnabled)
                     withCameraAnimation(duration: duration) {
-                        map.setVisibleMapRect(rect, edgePadding: padding(map, command: command), animated: duration > 0, duration: duration)
+                        map.setVisibleMapRect(rect, edgePadding: padding(map), animated: duration > 0, duration: duration)
                     }
                 }
             }
@@ -241,7 +241,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         private func padding(_ map: MAMapView, command: CameraCommand? = nil) -> UIEdgeInsets {
             let insets = (command ?? CameraCommand(points: [])).viewportInsets(base: store.mapViewportInsets,
                 height: map.bounds.height, bottomSafeArea: map.safeAreaInsets.bottom,
-                bottomSheet: store.mapUsesBottomSheet)
+                bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
             return UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
         }
         func mapView(_ mapView: MAMapView!, viewFor annotation: MAAnnotation!) -> MAAnnotationView! {
@@ -679,7 +679,7 @@ struct PreviewMap: View {
         let usableHeight = max(80, size.height - insets.top - insets.bottom)
         if let command = store.camera, command.detailLayout != nil, let center = command.points.first {
             let target = command.viewportInsets(base: insets, height: size.height, bottomSafeArea: 0,
-                bottomSheet: store.mapUsesBottomSheet)
+                bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
             return CGPoint(x: (size.width + target.left - target.right) / 2 + (p.longitude - center.longitude) * usableWidth / 0.018,
                            y: (size.height + target.top - target.bottom) / 2 - (p.latitude - center.latitude) * usableHeight / 0.029)
         }
