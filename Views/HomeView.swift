@@ -557,7 +557,7 @@ struct HomeView: View {
                 withTransaction(transaction) { journeyPath = journeyDestinations }
             }
             .onChange(of: journeyDestinations) { _, path in
-                guard journeyPath != path else { return }
+                guard store.itineraryEditingDayID == nil, journeyPath != path else { return }
                 withAnimation(AppMotion.navigation(reduceMotion: reduceMotion)) { journeyPath = path }
             }
             .onChange(of: journeyPath) { previousPath, path in

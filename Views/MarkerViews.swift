@@ -31,7 +31,11 @@ struct MarkerDetailView: View {
     }
     private var targetDay: TripDay? {
         guard usesDayContext else { return nil }
-        guard embedded else { return store.day }
+        guard embedded else {
+            if let id = store.itineraryEditingDayID,
+               let target = store.trips.flatMap(\.days).first(where: { $0.id == id }) { return target }
+            return store.day
+        }
         guard let target = store.addPlaceDay else { return nil }
         return store.trips.first(where: { $0.id == target.tripId })?.days.first(where: { $0.id == target.id })
     }

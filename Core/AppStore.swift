@@ -101,6 +101,7 @@ struct DayEditorDraft: Identifiable {
     private var itineraryWriteTail: Task<Void, Never>?
     private var itineraryWriteGeneration = UUID()
     private var itineraryRollbacks: [() -> Void] = []
+    @Published var itineraryEditingDayID: String?
     var itineraryDraftOnly = false
     var draftWrites: [(APIClient) async throws -> Void] = []
 

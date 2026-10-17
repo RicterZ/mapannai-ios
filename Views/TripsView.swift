@@ -1579,6 +1579,23 @@ private struct ItineraryDraftContents: View {
             else { NavigationStack { editorPage } }
         }
         .onChange(of: editing) { _, value in if !value { dismiss() } }
+        .onAppear { if embedded { store.itineraryEditingDayID = selectedDayID ?? dayID } }
+        .onDisappear { if embedded { store.itineraryEditingDayID = nil } }
+        .onChange(of: selectedDayID) { _, id in
+            guard embedded else { return }
+            // Set the editing guard before publishing the map selection so navigation stays put.
+            store.itineraryEditingDayID = id
+            guard let id, store.dayID != id,
+                  let trip = store.trips.first(where: { $0.id == tripID }),
+                  let day = trip.days.first(where: { $0.id == id }) else { return }
+            store.select(trip: trip, day: day, focus: false)
+        }
+        .onChange(of: store.dayID) { _, id in
+            guard embedded, store.tripID == tripID, let id,
+                  draft.trips.first(where: { $0.id == tripID })?.days.contains(where: { $0.id == id }) == true else { return }
+            selectedDayID = id
+            store.itineraryEditingDayID = id
+        }
     }
 
     private var editorPage: some View {
