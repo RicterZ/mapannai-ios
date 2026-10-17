@@ -89,6 +89,12 @@ struct DayPlaceReorderList: UIViewControllerRepresentable {
                   case .place = dataSource.itemIdentifier(for: indexPath),
                   let cell = collectionView.cellForItem(at: indexPath),
                   collectionView.convert(point, to: cell).x > cell.bounds.maxX - Self.handleWidth else { return }
+            compactForDrag(at: indexPath)
+        }
+
+        private func compactForDrag(at indexPath: IndexPath) {
+            guard !compact, let collectionView, let dataSource,
+                  let cell = collectionView.cellForItem(at: indexPath) else { return }
             let anchor = dataSource.itemIdentifier(for: indexPath)
             let screenY = cell.frame.minY - collectionView.contentOffset.y
             compact = true
@@ -245,7 +251,10 @@ struct DayPlaceReorderList: UIViewControllerRepresentable {
         }
 
         func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
-            guard parent.canReorder, compact, let item = dataSource?.itemIdentifier(for: indexPath), case .place = item else { return [] }
+            guard parent.canReorder, let item = dataSource?.itemIdentifier(for: indexPath), case .place = item else { return [] }
+            // Capture identity before compacting changes the diffable index paths.
+            compactForDrag(at: indexPath)
+            handleTouchEnded()
             let dragItem = UIDragItem(itemProvider: NSItemProvider())
             dragItem.localObject = item
             return [dragItem]

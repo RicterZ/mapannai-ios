@@ -329,6 +329,12 @@ struct HomeView: View {
                         .transition(.identity)
                 }
 
+                if sidebar && store.placeSearchPresented {
+                    NavigationStack {
+                        DayMarkerPicker(store: store, day: store.addPlaceDay)
+                    }
+                    .transition(.opacity)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .animation(AppMotion.crossfade(reduceMotion: reduceMotion), value: store.placeSearchPresented)

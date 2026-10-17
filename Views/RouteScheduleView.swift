@@ -7,6 +7,7 @@ struct RouteScheduleEditor: View {
     var embedded = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var landscapeEditor = false
     @State private var mode: TransportMode = .walking
     @State private var serviceNumber = ""
     @State private var timeEnabled = false
@@ -28,6 +29,9 @@ struct RouteScheduleEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     endpoints
+                    let layout = landscapeEditor && !typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(alignment: .top, spacing: 48)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 22))
+                    layout {
+                    VStack(alignment: .leading, spacing: 22) {
                     if request.isTransport {
                         transportModes
                         HStack(spacing: 16) {
@@ -66,7 +70,9 @@ struct RouteScheduleEditor: View {
                             Text("分钟").foregroundStyle(.secondary)
                         }.frame(minHeight: 58)
                     }
-                    Divider()
+                    }.frame(maxWidth: .infinity, alignment: .topLeading)
+                    VStack(alignment: .leading, spacing: 22) {
+                    if !landscapeEditor { Divider() }
                     VStack(alignment: .leading, spacing: 12) {
                         Text("备注").font(.subheadline).foregroundStyle(.secondary)
                         TextField(request.isTransport ? "站台、集合点或其他提醒" : "入口、预约或其他提醒", text: $note, axis: .vertical)
@@ -84,19 +90,25 @@ struct RouteScheduleEditor: View {
                             .font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
                             .accessibilityIdentifier("schedule-clear")
                     }
+                    }.frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
                 }.font(.subheadline).padding(.horizontal, 24).padding(.vertical, 16)
-                    .frame(maxWidth: 560).frame(maxWidth: .infinity)
+                    .frame(maxWidth: landscapeEditor && !typeSize.isAccessibilitySize ? 1040 : 560).frame(maxWidth: .infinity)
             }
+            .onGeometryChange(for: Bool.self) {
+                UIDevice.current.userInterfaceIdiom == .pad && $0.size.width >= 900 && $0.size.width > $0.size.height
+            } action: { landscapeEditor = $0 }
             .accessibilityIdentifier("schedule-editor-scroll")
             .background(Color(uiColor: .systemBackground))
             .scrollDismissesKeyboard(.interactively)
             .disabled(submitting)
             .navigationTitle(request.isTransport ? "交通安排" : "游览安排")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden()
             .toolbarBackground(Color(uiColor: .systemBackground), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                if !embedded { ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button { goBack() } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 20, weight: .regular))
@@ -105,9 +117,10 @@ struct RouteScheduleEditor: View {
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain)
                         .accessibilityLabel("返回").accessibilityIdentifier("schedule-cancel").disabled(submitting)
-                }.journeyBareBackground }
+                }.journeyBareBackground
                 ToolbarItem(placement: .confirmationAction) {
                     Button(store.itineraryDraftOnly ? "完成" : "保存") { save(clear: false) }
+                        .buttonStyle(.plain).foregroundStyle(Color(uiColor: .label)).tint(Color(uiColor: .label))
                         .disabled(submitting || store.saving)
                         .accessibilityIdentifier("schedule-save")
                 }.journeyBareBackground
@@ -257,7 +270,7 @@ struct RouteTransportRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 if let leg { TransportArtwork(mode: leg.mode) }
-                else { Image(systemName: "plus").foregroundStyle(.secondary) }
+                else { Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary) }
                 Text([leg?.mode.label ?? (editing ? "安排交通" : "交通"), distance].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.footnote).foregroundStyle(.primary)
                 if let leg, let service = leg.serviceNumber, !service.isEmpty {

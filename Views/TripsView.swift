@@ -223,7 +223,7 @@ struct DayEditingDoneButton: View {
         } label: {
             Image(systemName: "checkmark").font(.system(size: 20, weight: .medium))
                 .frame(width: 44, height: 44).contentShape(Rectangle())
-        }.buttonStyle(.plain).foregroundStyle(.primary)
+        }.buttonStyle(.plain).foregroundStyle(Color(uiColor: .label)).tint(Color(uiColor: .label))
             .accessibilityLabel("完成编辑").accessibilityIdentifier("day-edit-done")
     }
 }
@@ -241,6 +241,7 @@ struct DayContentsView: View {
     @State private var chainEditor: ChainEditRequest?
     @State private var scheduleEditor: RouteScheduleRequest?
     @State private var fullScreenEditing = false
+    @State private var sidebarEditing = false
     var isEditingWorkspace = false
     @State private var editingDistances: [String: Double] = [:]
     @State private var deletingDay = false
@@ -419,6 +420,9 @@ struct DayContentsView: View {
         .navigationDestination(item: Binding(get: { isEditingWorkspace ? scheduleEditor : nil }, set: { if isEditingWorkspace { scheduleEditor = $0 } })) {
             RouteScheduleEditor(store: store, request: $0, embedded: true)
         }
+        .navigationDestination(isPresented: $sidebarEditing) {
+            DayEditingWorkspace(store: store, tripID: day.tripId, dayID: day.id, embedded: true)
+        }
         .fullScreenCover(isPresented: $fullScreenEditing) {
             DayEditingWorkspace(store: store, tripID: day.tripId, dayID: day.id)
         }
@@ -448,7 +452,13 @@ struct DayContentsView: View {
     }
     private func beginPlaceEditing(_ id: String? = nil) {
         guard store.canEditItinerary else { return }
-        guard isEditingWorkspace else { fullScreenEditing = true; return }
+        guard isEditingWorkspace else {
+            let landscape = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                .first { $0.activationState == .foregroundActive }?.interfaceOrientation.isLandscape == true
+            if UIDevice.current.userInterfaceIdiom == .pad && landscape { sidebarEditing = true }
+            else { fullScreenEditing = true }
+            return
+        }
         withAnimation(AppMotion.listMutation(reduceMotion: reduceMotion)) {
             editingPlaces = true
             if let id { selectedPlaces.insert(DayPlaceReference(markerID: id, routeIndex: nil)) }
@@ -635,6 +645,7 @@ struct DayContentsView: View {
                         if !editingPlaces {
                             Menu {
                                 Button("编辑行程", systemImage: "slider.horizontal.3") { beginPlaceEditing() }
+                                    .foregroundStyle(Color(uiColor: .label)).tint(Color(uiColor: .label))
                                 Button("删除路线", systemImage: "trash", role: .destructive) { deletingChain = index }
                                     .disabled(!store.canEditItinerary)
                             } label: {
@@ -1531,6 +1542,7 @@ private struct DayEditingWorkspace: View {
     @ObservedObject var store: AppStore
     let tripID: String
     let dayID: String
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     @State private var editing = true
     @State private var draftStore: AppStore?
@@ -1540,7 +1552,7 @@ private struct DayEditingWorkspace: View {
         Group {
             if let draftStore {
                 ItineraryDraftContents(store: store, draft: draftStore, tripID: tripID, dayID: dayID,
-                    originalTrip: originalTrip, selectedDayID: $selectedDayID, editing: $editing)
+                    originalTrip: originalTrip, selectedDayID: $selectedDayID, editing: $editing, embedded: embedded)
             } else { ProgressView() }
         }.onAppear {
             guard draftStore == nil else { return }
@@ -1559,10 +1571,18 @@ private struct ItineraryDraftContents: View {
     let originalTrip: Trip?
     @Binding var selectedDayID: String?
     @Binding var editing: Bool
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     var body: some View {
+        Group {
+            if embedded { editorPage }
+            else { NavigationStack { editorPage } }
+        }
+        .onChange(of: editing) { _, value in if !value { dismiss() } }
+    }
 
-        NavigationStack {
+    private var editorPage: some View {
+        Group {
             if let day = draft.trips.first(where: { $0.id == tripID })?.days.first(where: { $0.id == (selectedDayID ?? dayID) }) {
                 DayContentsView(store: draft, day: day, showsDaySummary: true, showsEditingDone: false,
                     isEditingWorkspace: true, editingPlaces: $editing)
@@ -1578,6 +1598,7 @@ private struct ItineraryDraftContents: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button { dismiss() } label: { Image(systemName: "xmark") }
+                                .buttonStyle(.plain).foregroundStyle(Color(uiColor: .label))
                                 .accessibilityLabel("关闭编辑行程")
                                 .accessibilityIdentifier("day-edit-close")
                         }.journeyBareBackground
@@ -1585,12 +1606,13 @@ private struct ItineraryDraftContents: View {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("完成") {
                                 if let originalTrip, store.commitItineraryDraft(draft, original: originalTrip) { dismiss() }
-                            }.accessibilityIdentifier("day-edit-done")
+                            }.buttonStyle(.plain).foregroundStyle(Color(uiColor: .label)).tint(Color(uiColor: .label))
+                                .accessibilityIdentifier("day-edit-done")
                         }.journeyBareBackground
 
                     }
             }
-        }.onChange(of: editing) { _, value in if !value { dismiss() } }
+        }.navigationBarBackButtonHidden()
     }
     private func editingDates(trip: Trip, day: TripDay) -> some View {
         ScrollViewReader { proxy in

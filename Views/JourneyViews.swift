@@ -560,7 +560,7 @@ struct JourneyArchiveView: View {
                     Button { editing = trip } label: {
                         Image(systemName: "square.and.pencil").font(.system(size: 20, weight: .regular))
                             .frame(width: 44, height: 44).contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.plain).foregroundStyle(Color(uiColor: .label)).tint(Color(uiColor: .label))
                         .accessibilityLabel("编辑旅途").accessibilityIdentifier("journey-edit-trip")
                 }
             }.journeyBareBackground

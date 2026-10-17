@@ -11,6 +11,7 @@ struct TripCreationView: View {
     @ObservedObject var store: AppStore
     var trip: Trip? = nil
     var initial: TripSaveDraft? = nil
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .title2) private var headingSize = 22
@@ -22,6 +23,7 @@ struct TripCreationView: View {
     @State private var emoji = "✈️"
     @State private var destinations: [TripDestination] = []
     @State private var range = TripDateRange()
+    @State private var landscapeEditor = false
     @State private var calendarVisible = false
     @State private var iconPickerVisible = false
     @State private var error: String?
@@ -54,6 +56,9 @@ struct TripCreationView: View {
     var body: some View {
         GeometryReader { geometry in
             content.frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                .onGeometryChange(for: Bool.self) {
+                    UIDevice.current.userInterfaceIdiom == .pad && $0.size.width >= 900 && $0.size.width > $0.size.height
+                } action: { landscapeEditor = $0 }
         }
         .background(pageColor.ignoresSafeArea())
     }
@@ -63,6 +68,9 @@ struct TripCreationView: View {
             navigation
             ScrollView {
                 VStack(alignment: .leading, spacing: compact ? 18 : 28) {
+                    let layout = landscapeEditor && !typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(alignment: .top, spacing: 48)) : AnyLayout(VStackLayout(alignment: .leading, spacing: compact ? 18 : 28))
+                    layout {
+                        VStack(alignment: .leading, spacing: compact ? 18 : 28) {
                     TripDestinationPicker(settings: store.settings, demo: store.demo, selection: $destinations,
                         compact: compact, onSearchFocus: { nameFocused = false; calendarVisible = false })
                         .frame(height: calendarVisible ? 0 : nil)
@@ -71,14 +79,18 @@ struct TripCreationView: View {
                         .accessibilityHidden(calendarVisible)
                         .zIndex(10)
                     identity
+                        }.frame(maxWidth: .infinity, alignment: .topLeading)
+                        VStack(alignment: .leading, spacing: 28) {
                     dates
                     if trip != nil { coverPicker }
+                        }.frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
                     if let error { Text(error).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("trip-create-error") }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
                 .padding(.bottom, 24)
-                .frame(maxWidth: 560, alignment: .leading)
+                .frame(maxWidth: landscapeEditor && !typeSize.isAccessibilitySize ? 1040 : 560, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
@@ -121,7 +133,7 @@ struct TripCreationView: View {
             Button { nameFocused = false; dismiss() } label: {
                 Image(systemName: "chevron.left").font(.system(size: 20, weight: .regular))
                     .frame(width: 44, height: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("取消")
+            }.buttonStyle(.plain).foregroundStyle(Color(uiColor: .label)).accessibilityLabel("取消")
                 .accessibilityIdentifier("trip-create-cancel").disabled(submitted)
             Spacer(minLength: 0)
             Text(trip == nil ? "新的旅途" : "编辑旅途").font(.headline).foregroundStyle(.primary)
@@ -130,7 +142,7 @@ struct TripCreationView: View {
             Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
         }
         .padding(.horizontal, 12).frame(height: 64)
-        .frame(maxWidth: 576).frame(maxWidth: .infinity)
+        .frame(maxWidth: landscapeEditor ? .infinity : 576).frame(maxWidth: .infinity)
     }
 
     private var identity: some View {

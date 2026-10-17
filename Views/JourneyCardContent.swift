@@ -504,6 +504,13 @@ private struct JourneyRoutePreview: View {
     var expanded = false
     var scheduledDay: TripDay? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
+
+    private func stopTiming(_ stop: ChainStop?) -> some View {
+        Text(RouteScheduleText.summary(time: stop?.startTime,
+            duration: stop?.durationMinutes.flatMap { $0 > 0 ? $0 : nil }))
+            .font(.footnote).monospacedDigit().foregroundStyle(.primary)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(Array(summary.routePreviews.prefix(expanded ? summary.routePreviews.count : 2).enumerated()), id: \.offset) { routeIndex, names in
@@ -523,25 +530,36 @@ private struct JourneyRoutePreview: View {
                             VStack(alignment: .leading, spacing: 9) {
                                 let visit = scheduledDay?.scheduledRoute(at: routeIndex)?.stops
                                 let stop = visit.flatMap { $0.indices.contains(index) ? $0[index] : nil }
-                                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                    Text(name).font(.subheadline).foregroundStyle(.primary)
-                                        .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 2)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    if let time = stop?.startTime, !time.isEmpty {
+                                ViewThatFits(in: .horizontal) {
+                                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                        Text(name).font(.subheadline).foregroundStyle(.primary)
+                                            .fixedSize(horizontal: true, vertical: false)
                                         Spacer(minLength: 0)
-                                        Text(time).font(.subheadline).monospacedDigit()
+                                        stopTiming(stop).fixedSize(horizontal: true, vertical: false)
                                     }
-                                }
-                                if let duration = stop?.durationMinutes, duration > 0 {
-                                    Text("停留 " + RouteScheduleText.duration(duration))
-                                        .font(.footnote).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(name).font(.subheadline).foregroundStyle(.primary)
+                                            .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 2)
+                                        stopTiming(stop)
+                                            .frame(maxWidth: .infinity, alignment: .trailing)
+                                    }
                                 }
                                 if let leg = scheduledDay?.scheduledRoute(at: routeIndex)?.leg(at: index) {
                                     HStack(alignment: .top, spacing: 6) {
                                         Image(systemName: leg.mode.symbol)
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text([leg.mode.label, leg.serviceNumber].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                                            if !leg.summary.isEmpty { Text(leg.summary) }
+                                        let transport = [leg.mode.label, leg.serviceNumber]
+                                            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                                        ViewThatFits(in: .horizontal) {
+                                            Text([transport, leg.summary].filter { !$0.isEmpty }.joined(separator: " · "))
+                                                .fixedSize(horizontal: true, vertical: false)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(transport).fixedSize(horizontal: false, vertical: true)
+                                                if !leg.summary.isEmpty {
+                                                    Text(leg.summary).fixedSize(horizontal: false, vertical: true)
+                                                }
+                                            }
                                         }
                                     }.font(.footnote).foregroundStyle(.secondary)
                                         .padding(.vertical, 6)
