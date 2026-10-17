@@ -361,7 +361,7 @@ struct HomeView: View {
             }()
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
-                    store.mapViewportInsets = cameraInsets
+                    if proxy.size.width > 0, proxy.size.height > 0 { store.mapViewportInsets = cameraInsets }
                     mapBottomSafeArea = proxy.safeAreaInsets.bottom
                     journeyAvailableHeight = proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
@@ -369,8 +369,11 @@ struct HomeView: View {
                     journeyAvailableHeight = size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
                 .onChange(of: cameraInsets) { _, insets in
+                    // A zero-size first layout cannot tell sidebar from phone layout.
+                    guard proxy.size.width > 0, proxy.size.height > 0 else { return }
                     // Keep interactive panel heights out of AppStore's global view updates.
-                    guard !store.dayMapBrowsing || !journeyPanelMoving else { return }
+                    // The sidebar has no bottom panel, so its motion state is never reset there.
+                    guard layout.usesSidebar || !store.dayMapBrowsing || !journeyPanelMoving else { return }
                     if store.mapViewportInsets != insets { store.mapViewportInsets = insets }
                 }
                 .onChange(of: journeyPanelMoving) { _, moving in
