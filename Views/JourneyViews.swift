@@ -746,6 +746,8 @@ struct JourneyArchiveView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .opacity(detailVisible ? 0 : 1)
+            .animation(reduceMotion ? .linear(duration: 0.15) :
+                .timingCurve(0.16, 0.86, 0.28, 1, duration: detailVisible ? 0.60 : 0.30), value: detailVisible)
             Spacer(minLength: 16)
             Button(action: onOpenSettings) {
                 Label("设置", systemImage: "gearshape").foregroundStyle(.secondary)
