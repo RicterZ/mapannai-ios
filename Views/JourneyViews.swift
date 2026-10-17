@@ -258,7 +258,7 @@ struct JourneyDaysContents: View {
                             }
                         }
                         .contentMargins(.top, 0, for: .scrollContent)
-                        .frame(width: 354, alignment: .top).id(day.id)
+                        .frame(width: 390, alignment: .top).id(day.id)
                     }
             }
             .scrollTargetLayout()
@@ -266,6 +266,7 @@ struct JourneyDaysContents: View {
         }
         .contentMargins(.top, 0, for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
+        .scrollIndicators(.hidden, axes: .horizontal)
         .accessibilityIdentifier("ipad-journey-horizontal-days")
         .padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 24)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { landscapeAvailableHeight = $0 }

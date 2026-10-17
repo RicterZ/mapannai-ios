@@ -371,20 +371,13 @@ struct JourneyDayCardContent: View {
             if summary.count == 0 {
                 Text("还没有安排地点").font(.subheadline).foregroundStyle(.secondary)
             } else {
-                JourneyRoutePreview(summary: summary, expanded: sharing || expandsRoutePreview)
+                JourneyRoutePreview(summary: summary, expanded: sharing || expandsRoutePreview, scheduledDay: expandsRoutePreview ? day : nil)
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    placeCount
-                    Spacer(minLength: 4)
-                    temperature
-                }
-                VStack(alignment: .leading, spacing: 6) { placeCount; temperature }
-            }
+            if maximumCardHeight == nil { cardFooter }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .modifier(JourneyCardHeightLimit(maximumHeight: maximumCardHeight))
+            .modifier(JourneyCardHeightLimit(maximumHeight: maximumCardHeight, footer: cardFooter))
             .backgroundPreferenceValue(WeatherPhotoBounds.self) { bounds in
                 GeometryReader { geometry in
                     if let code = (shareWeather ?? dayWeather)?.weatherCode, let style = JourneyWeatherStyle(code: code) {
@@ -457,6 +450,17 @@ struct JourneyDayCardContent: View {
             .accessibilityIdentifier("day-weather-temperature")
         }
     }
+    private var cardFooter: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                placeCount
+                Spacer(minLength: 4)
+                temperature
+            }
+            VStack(alignment: .leading, spacing: 6) { placeCount; temperature }
+        }
+    }
+
     private var dayTitle: some View {
         Text(String(format: "%02d", index + 1))
             .font(.largeTitle.weight(.regular)).monospacedDigit()
@@ -498,6 +502,7 @@ private struct WeatherPhotoBounds: PreferenceKey {
 private struct JourneyRoutePreview: View {
     let summary: JourneyDaySummary
     var expanded = false
+    var scheduledDay: TripDay? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -515,10 +520,34 @@ private struct JourneyRoutePreview: View {
                                 Rectangle().fill(Color(uiColor: .separator)).frame(width: 1)
                                     .opacity(index < shown.count - 1 || names.count > shown.count ? 1 : 0)
                             }.frame(width: 10).accessibilityHidden(true)
-                            Text(name).font(.subheadline).foregroundStyle(.primary)
-                                .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 2)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.bottom, index < shown.count - 1 || names.count > shown.count ? 12 : 0)
+                            VStack(alignment: .leading, spacing: 9) {
+                                let visit = scheduledDay?.scheduledRoute(at: routeIndex)?.stops
+                                let stop = visit.flatMap { $0.indices.contains(index) ? $0[index] : nil }
+                                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                    Text(name).font(.subheadline).foregroundStyle(.primary)
+                                        .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    if let time = stop?.startTime, !time.isEmpty {
+                                        Spacer(minLength: 0)
+                                        Text(time).font(.subheadline).monospacedDigit()
+                                    }
+                                }
+                                if let duration = stop?.durationMinutes, duration > 0 {
+                                    Text("停留 " + RouteScheduleText.duration(duration))
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                }
+                                if let leg = scheduledDay?.scheduledRoute(at: routeIndex)?.leg(at: index) {
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Image(systemName: leg.mode.symbol)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text([leg.mode.label, leg.serviceNumber].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                                            if !leg.summary.isEmpty { Text(leg.summary) }
+                                        }
+                                    }.font(.footnote).foregroundStyle(.secondary)
+                                        .padding(.vertical, 6)
+                                }
+                            }
+                            .padding(.bottom, index < shown.count - 1 || names.count > shown.count ? 16 : 0)
                         }.fixedSize(horizontal: false, vertical: true)
                     }
                     if names.count > shown.count {
@@ -546,19 +575,20 @@ private struct JourneyRoutePreview: View {
 }
 
 /// Only landscape tablet chapters cap their body; the date heading stays outside.
-private struct JourneyCardHeightLimit: ViewModifier {
+private struct JourneyCardHeightLimit<Footer: View>: ViewModifier {
     let maximumHeight: CGFloat?
-    @State private var contentHeight: CGFloat = 1
+    let footer: Footer
 
     @ViewBuilder func body(content: Content) -> some View {
         if let maximumHeight {
-            ScrollView(.vertical) {
-                content
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            VStack(spacing: 0) {
+                ScrollView(.vertical) {
+                    content.fixedSize(horizontal: false, vertical: true)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                footer.padding(16)
             }
-            .scrollDisabled(contentHeight <= maximumHeight)
-            .frame(height: min(contentHeight, maximumHeight))
+            .frame(height: maximumHeight)
         } else {
             content
         }
