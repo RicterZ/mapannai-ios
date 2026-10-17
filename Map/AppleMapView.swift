@@ -143,7 +143,7 @@ struct AppleMapRenderer: UIViewRepresentable {
         func focus(_ map: MKMapView, command: CameraCommand) {
             guard !command.points.isEmpty else { return }
             let insets = command.viewportInsets(base: store.mapViewportInsets, height: map.bounds.height,
-                bottomSafeArea: map.safeAreaInsets.bottom, bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
+                bottomSafeArea: map.safeAreaInsets.bottom, bottomSheet: store.mapUsesBottomSheet)
             let padding = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
             if command.revealDraft, let point = command.points.first {
                 let screen = map.convert(Pin.coordinate(point), toPointTo: map)

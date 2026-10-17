@@ -362,10 +362,14 @@ struct HomeView: View {
             mapContent(layout: layout, topInset: proxy.safeAreaInsets.top, bottomInset: proxy.safeAreaInsets.bottom, leftInset: proxy.safeAreaInsets.leading)
                 .onAppear {
                     store.mapViewportInsets = cameraInsets
+                    store.mapSidebarWidth = layout.usesSidebar ? layout.sidebarWidth : nil
+                    store.mapUsesBottomSheet = !layout.usesSidebar
                     mapBottomSafeArea = proxy.safeAreaInsets.bottom
                     journeyAvailableHeight = proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
                 .onChange(of: proxy.size) { _, size in
+                    store.mapSidebarWidth = layout.usesSidebar ? layout.sidebarWidth : nil
+                    store.mapUsesBottomSheet = !layout.usesSidebar
                     journeyAvailableHeight = size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
                 }
                 .onChange(of: cameraInsets) { _, insets in
