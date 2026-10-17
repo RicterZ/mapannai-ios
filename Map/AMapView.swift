@@ -240,7 +240,7 @@ struct AMapNativeRenderer: UIViewRepresentable {
         }
         private func padding(_ map: MAMapView, command: CameraCommand? = nil) -> UIEdgeInsets {
             let insets = (command ?? CameraCommand(points: [])).viewportInsets(base: store.mapViewportInsets,
-                height: map.bounds.height, bottomSafeArea: map.safeAreaInsets.bottom,
+                height: map.bounds.height, width: map.bounds.width, bottomSafeArea: map.safeAreaInsets.bottom,
                 bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
             return UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
         }

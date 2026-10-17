@@ -175,7 +175,7 @@ struct GoogleMapRenderer: UIViewRepresentable {
         }
         func focus(_ map: GMSMapView, _ command: CameraCommand) {
             guard let first = command.points.first else { return }
-            let insets = command.viewportInsets(base: store.mapViewportInsets, height: map.bounds.height,
+            let insets = command.viewportInsets(base: store.mapViewportInsets, height: map.bounds.height, width: map.bounds.width,
                 bottomSafeArea: map.safeAreaInsets.bottom, bottomSheet: UIDevice.current.userInterfaceIdiom != .pad)
             map.padding = UIEdgeInsets(top: insets.top, left: insets.left, bottom: insets.bottom, right: insets.right)
             if command.revealDraft {

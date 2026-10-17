@@ -233,6 +233,27 @@ final class CoreTests: XCTestCase {
         let ipad = command.viewportInsets(base: collapsed, height: 852, bottomSafeArea: 34, bottomSheet: false)
         XCTAssertEqual(ipad, collapsed)
     }
+    @MainActor func testSidebarMarkerFocusAnticipatesRightDetailPanel() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let layout = MapLayout(width: 1133, height: 744, regularWidth: true, expanded: true)
+        let base = layout.insets
+        store.mapViewportInsets = base
+        store.focus(store.markers[0])
+        let command = try XCTUnwrap(store.camera)
+        let anticipated = command.viewportInsets(base: base, height: 744, width: 1133,
+            bottomSafeArea: 20, bottomSheet: false)
+        XCTAssertEqual(anticipated.right, layout.sidebarWidth + 24)
+        XCTAssertEqual(anticipated.left, base.left)
+        XCTAssertEqual(store.mapViewportInsets, base)
+        XCTAssertEqual(command.viewportInsets(base: anticipated, height: 744, width: 1133,
+            bottomSafeArea: 20, bottomSheet: false), anticipated)
+        let ordinary = CameraCommand(points: command.points)
+        XCTAssertEqual(ordinary.viewportInsets(base: base, height: 744, width: 1133,
+            bottomSafeArea: 20, bottomSheet: false), base)
+        XCTAssertEqual(command.viewportInsets(base: base, height: 1133, width: 744,
+            bottomSafeArea: 20, bottomSheet: false), base)
+    }
+
     @MainActor func testCoverDetailUsesSameHalfHeightCameraOcclusion() {
         let store = AppStore(settings: Settings(), demo: true)
         var marker = store.markers[1]

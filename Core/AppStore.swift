@@ -1849,7 +1849,7 @@ struct CameraCommand: Identifiable {
     var revealDraft = false
     var bottomSheetFraction: Double? = nil
     var bottomSheetHeight: Double? = nil
-    func viewportInsets(base: MapViewportInsets, height: Double, bottomSafeArea: Double,
+    func viewportInsets(base: MapViewportInsets, height: Double, width: Double = 0, bottomSafeArea: Double,
                         bottomSheet: Bool) -> MapViewportInsets {
         var insets = base
         if let bottomSheetFraction {
@@ -1862,6 +1862,12 @@ struct CameraCommand: Identifiable {
         if bottomSheet, let detailLayout {
             // The journey panel collapses when details open; its previous full height must not shift the camera.
             insets.bottom = detailLayout.occlusion(height: height, bottomSafeArea: bottomSafeArea) + 25
+        }
+        if !bottomSheet, detailLayout != nil,
+           MapLayout(width: width, height: height, regularWidth: true, expanded: true).usesSidebar {
+            // Selection publishes the camera before SwiftUI publishes the new detail sidebar insets.
+            let layout = MapLayout(width: width, height: height, regularWidth: true, expanded: true)
+            insets.right = layout.sidebarWidth + 24
         }
         // Keep a visible region without truncating a half-height or taller detail sheet.
         insets.bottom = min(insets.bottom, max(0, height - insets.top - 80))
