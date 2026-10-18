@@ -26,7 +26,17 @@ struct RouteScheduleEditor: View {
         }.interactiveDismissDisabled(submitting)
     }
     private var editorContent: some View {
-        Group {
+        editorScroll
+            .navigationTitle(request.isTransport ? "交通安排" : "游览安排")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden()
+            .toolbarBackground(Color(uiColor: .systemBackground), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar { scheduleToolbar }
+            .onAppear(perform: loadSchedule)
+            .interactiveDismissDisabled(submitting)
+    }
+    private var editorScroll: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     endpoints
@@ -38,19 +48,16 @@ struct RouteScheduleEditor: View {
                 }.font(.subheadline).padding(.horizontal, 24).padding(.vertical, 16)
                     .frame(maxWidth: landscapeEditor && !typeSize.isAccessibilitySize ? 1040 : 560).frame(maxWidth: .infinity)
             }
-            .onGeometryChange(for: Bool.self) {
-                UIDevice.current.userInterfaceIdiom == .pad && $0.size.width >= 900 && $0.size.width > $0.size.height
+            .onGeometryChange(for: Bool.self) { geometry in
+                let size = geometry.size
+                return UIDevice.current.userInterfaceIdiom == .pad && size.width >= 900 && size.width > size.height
             } action: { landscapeEditor = $0 }
             .accessibilityIdentifier("schedule-editor-scroll")
             .background(Color(uiColor: .systemBackground))
             .scrollDismissesKeyboard(.interactively)
             .disabled(submitting)
-            .navigationTitle(request.isTransport ? "交通安排" : "游览安排")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden()
-            .toolbarBackground(Color(uiColor: .systemBackground), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
+    }
+    @ToolbarContentBuilder private var scheduleToolbar: some ToolbarContent {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { goBack() } label: {
                         Image(systemName: "chevron.left")
@@ -67,8 +74,8 @@ struct RouteScheduleEditor: View {
                         .disabled(submitting || store.saving)
                         .accessibilityIdentifier("schedule-save")
                 }.journeyBareBackground
-            }
-            .onAppear {
+    }
+    private func loadSchedule() {
                 mode = leg?.mode ?? .walking; serviceNumber = leg?.serviceNumber ?? ""
                 let start = request.isTransport ? leg?.startTime : stop.startTime
                 let minutes = request.isTransport ? leg?.durationMinutes : stop.durationMinutes
@@ -80,9 +87,6 @@ struct RouteScheduleEditor: View {
                     let parts = start.split(separator: ":").compactMap { Int($0) }
                     if parts.count == 2 { time = Calendar.current.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: .now) ?? .now }
                 }
-            }
-        }
-        .interactiveDismissDisabled(submitting)
     }
     private var scheduleFields: some View {
         VStack(alignment: .leading, spacing: 22) {
