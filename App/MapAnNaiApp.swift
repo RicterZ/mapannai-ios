@@ -18,6 +18,12 @@ import SwiftUI
         WindowGroup {
             ZStack {
                 #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--journey-guide-entry-review"), let trip = store.trips.first {
+                    NavigationStack { JourneyDaysContents(store: store, trip: trip) }.zIndex(100)
+                }
+                if ProcessInfo.processInfo.arguments.contains("--journey-guide-review"), let trip = store.trips.first {
+                    JourneyGuideReview(store: store, trip: trip).zIndex(100)
+                }
                 if ProcessInfo.processInfo.arguments.contains("--temperature-review") {
                     DayTemperatureReview().zIndex(100)
                 }
@@ -25,7 +31,7 @@ import SwiftUI
                     WidgetStyleReview().zIndex(100)
                 }
                 #endif
-                if !ProcessInfo.processInfo.arguments.contains("--widget-style-review") && !ProcessInfo.processInfo.arguments.contains("--temperature-review") {
+                if !ProcessInfo.processInfo.arguments.contains("--journey-guide-entry-review") && !ProcessInfo.processInfo.arguments.contains("--journey-guide-review") && !ProcessInfo.processInfo.arguments.contains("--widget-style-review") && !ProcessInfo.processInfo.arguments.contains("--temperature-review") {
                 HomeView(store: store, settings: settings)
                     .allowsHitTesting(!launchVisible)
                     .accessibilityHidden(launchVisible)

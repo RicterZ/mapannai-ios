@@ -14,6 +14,7 @@ struct RouteScheduleEditor: View {
     @State private var time = Date.now
     @State private var duration = ""
     @State private var note = ""
+    @State private var isHighlight = false
     @State private var error: String?
     @State private var submitting = false
     private var leg: ChainLeg? { request.isTransport ? request.route.leg(at: request.position) : nil }
@@ -42,6 +43,8 @@ struct RouteScheduleEditor: View {
                         }.frame(minHeight: 44).padding(.top, 12)
                             .overlay(alignment: .bottom) { Divider() }
                     }
+                    Toggle(request.isTransport ? "重点行程" : "重点地点", isOn: $isHighlight)
+                        .accessibilityIdentifier("schedule-highlight")
                     if !request.isTransport { Divider() }
                     VStack(spacing: 0) {
                         HStack(spacing: 12) {
@@ -85,7 +88,7 @@ struct RouteScheduleEditor: View {
                     Text("按行程当天的当地时间填写")
                         .font(.caption).foregroundStyle(.tertiary)
                     if let error { Text(error).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("schedule-error") }
-                    if leg != nil || (!request.isTransport && (!stop.summary.isEmpty || stop.note != nil)) {
+                    if leg != nil || (!request.isTransport && (!stop.summary.isEmpty || stop.note != nil || stop.isHighlight == true)) {
                         Button("清除安排", role: .destructive) { save(clear: true) }
                             .font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
                             .accessibilityIdentifier("schedule-clear")
@@ -130,6 +133,7 @@ struct RouteScheduleEditor: View {
                 let start = request.isTransport ? leg?.startTime : stop.startTime
                 let minutes = request.isTransport ? leg?.durationMinutes : stop.durationMinutes
                 note = (request.isTransport ? leg?.note : stop.note) ?? ""
+                isHighlight = (request.isTransport ? leg?.isHighlight : stop.isHighlight) == true
                 duration = minutes.map(String.init) ?? ""
                 timeEnabled = start != nil
                 if let start {
@@ -187,6 +191,7 @@ struct RouteScheduleEditor: View {
         let clock = String(format: "%02d:%02d", components.hour ?? 0, components.minute ?? 0)
         let null = NSNull()
         var fields: [String: Any] = [
+            "isHighlight": !clear && isHighlight,
             "startTime": !clear && timeEnabled ? clock as Any : null,
             "durationMinutes": !clear ? Int(cleanedDuration).map { $0 as Any } ?? null : null,
             "note": !clear && !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? note.trimmingCharacters(in: .whitespacesAndNewlines) as Any : null

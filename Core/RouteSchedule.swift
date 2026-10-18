@@ -22,6 +22,7 @@ struct ChainStop: Codable, Hashable, Identifiable {
     var startTime: String? = nil
     var durationMinutes: Int? = nil
     var note: String? = nil
+    var isHighlight: Bool? = nil
     var summary: String { RouteScheduleText.summary(time: startTime, duration: durationMinutes) }
 }
 struct ChainLeg: Codable, Hashable {
@@ -32,6 +33,7 @@ struct ChainLeg: Codable, Hashable {
     var startTime: String? = nil
     var durationMinutes: Int? = nil
     var note: String? = nil
+    var isHighlight: Bool? = nil
     var summary: String { RouteScheduleText.summary(time: startTime, duration: durationMinutes) }
 }
 struct RouteChain: Codable, Hashable, Identifiable {
@@ -54,7 +56,7 @@ struct RouteChain: Codable, Hashable, Identifiable {
         return copy
     }
     var hasSchedule: Bool {
-        !legs.isEmpty || !(inactiveLegs ?? []).isEmpty || stops.contains { $0.startTime != nil || $0.durationMinutes != nil || $0.note != nil }
+        !legs.isEmpty || !(inactiveLegs ?? []).isEmpty || stops.contains { $0.startTime != nil || $0.durationMinutes != nil || $0.note != nil || $0.isHighlight != nil }
     }
     func leg(at position: Int) -> ChainLeg? {
         guard stops.indices.contains(position), stops.indices.contains(position + 1) else { return nil }

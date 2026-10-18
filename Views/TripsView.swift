@@ -1057,8 +1057,9 @@ struct ChainEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).foregroundStyle(Color(uiColor: .label))
                         .accessibilityLabel("取消").accessibilityIdentifier("cancel-chain-editor")
-                }
+                }.journeyBareBackground
             }
         }.tint(Color(uiColor: .label)).onAppear { ids = request.ids }.interactiveDismissDisabled(false)
     }

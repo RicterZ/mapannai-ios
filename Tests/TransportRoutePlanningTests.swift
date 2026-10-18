@@ -158,7 +158,7 @@ final class TransportRoutePlanningTests: XCTestCase {
             let endpoints = MapZoomPresentation.overviewCurve(route)
             XCTAssertEqual(endpoints.first,points[i-1])
             XCTAssertEqual(endpoints.last,points[i])
-            XCTAssertGreaterThan(endpoints.count,2)
+            XCTAssertEqual(endpoints, route.points)
             var coordinates = endpoints.map(AppleMapRenderer.Pin.coordinate)
             let line = AppleMapRenderer.Line(coordinates:&coordinates,count:coordinates.count); line.overview = true
             map.addOverlay(line,level:.aboveRoads)

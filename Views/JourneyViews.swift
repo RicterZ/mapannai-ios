@@ -27,7 +27,7 @@ struct JourneyDaysContents: View {
     @State private var landscapeHeaderHeight: CGFloat = 57
     @State private var targetedDayID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sharingTrip = false
+    @State private var showingGuide = false
     @State private var editing = false
     @State private var deletion: TripDay?
     @State private var pendingInitialDayID: String?
@@ -64,6 +64,18 @@ struct JourneyDaysContents: View {
                 }
             }
             Group {
+            Section {
+                JourneyActionGroup(compact: true) {
+                    Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
+                        .accessibilityIdentifier("journey-guide")
+                    Button { editing = true } label: { Label("编辑旅途", systemImage: "pencil") }
+                        .accessibilityIdentifier("journey-edit-trip")
+                    Button { store.beginDayEditor(trip: trip) } label: { Label("添加一天", systemImage: "plus") }
+                        .disabled(store.saving).accessibilityIdentifier("journey-add-day")
+                }.listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+
+            }
 
             ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
                 Section {
@@ -128,27 +140,7 @@ struct JourneyDaysContents: View {
                     }
                 }
             }
-            Section {
-                JourneyActionGroup(compact: true) {
-                    Button { sharingTrip = true } label: { Label("分享长图", systemImage: "square.and.arrow.up") }
-                        .accessibilityIdentifier("journey-share-image")
-                    if !unscheduledPlaces.isEmpty || !store.demo {
-                        Button { store.beginAddingPlace(tripID: trip.id) } label: {
-                            Label("添加地点", systemImage: "plus")
-                        }.accessibilityIdentifier("trip-add-place")
-                    }
-                    Button { store.beginDayEditor(trip: trip) } label: { Label("添加一天", systemImage: "plus") }
-                        .disabled(store.saving)
-                        .accessibilityIdentifier("journey-add-day")
-                    if archiveColorIndex == nil {
-                        Button { editing = true } label: {
-                            Label("编辑旅途", systemImage: "pencil")
-                        }
-                            .accessibilityIdentifier("journey-edit-trip")
-                    }
-                }.listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-            }
+
             }
             .opacity(archiveContentVisible ? 1 : 0)
             .background {
@@ -190,7 +182,7 @@ struct JourneyDaysContents: View {
             })
         }
         }
-            .sheet(isPresented: $sharingTrip) { JourneyShareView(trip: trip, markers: store.markers) }
+            .fullScreenCover(isPresented: $showingGuide) { JourneyGuideView(store: store, trip: trip, markers: store.markers) }
             .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: Binding(get: { archiveColorIndex != nil && store.dayEditorDraft?.tripID == trip.id ? store.dayEditorDraft : nil },
                 set: { if $0 == nil, archiveColorIndex != nil, store.dayEditorDraft?.tripID == trip.id { store.dayEditorDraft = nil } })) { draft in
@@ -279,15 +271,12 @@ struct JourneyDaysContents: View {
     }
 
     @ViewBuilder private var landscapeActionButtons: some View {
-        Button { store.beginDayEditor(trip: trip) } label: {
-            Label("添加一天", systemImage: "plus")
-        }.disabled(store.saving).accessibilityIdentifier("journey-add-day")
-        Button { store.beginAddingPlace(tripID: trip.id) } label: {
-            Label("添加地点", systemImage: "plus")
-        }.accessibilityIdentifier("trip-add-place")
-        Button { sharingTrip = true } label: {
-            Label("分享长图", systemImage: "square.and.arrow.up")
-        }.accessibilityIdentifier("journey-share-image")
+        Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
+            .accessibilityIdentifier("journey-guide")
+        Button { editing = true } label: { Label("编辑旅途", systemImage: "pencil") }
+            .accessibilityIdentifier("journey-edit-trip")
+        Button { store.beginDayEditor(trip: trip) } label: { Label("添加一天", systemImage: "plus") }
+            .disabled(store.saving).accessibilityIdentifier("journey-add-day")
     }
 
     @ViewBuilder private func dayActions(_ day: TripDay) -> some View {
@@ -383,6 +372,7 @@ struct JourneyArchiveView: View {
     @State private var initialDayID: String?
     @State private var creating = false
     @State private var editing: Trip?
+    @State private var sharing: Trip?
     @State private var deleting: Trip?
     @State private var independentDetail: Marker?
     @State private var expandedYear: Int?
@@ -567,11 +557,11 @@ struct JourneyArchiveView: View {
             }.journeyBareBackground
             ToolbarItem(placement: .topBarTrailing) {
                 if let trip = openedTrip, !closing {
-                    Button { editing = trip } label: {
-                        Image(systemName: "square.and.pencil").font(.system(size: 20, weight: .regular))
+                    Button { sharing = trip } label: {
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 20, weight: .regular))
                             .frame(width: 44, height: 44).contentShape(Rectangle())
                     }.buttonStyle(.plain).foregroundStyle(Color(uiColor: .label)).tint(Color(uiColor: .label))
-                        .accessibilityLabel("编辑旅途").accessibilityIdentifier("journey-edit-trip")
+                        .accessibilityLabel("分享旅途").accessibilityIdentifier("journey-share-image")
                 }
             }.journeyBareBackground
         }
@@ -610,6 +600,7 @@ struct JourneyArchiveView: View {
             })
         }
         .fullScreenCover(isPresented: $creating) { TripEditorView(store: store, trip: nil) }
+        .sheet(item: $sharing) { JourneyShareView(trip: $0, markers: store.markers) }
         .fullScreenCover(item: $editing) { TripEditorView(store: store, trip: $0) }
         .sheet(item: $deleting) { TripDeletionView(store: store, trip: $0) }
         .fullScreenCover(item: Binding(get: { mapVisible || store.tripSaveRecovery?.trip == nil ? nil : store.tripSaveRecovery }, set: { if !mapVisible { store.tripSaveRecovery = $0 } })) { draft in

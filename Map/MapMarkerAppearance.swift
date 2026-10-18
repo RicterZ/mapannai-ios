@@ -39,11 +39,11 @@ import UIKit
         let key = "day/\(number)/\(focused)"
         if let image = cache[key] { return image }
         let image = UIGraphicsImageRenderer(size: CGSize(width: 44, height: 44)).image { _ in
-            let circle = UIBezierPath(ovalIn: CGRect(x: 5, y: 5, width: 34, height: 34))
+            let circle = UIBezierPath(ovalIn: CGRect(x: 8, y: 8, width: 28, height: 28))
             (focused ? UIColor.black : UIColor.systemBlue).setFill(); circle.fill()
             UIColor.white.setStroke(); circle.lineWidth = 2; circle.stroke()
             let text = String(number) as NSString
-            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 16, weight: .semibold), .foregroundColor: UIColor.white]
+            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: UIColor.white]
             let size = text.size(withAttributes: attributes)
             text.draw(at: CGPoint(x: (44 - size.width) / 2, y: (44 - size.height) / 2), withAttributes: attributes)
         }

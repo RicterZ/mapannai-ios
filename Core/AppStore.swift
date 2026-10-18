@@ -334,14 +334,27 @@ struct DayEditorDraft: Identifiable {
         if dayMapBrowsing { selectedMarker = nil }
         dayMapBrowsing = false; dayMapFocusID = nil
     }
+    func guideRoutes(trip: Trip, markers: [Marker]) async throws -> [DisplayRoute] {
+        let processor = RouteProcessing()
+        let cache = routeCache, provider = mapConfiguration.directionsProvider, server = settings.baseURL
+        let segments = try await processor.build(days: trip.days, markers: markers, selectedTrip: trip,
+            previous: displayRoutes, preserve: true)
+        return try await processor.restoringCachedGeometry(segments, cache: cache, provider: provider, server: server).map(\.display)
+    }
     func showWholeDayOnMap() {
         guard dayMapBrowsing, let day else { return }
         dayMapCameraFollowing = true
-        let dayIDs = Set(day.markerIds + day.chains.flatMap { $0 })
-        let points = markers.filter { dayIDs.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
-            + mapDisplayRoutes.filter { $0.dayID == day.id }.flatMap(\.points)
+        let points = dayCameraPoints(day)
         guard !points.isEmpty else { return }
         camera = CameraCommand(points: points, singlePointZoom: 15)
+    }
+    private func dayCameraPoints(_ day: TripDay) -> [Coordinate] {
+        let ids = Set(day.markerIds + day.chains.flatMap { $0 })
+        let members = markers.filter { ids.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
+        // Include route bends, not just stops, when fitting the visible itinerary.
+        let geometry = displayRoutes.filter { $0.dayID == day.id && $0.tripID == day.tripId }.flatMap(\.points)
+        var seen = Set<Coordinate>()
+        return (members + geometry).filter { $0.isValid && seen.insert($0).inserted }
     }
     func focusDayMapMarker(_ id: String, moveCamera: Bool = true) {
         guard dayMapBrowsing, let marker = mapMarkers.first(where: { $0.id == id }) else { return }
@@ -811,6 +824,9 @@ struct DayEditorDraft: Identifiable {
                     route.stops[si].startTime = fields["startTime"] as? String
                     route.stops[si].durationMinutes = fields["durationMinutes"] as? Int
                     route.stops[si].note = fields["note"] as? String
+                    if let highlight = fields["isHighlight"] {
+                        route.stops[si].isHighlight = highlight as? Bool
+                    }
                 }
                 if let fields = (patch["legs"] as? [[String: Any]])?.first,
                    let from = fields["fromStopId"] as? String, let to = fields["toStopId"] as? String {
@@ -1176,11 +1192,13 @@ struct DayEditorDraft: Identifiable {
         }
         if day == nil { endDayMapBrowsing() }
         tripID = trip?.id; dayID = day?.id; selectedMarker = nil
+        if dayMapBrowsing, let day {
+            dayMapFocusID = DayMapJourney.stops(day: day, markers: markers).first?.marker.id
+        }
         rebuildRoutes(preservingPlannedGeometry: true)
         guard focus else { return }
         if let day {
-            let ids = Set(day.markerIds + day.chains.flatMap { $0 })
-            let points = markers.filter { ids.contains($0.id) && $0.coordinates.isValid }.map(\.coordinates)
+            let points = dayCameraPoints(day)
             if !points.isEmpty { camera = CameraCommand(points: points, singlePointZoom: 15) }
         } else if let trip {
             let ids = Set((trip.markerIds ?? []) + trip.days.flatMap { $0.markerIds + $0.chains.flatMap { $0 } })

@@ -2,6 +2,35 @@ import XCTest
 @testable import MapAnNai
 
 final class DayCameraTests: XCTestCase {
+    @MainActor func testGuideBuildsWholeTripWithoutChangingLiveSelectionOrCamera() async throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = try XCTUnwrap(store.trip)
+        let camera = store.camera?.id, dayID = store.dayID
+        let routes = try await store.guideRoutes(trip: trip, markers: store.markers)
+        XCTAssertFalse(routes.isEmpty)
+        XCTAssertTrue(Set(routes.map(\.dayID)).isSubset(of: Set(trip.days.map(\.id))))
+        XCTAssertEqual(store.dayID, dayID)
+        XCTAssertEqual(store.camera?.id, camera)
+    }
+    @MainActor func testSwitchDayFitsRouteBendsAndWholeDayUsesSameBounds() throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let trip = try XCTUnwrap(store.trip)
+        let day = trip.days[1]
+        let bend = Coordinate(latitude: 32.5, longitude: 122.5)
+        store.displayRoutes = [DisplayRoute(id: "bend", dayID: day.id, tripID: trip.id,
+            colorIndex: 0, points: [store.markers[3].coordinates, bend, store.markers[4].coordinates], isPlanned: true)]
+        store.select(trip: trip, day: day)
+        XCTAssertTrue(store.camera?.points.contains(bend) == true)
+        XCTAssertNil(store.camera?.zoomLevel)
+        let fitted = store.camera?.points
+        store.beginDayMapBrowsing()
+        XCTAssertEqual(store.camera?.points, fitted)
+        store.select(trip: trip, day: trip.days[0])
+        let wholeDayCamera = store.camera?.id
+        if let first = store.dayMapFocusID { store.focusDayMapMarker(first) }
+        XCTAssertEqual(store.camera?.id, wholeDayCamera, "Initial card synchronization must not override whole-day fitting")
+        XCTAssertEqual(Set(store.camera?.points ?? []).count, store.camera?.points.count)
+    }
     @MainActor func testTripSelectionFitsAllValidMembersAndRouteStops() throws {
         let store = AppStore(settings: Settings(), demo: true)
         var trip = try XCTUnwrap(store.trip)

@@ -26,6 +26,7 @@ final class RouteScheduleTests: XCTestCase {
         store.displayRoutes = [DisplayRoute(id: "geometry", dayID: "day", tripID: "trip", colorIndex: 0, points: [Coordinate(latitude: 31, longitude: 121)], isPlanned: true, distance: 500)]
         var updated = day
         updated.routeChains?[0].legs[0].serviceNumber = "G456"
+        updated.routeChains?[0].legs[0].isHighlight = true
         let response = try JSONEncoder().encode(updated)
         let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [MockURLProtocol.self]
         let client = APIClient(baseURL: "https://example.invalid", token: "", session: URLSession(configuration: configuration))
@@ -36,13 +37,15 @@ final class RouteScheduleTests: XCTestCase {
             let leg = (body["legs"] as! [[String: Any]])[0]
             XCTAssertEqual(leg["fromStopId"] as? String, "visit-a")
             XCTAssertEqual(leg["serviceNumber"] as? String, "G456")
+            XCTAssertEqual(leg["isHighlight"] as? Bool, true)
             return (200, response)
         }
         defer { MockURLProtocol.handler = nil }
         let request = RouteScheduleRequest(day: day, route: route, position: 0, isTransport: true, fromTitle: "A", toTitle: "B")
-        let success = await store.saveRouteSchedule(request, patch: ["legs": [["fromStopId": "visit-a", "toStopId": "visit-b", "serviceNumber": "G456"]]], using: client)
+        let success = await store.saveRouteSchedule(request, patch: ["legs": [["fromStopId": "visit-a", "toStopId": "visit-b", "serviceNumber": "G456", "isHighlight": true]]], using: client)
         XCTAssertTrue(success)
         XCTAssertEqual(store.trips[0].days[0].routeChains?[0].legs[0].serviceNumber, "G456")
+        XCTAssertEqual(store.trips[0].days[0].routeChains?[0].legs[0].isHighlight, true)
         XCTAssertEqual(store.displayRoutes.first?.distance, 500)
         XCTAssertEqual(store.displayRoutes.first?.id, "geometry")
     }
@@ -66,6 +69,46 @@ final class RouteScheduleTests: XCTestCase {
         await store.planEditingDistances(for: day) { distances = $0 }
         let calls = await service.calls
         XCTAssertEqual(calls, 1)
+    }
+
+    func testHighlightsDecodeRoundTripAndSurviveDirectedReordering() throws {
+        var day = try JSONDecoder().decode(TripDay.self, from: Data(json.utf8))
+        XCTAssertNil(day.routeChains?[0].stops[0].isHighlight)
+        day.routeChains?[0].stops[0].isHighlight = true
+        day.routeChains?[0].legs[0].isHighlight = true
+        let decoded = try JSONDecoder().decode(TripDay.self, from: JSONEncoder().encode(day))
+        let route = try XCTUnwrap(decoded.routeChains?.first)
+        XCTAssertEqual(route.stops[0].isHighlight, true)
+        XCTAssertEqual(route.legs[0].isHighlight, true)
+        let reversed = route.reordered(to: ["b", "a"])
+        XCTAssertEqual(reversed.stops[1].isHighlight, true)
+        XCTAssertTrue(reversed.legs.isEmpty)
+        XCTAssertEqual(reversed.inactiveLegs?.first?.isHighlight, true)
+        XCTAssertEqual(reversed.reordered(to: ["a", "b"]).legs.first?.isHighlight, true)
+        let highlightOnly = RouteChain(id: "highlight", stops: [ChainStop(id: "a", markerId: "a", isHighlight: true)], legs: [])
+        XCTAssertTrue(highlightOnly.hasSchedule)
+        let nullStop = try JSONDecoder().decode(ChainStop.self, from: Data(#"{"id":"a","markerId":"a","isHighlight":null}"#.utf8))
+        XCTAssertNil(nullStop.isHighlight)
+    }
+
+    @MainActor func testDraftHighlightSaveAndCancellationPreserveOtherScheduleFields() async throws {
+        let day = try JSONDecoder().decode(TripDay.self, from: Data(json.utf8))
+        let settings = Settings()
+        let store = AppStore(settings: settings, demo: false)
+        store.itineraryDraftOnly = true
+        store.trips = [Trip(id: "trip", name: "测试", startDate: day.date, endDate: day.date, days: [day])]
+        for highlight in [true, false] {
+            let current = store.trips[0].days[0]
+            let route = try XCTUnwrap(current.routeChains?.first)
+            let request = RouteScheduleRequest(day: current, route: route, position: 0, isTransport: false, fromTitle: "A", toTitle: nil)
+            let success = await store.saveRouteSchedule(request, patch: ["stops": [["stopId": "visit-a", "isHighlight": highlight, "startTime": "09:30", "durationMinutes": 60, "note": "预约"]]])
+            XCTAssertTrue(success)
+            let updated = store.trips[0].days[0].routeChains?[0].stops[0]
+            XCTAssertEqual(updated?.isHighlight, highlight)
+            XCTAssertEqual(updated?.startTime, "09:30")
+            XCTAssertEqual(updated?.durationMinutes, 60)
+            XCTAssertEqual(updated?.note, "预约")
+        }
     }
 
     private static func body(_ request: URLRequest) -> Data {
