@@ -32,68 +32,8 @@ struct RouteScheduleEditor: View {
                     endpoints
                     let layout = landscapeEditor && !typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(alignment: .top, spacing: 48)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 22))
                     layout {
-                    VStack(alignment: .leading, spacing: 22) {
-                    if request.isTransport {
-                        transportModes
-                        HStack(spacing: 16) {
-                            Text("线路 / 车次")
-                            TextField("选填", text: $serviceNumber)
-                                .multilineTextAlignment(.trailing)
-                                .accessibilityIdentifier("schedule-service")
-                        }.frame(minHeight: 44).padding(.top, 12)
-                            .overlay(alignment: .bottom) { Divider() }
-                    }
-                    Toggle(request.isTransport ? "重点行程" : "重点地点", isOn: $isHighlight)
-                        .accessibilityIdentifier("schedule-highlight")
-                    if !request.isTransport { Divider() }
-                    VStack(spacing: 0) {
-                        HStack(spacing: 12) {
-                            Text(request.isTransport ? "出发时间" : "游览时间")
-                            Spacer(minLength: 0)
-                            if timeEnabled {
-                                DatePicker("时间", selection: $time, displayedComponents: .hourAndMinute)
-                                    .labelsHidden().environment(\.locale, Locale(identifier: "zh_CN"))
-                                    .accessibilityIdentifier("schedule-time")
-                            } else {
-                                Button("未设置") { timeEnabled = true }.foregroundStyle(.secondary)
-                                    .accessibilityIdentifier("schedule-time-toggle")
-                            }
-                            Menu {
-                                Button(timeEnabled ? "清除时间" : "设置时间") { timeEnabled.toggle() }
-                            } label: { Image(systemName: "clock").font(.footnote).foregroundStyle(.primary) }
-                                .accessibilityLabel("时间选项")
-                        }.frame(minHeight: 58)
-                        Divider()
-                        HStack(spacing: 8) {
-                            Text(request.isTransport ? "预计时长" : "游玩时长")
-                            Spacer(minLength: 12)
-                            TextField("选填", text: $duration).keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing).frame(width: 72)
-                                .accessibilityIdentifier("schedule-duration")
-                            Text("分钟").foregroundStyle(.secondary)
-                        }.frame(minHeight: 58)
-                    }
-                    }.frame(maxWidth: .infinity, alignment: .topLeading)
-                    VStack(alignment: .leading, spacing: 22) {
-                    if !landscapeEditor { Divider() }
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("备注").font(.subheadline).foregroundStyle(.secondary)
-                        TextField(request.isTransport ? "站台、集合点或其他提醒" : "入口、预约或其他提醒", text: $note, axis: .vertical)
-                            .lineLimit(5...8)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                            .accessibilityIdentifier("schedule-note")
-                    }
-                    Text("按行程当天的当地时间填写")
-                        .font(.caption).foregroundStyle(.tertiary)
-                    if let error { Text(error).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("schedule-error") }
-                    if leg != nil || (!request.isTransport && (!stop.summary.isEmpty || stop.note != nil || stop.isHighlight == true)) {
-                        Button("清除安排", role: .destructive) { save(clear: true) }
-                            .font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
-                            .accessibilityIdentifier("schedule-clear")
-                    }
-                    }.frame(maxWidth: .infinity, alignment: .topLeading)
+                    scheduleFields
+                    scheduleNotes
                     }
                 }.font(.subheadline).padding(.horizontal, 24).padding(.vertical, 16)
                     .frame(maxWidth: landscapeEditor && !typeSize.isAccessibilitySize ? 1040 : 560).frame(maxWidth: .infinity)
@@ -143,6 +83,72 @@ struct RouteScheduleEditor: View {
             }
         }
         .interactiveDismissDisabled(submitting)
+    }
+    private var scheduleFields: some View {
+        VStack(alignment: .leading, spacing: 22) {
+        if request.isTransport {
+            transportModes
+            HStack(spacing: 16) {
+                Text("线路 / 车次")
+                TextField("选填", text: $serviceNumber)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("schedule-service")
+            }.frame(minHeight: 44).padding(.top, 12)
+                .overlay(alignment: .bottom) { Divider() }
+        }
+        Toggle(request.isTransport ? "重点行程" : "重点地点", isOn: $isHighlight)
+            .accessibilityIdentifier("schedule-highlight")
+        if !request.isTransport { Divider() }
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text(request.isTransport ? "出发时间" : "游览时间")
+                Spacer(minLength: 0)
+                if timeEnabled {
+                    DatePicker("时间", selection: $time, displayedComponents: .hourAndMinute)
+                        .labelsHidden().environment(\.locale, Locale(identifier: "zh_CN"))
+                        .accessibilityIdentifier("schedule-time")
+                } else {
+                    Button("未设置") { timeEnabled = true }.foregroundStyle(.secondary)
+                        .accessibilityIdentifier("schedule-time-toggle")
+                }
+                Menu {
+                    Button(timeEnabled ? "清除时间" : "设置时间") { timeEnabled.toggle() }
+                } label: { Image(systemName: "clock").font(.footnote).foregroundStyle(.primary) }
+                    .accessibilityLabel("时间选项")
+            }.frame(minHeight: 58)
+            Divider()
+            HStack(spacing: 8) {
+                Text(request.isTransport ? "预计时长" : "游玩时长")
+                Spacer(minLength: 12)
+                TextField("选填", text: $duration).keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing).frame(width: 72)
+                    .accessibilityIdentifier("schedule-duration")
+                Text("分钟").foregroundStyle(.secondary)
+            }.frame(minHeight: 58)
+        }
+        }.frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+    private var scheduleNotes: some View {
+        VStack(alignment: .leading, spacing: 22) {
+        if !landscapeEditor { Divider() }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("备注").font(.subheadline).foregroundStyle(.secondary)
+            TextField(request.isTransport ? "站台、集合点或其他提醒" : "入口、预约或其他提醒", text: $note, axis: .vertical)
+                .lineLimit(5...8)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityIdentifier("schedule-note")
+        }
+        Text("按行程当天的当地时间填写")
+            .font(.caption).foregroundStyle(.tertiary)
+        if let error { Text(error).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("schedule-error") }
+        if leg != nil || (!request.isTransport && (!stop.summary.isEmpty || stop.note != nil || stop.isHighlight == true)) {
+            Button("清除安排", role: .destructive) { save(clear: true) }
+                .font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityIdentifier("schedule-clear")
+        }
+        }.frame(maxWidth: .infinity, alignment: .topLeading)
     }
     private func goBack() {
         dismiss()
