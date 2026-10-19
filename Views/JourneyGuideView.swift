@@ -211,11 +211,11 @@ private struct JourneyGuideMap: UIViewRepresentable {
             box.layer.shadowColor = UIColor(red: 0.06, green: 0.09, blue: 0.16, alpha: 1).cgColor
             box.layer.shadowOpacity = 0.08; box.layer.shadowRadius = 10; box.layer.shadowOffset = CGSize(width: 0, height: 4)
             box.isUserInteractionEnabled = false
-            let content = stack(.vertical, spacing: 8)
-            let header = stack(.horizontal, spacing: 10); header.alignment = .top
+            let content = stack(.vertical, spacing: 6)
+            let header = stack(.horizontal, spacing: 7); header.alignment = .top
             let icon = UIView(); icon.backgroundColor = card.color.withAlphaComponent(0.14); icon.layer.cornerRadius = 8
-            icon.widthAnchor.constraint(equalToConstant: 28).isActive = true
-            icon.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
+            icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
             let artwork: UIView
             if let emoji = card.emoji, let name = PlaceIconAssets.name(for: emoji), let image = UIImage(named: name) {
                 let imageView = UIImageView(image: image); imageView.contentMode = .scaleAspectFit; artwork = imageView
@@ -223,9 +223,17 @@ private struct JourneyGuideMap: UIViewRepresentable {
                 let imageView = UIImageView(image: UIImage(systemName: card.icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)))
                 imageView.tintColor = card.color; imageView.contentMode = .scaleAspectFit; artwork = imageView
             }
-            icon.addSubview(artwork); artwork.frame = CGRect(x: 5, y: 5, width: 18, height: 18)
+            icon.addSubview(artwork); artwork.frame = CGRect(x: 3, y: 3, width: 16, height: 16)
             let identity = stack(.vertical, spacing: 2)
-            identity.addArrangedSubview(label(card.title, size: 13, weight: .semibold, lines: 2))
+            let titleRow = stack(.horizontal, spacing: 6); titleRow.alignment = .top
+            titleRow.addArrangedSubview(label(card.title, size: 13, weight: .semibold, lines: 2))
+            if trip.days.count > 1, card.visits.count == 1, let visit = card.visits.first {
+                let day = label("第\(visit.day)天", size: 11, color: visit.color, weight: .semibold)
+                day.setContentCompressionResistancePriority(.required, for: .horizontal)
+                day.setContentHuggingPriority(.required, for: .horizontal)
+                titleRow.addArrangedSubview(day)
+            }
+            identity.addArrangedSubview(titleRow)
             if !card.subtitle.isEmpty { identity.addArrangedSubview(label(card.subtitle, size: 11, color: .secondaryLabel)) }
             header.addArrangedSubview(icon); header.addArrangedSubview(identity); content.addArrangedSubview(header)
             for (index, visit) in card.visits.enumerated() {
@@ -234,29 +242,28 @@ private struct JourneyGuideMap: UIViewRepresentable {
                     separator.heightAnchor.constraint(equalToConstant: 1).isActive = true; content.addArrangedSubview(separator)
                 }
                 let section = stack(.vertical, spacing: 6)
-                let row = stack(.horizontal, spacing: 6); row.alignment = .center
-                func badge(_ text: String, color: UIColor, background: UIColor) -> UIView {
-                    let wrapper = UIView(); wrapper.backgroundColor = background; wrapper.layer.cornerRadius = 4
-                    let textView = label(text, size: 11, color: color, weight: .semibold)
-                    wrapper.addSubview(textView); textView.translatesAutoresizingMaskIntoConstraints = false
-                    NSLayoutConstraint.activate([textView.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 6), textView.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -6), textView.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 2), textView.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -2)])
-                    wrapper.setContentCompressionResistancePriority(.required, for: .horizontal)
-                    return wrapper
+                var metadata: [String] = []
+                if trip.days.count > 1 {
+                    if card.visits.count > 1 { metadata.append("第\(visit.day)天") }
+                    let parts = visit.date.split(separator: "-")
+                    metadata.append(parts.count == 3 ? "\(Int(parts[1]) ?? 0)月\(Int(parts[2]) ?? 0)日" : visit.date)
                 }
-                row.addArrangedSubview(badge("第\(visit.day)天", color: .white, background: visit.color))
-                let parts = visit.date.split(separator: "-")
-                let date = parts.count == 3 ? "\(Int(parts[1]) ?? 0)月\(Int(parts[2]) ?? 0)日" : visit.date
-                row.addArrangedSubview(label(date, size: 11, color: .tertiaryLabel))
-                let spacer = UIView(); spacer.setContentHuggingPriority(.defaultLow, for: .horizontal); row.addArrangedSubview(spacer)
-                if let time = visit.time { row.addArrangedSubview(badge(time, color: .label, background: visit.color.withAlphaComponent(0.1))) }
-                if let minutes = visit.duration { row.addArrangedSubview(label(RouteScheduleText.duration(minutes), size: 11, color: .secondaryLabel)) }
-                section.addArrangedSubview(row)
-                if let note = visit.note, !note.isEmpty { section.addArrangedSubview(label(note, size: 12, color: .secondaryLabel, lines: 3)) }
+                if let time = visit.time, !time.isEmpty { metadata.append(time) }
+                if let minutes = visit.duration { metadata.append(RouteScheduleText.duration(minutes)) }
+                if !metadata.isEmpty {
+                    let text = label(metadata.joined(separator: " · "), size: 11, color: .secondaryLabel, lines: 2)
+                    if card.visits.count == 1 { identity.addArrangedSubview(text) }
+                    else { section.addArrangedSubview(text) }
+                }
+                if let note = visit.note, !note.isEmpty {
+                    section.addArrangedSubview(label(note, size: 12, color: .secondaryLabel, lines: 3))
+                }
+                if section.arrangedSubviews.isEmpty { continue }
                 content.addArrangedSubview(section)
             }
             box.addSubview(content); content.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12), content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -12), content.topAnchor.constraint(equalTo: box.topAnchor, constant: 10), content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -10)])
-            let natural = content.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width + 24
+            NSLayoutConstraint.activate([content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 10), content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10), content.topAnchor.constraint(equalTo: box.topAnchor, constant: 8), content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -8)])
+            let natural = content.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width + 20
             let width = min(280, max(208, natural))
             let size = box.systemLayoutSizeFitting(CGSize(width: width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
             box.frame.size = CGSize(width: width, height: size.height)
