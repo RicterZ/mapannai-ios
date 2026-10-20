@@ -40,9 +40,9 @@ actor ItineraryCardLayout {
     }
     private enum Shape { case linear, radial }
 
-    private static let directions: [Double] = [-150, -120, -60, -30, 30, 60, 120, 150, 0, 180]
-    private static let lengths: [Double] = [80, 104, 136, 176, 232, 300]
-    private static let cardGap = 10.0, anchorPad = 14.0, clearanceLimit = 24.0, hard = 100_000.0, freeStep = 12.0
+    private static let directions: [Double] = [-150, -120, -90, -60, -30, 30, 60, 90, 120, 150, 0, 180]
+    private static let lengths: [Double] = [24, 40, 64, 96, 136, 184]
+    private static let cardGap = 10.0, anchorPad = 14.0, clearanceLimit = 24.0, hard = 100_000.0, freeStep = 12.0, coverCost = 6000.0, routeCoverCost = 80.0
 
     func layout(anchors: [ItineraryLayoutAnchor], bounds: ItineraryLayoutBounds,
                 paths: [[ItineraryLayoutPoint]], previous: [ItineraryLayoutPlacement]) throws -> [ItineraryLayoutPlacement] {
@@ -83,6 +83,17 @@ actor ItineraryCardLayout {
             if low > high { return false }
         }
         return true
+    }
+    /// Length of a segment inside a rectangle (Liang–Barsky clipping).
+    private static func clippedLength(_ a: Point, _ b: Point, _ r: Rect) -> Double {
+        var low = 0.0, high = 1.0
+        for (start, delta, minV, maxV) in [(a.x, b.x - a.x, r.left, r.right), (a.y, b.y - a.y, r.top, r.bottom)] {
+            if delta == 0 { if start < minV || start > maxV { return 0 }; continue }
+            let enter = (minV - start) / delta, exit = (maxV - start) / delta
+            low = max(low, min(enter, exit)); high = min(high, max(enter, exit))
+            if low >= high { return 0 }
+        }
+        return (high - low) * hypot(b.x - a.x, b.y - a.y)
     }
     private static func pointSegmentDistance(_ p: Point, _ a: Point, _ b: Point) -> Double {
         let dx = b.x - a.x, dy = b.y - a.y, len = dx * dx + dy * dy
@@ -201,7 +212,8 @@ actor ItineraryCardLayout {
             prior[p.id] = (atan2(end.y - p.y, end.x - p.x), hypot(end.x - p.x, end.y - p.y))
         }
         func inside(_ r: Rect) -> Bool { r.left >= bounds.left && r.top >= bounds.top && r.right <= bounds.right && r.bottom <= bounds.bottom }
-        func coversAnchor(_ r: Rect) -> Bool { points.contains { contains(r, $0) } }
+        // Covering a pin is discouraged, but on narrow screens it must stay possible so cards never stack.
+        func coveredAnchors(_ r: Rect) -> Double { Double(points.filter { contains(r, $0) }.count) * coverCost }
         let near = { (p: Point) in p.x >= bounds.left - 400 && p.x <= bounds.right + 400 && p.y >= bounds.top - 400 && p.y <= bounds.bottom + 400 }
         let shape = routeShape(paths.map { $0.filter(near) }.filter { !$0.isEmpty }, points)
         func dot(_ p: Point, _ d: Point) -> Double { p.x * d.x + p.y * d.y }
@@ -217,10 +229,16 @@ actor ItineraryCardLayout {
             return Candidate(left: left, top: top, end: end, angle: angle, length: length, unary: unary,
                              u: dot(rel, shape.axis), v: dot(rel, shape.normal), side: side > 0 ? 1 : side < 0 ? -1 : 1, polar: atan2(rel.y, rel.x))
         }
-        func clearance(_ r: Rect, _ anchor: ItineraryLayoutAnchor) -> Double {
-            var value = clearanceLimit
-            for (a, b) in index.query(rect(r.left, r.top, anchor.width, anchor.height, pad: clearanceLimit)) { value = min(value, rectSegmentDistance(r, a, b)) }
-            return value
+        // Cards covering routes hide the pins and lines beneath them, so cost grows with the covered route length;
+        // routes passing close by only add a small clearance cost.
+        func routeCost(_ r: Rect, _ anchor: ItineraryLayoutAnchor) -> Double {
+            var clear = clearanceLimit, covered = 0.0
+            let hit = rect(r.left, r.top, anchor.width, anchor.height, pad: 4)
+            for (a, b) in index.query(rect(r.left, r.top, anchor.width, anchor.height, pad: clearanceLimit)) {
+                clear = min(clear, rectSegmentDistance(r, a, b))
+                covered += clippedLength(a, b, hit)
+            }
+            return covered > 0 ? 800 + covered * routeCoverCost : (clearanceLimit - clear) * 18
         }
 
         var options: [[Candidate]] = visible.enumerated().map { anchorIndex, anchor in
@@ -242,12 +260,11 @@ actor ItineraryCardLayout {
                     let deg = (angle * 180 / .pi).rounded()
                     let (left, top, end) = cardAt(anchor, angle, length)
                     let r = rect(left, top, anchor.width, anchor.height)
-                    guard inside(r), !coversAnchor(rect(left, top, anchor.width, anchor.height, pad: anchorPad)) else { continue }
-                    var unary = (length - lengths[0]) * 2.4 + (li >= 3 ? 300 : 0) + (li >= 4 ? 500 : 0)
+                    guard inside(r) else { continue }
+                    var unary = coveredAnchors(rect(left, top, anchor.width, anchor.height, pad: anchorPad)) + (length - lengths[0]) * 2.4 + (li >= 3 ? 300 : 0) + (li >= 4 ? 500 : 0)
                     unary += degDiff(angle, preferred) * 2 + degDiff(angle, free.angle) * free.strength
                     if shape.kind == .radial, deg == 0 || abs(deg) == 180 { unary += 50 }
-                    let clear = clearance(r, anchor)
-                    unary += clear == 0 ? 1600 : (clearanceLimit - clear) * 18
+                    unary += routeCost(r, anchor)
                     let box = Rect(left: min(anchor.x, end.x), top: min(anchor.y, end.y), right: max(anchor.x, end.x), bottom: max(anchor.y, end.y))
                     for (a, b) in index.query(box) where pointSegmentDistance(anchorPoint, a, b) > anchorPad && segmentsCross(anchorPoint, end, a, b) { unary += 140 }
                     list.append(candidate(anchor, left, top, end, angle, length, unary))
@@ -257,8 +274,9 @@ actor ItineraryCardLayout {
             if let before = prior[anchor.id] {
                 let (left, top, end) = cardAt(anchor, before.angle, before.length)
                 let r = rect(left, top, anchor.width, anchor.height)
-                if inside(r), rectPointDistance(r, anchorPoint) >= lengths[0] - 1, !coversAnchor(rect(left, top, anchor.width, anchor.height, pad: anchorPad)) {
-                    list.append(candidate(anchor, left, top, end, before.angle, before.length, (clearance(r, anchor) == 0 ? 1600 : 0) - 1500))
+                if inside(r), rectPointDistance(r, anchorPoint) >= lengths[0] - 1 {
+                    let cost = coveredAnchors(rect(left, top, anchor.width, anchor.height, pad: anchorPad)) + routeCost(r, anchor) - 1500
+                    list.append(candidate(anchor, left, top, end, before.angle, before.length, cost))
                 }
             }
             return list.sorted { $0.unary < $1.unary }
@@ -334,8 +352,8 @@ actor ItineraryCardLayout {
         try anneal(heat: 400)
         descend()
 
-        // Labels are never hidden. A blocked label can only be freed if its neighbours may move too, so once conflicts
-        // remain every label gets viewport free slots and the search reruns.
+        // Labels are never hidden. A blocked label can only be freed if its neighbours may move too, so every label gets
+        // viewport free slots and the search reruns.
         func grid(_ minV: Double, _ maxV: Double) -> [Double] {
             guard maxV >= minV else { return [] }
             return Array(stride(from: minV, to: maxV, by: freeStep)) + [maxV]
@@ -347,10 +365,10 @@ actor ItineraryCardLayout {
             for top in grid(bounds.top, bounds.bottom - anchor.height) {
                 for left in grid(bounds.left, bounds.right - anchor.width) {
                     let r = rect(left, top, anchor.width, anchor.height)
-                    if rectPointDistance(r, points[i]) < lengths[0] || coversAnchor(rect(left, top, anchor.width, anchor.height, pad: anchorPad)) { continue }
+                    if rectPointDistance(r, points[i]) < lengths[0] { continue }
                     let end = leaderEnd(left: left, top: top, width: anchor.width, height: anchor.height, anchor: points[i])
                     let length = hypot(end.x - anchor.x, end.y - anchor.y)
-                    options[i].append(candidate(anchor, left, top, end, atan2(end.y - anchor.y, end.x - anchor.x), length, 2000 + length * 2))
+                    options[i].append(candidate(anchor, left, top, end, atan2(end.y - anchor.y, end.x - anchor.x), length, 2000 + length * 20 + routeCost(r, anchor) + coveredAnchors(rect(left, top, anchor.width, anchor.height, pad: anchorPad))))
                 }
             }
             // Distant free slots can reach labels outside the neighbour radius.
@@ -359,11 +377,53 @@ actor ItineraryCardLayout {
         for round in 0..<3 {
             try Task.checkCancellation()
             let blocked = order.filter { choice[$0] < 0 || local($0, choice[$0]) >= hard }
-            if blocked.isEmpty { break }
-            if round == 0 { blocked.forEach(addFree) } else { visible.indices.forEach(addFree) }
+            if blocked.isEmpty && round > 0 { break }
+            visible.indices.forEach(addFree)
             for i in blocked { choice[i] = best(i) }
             if round > 0 { try anneal(heat: 2000) }
             descend()
+        }
+        // Random moves rarely free a slot that needs a third label to move first. Rebuild the layout greedily in a few
+        // deterministic orders, each label taking the best slot among those already placed, and keep the cheapest.
+        // Free slots are always offered so labels can leave crowded route corridors even without overlaps.
+        do {
+            func total() -> Double { visible.indices.reduce(0) { $0 + local($1, choice[$1]) } }
+            var bestChoice = choice, bestTotal = total()
+            let byArea = visible.indices.sorted { visible[$0].width * visible[$0].height > visible[$1].width * visible[$1].height }
+            let byY = visible.indices.sorted { points[$0].y < points[$1].y }
+            for sequence in [order, byArea, byY, Array(order.reversed()), Array(byY.reversed())] {
+                try Task.checkCancellation()
+                choice = Array(repeating: -1, count: visible.count)
+                for i in sequence { choice[i] = best(i) }
+                descend()
+                let cost = total()
+                if cost < bestTotal { bestTotal = cost; bestChoice = choice }
+            }
+            choice = bestChoice
+            // Ejection moves: try a better slot for one label, relocating at most two labels it would hit.
+            let shortlist = visible.indices.map { i in Array(options[i].indices.sorted { options[i][$0].unary < options[i][$1].unary }.prefix(160)) }
+            var current = total()
+            for _ in 0..<4 {
+                try Task.checkCancellation()
+                var improved = false
+                for i in order {
+                    for c in shortlist[i] where c != choice[i] {
+                        if options[i][c].unary >= local(i, choice[i]) { continue }
+                        let saved = choice
+                        choice[i] = c
+                        let hits = neighbors[i].filter { choice[$0] >= 0 && pair(i, options[i][c], $0, options[$0][choice[$0]]) >= hard }
+                        if hits.count > 2 { choice = saved; continue }
+                        for j in hits {
+                            var bestC = -1, bestCost = Double.infinity
+                            for k in shortlist[j] { let cost = local(j, k); if cost < bestCost { bestC = k; bestCost = cost } }
+                            choice[j] = bestC
+                        }
+                        let next = total()
+                        if next < current - 1 { current = next; improved = true } else { choice = saved }
+                    }
+                }
+                if !improved { break }
+            }
         }
 
         return visible.indices.compactMap { i in

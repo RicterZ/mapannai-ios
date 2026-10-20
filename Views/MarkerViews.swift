@@ -24,6 +24,7 @@ struct MarkerDetailView: View {
     @State private var deletionTarget: Marker?
     @State private var removalTarget: (day: TripDay, markerID: String)?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var previewImage: NoteImageSelection?
     @State private var noteHeight: CGFloat = 1
     @ScaledMetric(relativeTo: .title3) private var identityIconSize: CGFloat = 48
     private var current: Marker {
@@ -43,6 +44,7 @@ struct MarkerDetailView: View {
     private var itineraries: [MarkerItinerary] { MarkerPresentation.itineraries(for: current.id, trips: store.trips) }
     var body: some View {
         detailContent
+            .fullScreenCover(item: $previewImage) { NoteImagePreview(url: $0.url) }
             .appAlert(isPresented: $navigationUnavailable, title: "无法打开高德地图", symbol: "map", message: "请确认已安装高德地图。也可以使用系统地图打开此地点。", actions: [
                 AppAlertAction(title: "取消") { navigationUnavailable = false },
                 AppAlertAction(title: "系统地图") {
@@ -182,7 +184,10 @@ struct MarkerDetailView: View {
                                 else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
                             }
                         }.clipShape(RoundedRectangle(cornerRadius: 8))
-                            .allowsHitTesting(false)
+                            .contentShape(Rectangle())
+                            .onTapGesture { previewImage = NoteImageSelection(url: url) }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel("预览地点封面")
                     }
                     actionBar
                     if !itineraries.isEmpty || hasNote {
@@ -223,7 +228,7 @@ struct MarkerDetailView: View {
                     if hasNote {
                         if !itineraries.isEmpty { Divider().padding(.vertical, 4) }
                         JourneyEditorHeading(title: "笔记")
-                        HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight)
+                        HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight, onImage: { previewImage = NoteImageSelection(url: $0) })
                             .frame(height: noteHeight).accessibilityIdentifier("marker-note")
                     }
                 }.padding(24)

@@ -2,6 +2,14 @@ import XCTest
 @testable import MapAnNai
 
 final class RouteScheduleTests: XCTestCase {
+    func testRemarkLinksPreserveTextAndDetectMultipleURLs() {
+        let text = "预约 https://example.com/book?a=1&b=2 查看 https://example.org"
+        let result = LinkedNoteText.attributed(text)
+        XCTAssertEqual(String(result.characters), text)
+        XCTAssertEqual(result.runs.compactMap(\.link).map(\.absoluteString),
+                       ["https://example.com/book?a=1&b=2", "https://example.org"])
+        XCTAssertTrue(LinkedNoteText.attributed("普通备注").runs.compactMap(\.link).isEmpty)
+    }
     private let json = #"{"id":"day","tripId":"trip","date":"2026-10-03","markerIds":["a","b"],"chains":[["a","b"]],"routeChains":[{"id":"route","stops":[{"id":"visit-a","markerId":"a","startTime":"09:30","durationMinutes":60},{"id":"visit-b","markerId":"b"}],"legs":[{"fromStopId":"visit-a","toStopId":"visit-b","mode":"train","serviceNumber":"G123","startTime":"10:30","durationMinutes":30,"note":"2号站台"}]}]}"#
     func testOldServerAndScheduledServerDecodeAndRejectStaleOrder() throws {
         var day = try JSONDecoder().decode(TripDay.self, from: Data(json.utf8))

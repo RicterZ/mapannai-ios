@@ -269,24 +269,38 @@ private struct EdgePanelPresenter: UIViewControllerRepresentable {
             let velocity = pan.velocity(in: view)
             guard abs(velocity.y) > abs(velocity.x) else { return false }
             let point = pan.location(in: view)
+            // The dedicated grabber always moves the panel, regardless of content offset.
+            if grabberArea.frame.contains(point) {
+                draggingHeader = true
+                return true
+            }
+            var target = view.hitTest(point, with: nil)
+            var contentScroll: UIScrollView?
+            while let current = target {
+                if let scroll = current as? UIScrollView, Self.scrollsVertically(scroll) {
+                    contentScroll = scroll
+                    break
+                }
+                target = current.superview
+            }
+            // A scrolled page owns the gesture even when its text lies beneath the header.
+            // Disabled WebKit scroll views must not mask the outer detail ScrollView.
+            if let scroll = contentScroll,
+               scroll.contentOffset.y > -scroll.adjustedContentInset.top + 1 { return false }
             // Header buttons retain their taps; the central header remains draggable.
             if point.y <= 96 {
                 draggingHeader = point.y <= 24 || (point.x > 72 && point.x < view.bounds.width - 72)
                 return draggingHeader
             }
-            var target = view.hitTest(point, with: nil)
-            while let current = target {
-                if let scroll = current as? UIScrollView, Self.scrollsVertically(scroll) {
+            if let scroll = contentScroll {
                     if velocity.y > 0 && scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1 { verticalScroll = scroll; return true }
                     return false
-                }
-                target = current.superview
             }
             return false
         }
         /// Short lists still bounce vertically; compare against List bounds, not the visible panel height.
         private static func scrollsVertically(_ scroll: UIScrollView) -> Bool {
-            !scroll.isPagingEnabled && (scroll.alwaysBounceVertical || scroll.contentSize.height > scroll.bounds.height)
+            scroll.isScrollEnabled && !scroll.isPagingEnabled && (scroll.alwaysBounceVertical || scroll.contentSize.height > scroll.bounds.height)
         }
         func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             other is UIPanGestureRecognizer

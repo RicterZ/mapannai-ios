@@ -138,7 +138,12 @@ private struct JourneyGuideMap: UIViewRepresentable {
         var fit = MKMapRect.null
         var fitted = false
         let solver = ItineraryCardLayout()
-        var placements: [ItineraryLayoutPlacement] = []
+        /// Card centres pinned to the map; cards keep their size while the camera moves.
+        var pinned: [String: CLLocationCoordinate2D] = [:]
+        var overview: [String: CLLocationCoordinate2D] = [:]
+        var overviewDistance: CLLocationDistance = 0
+        var anchors: [String: CLLocationCoordinate2D] = [:]
+        var leaderLayers: [String: [CAShapeLayer]] = [:]
         var layoutTask: Task<Void, Never>?
         var layoutGeneration = UUID()
         var layoutErrorReported = false
@@ -234,7 +239,7 @@ private struct JourneyGuideMap: UIViewRepresentable {
                 titleRow.addArrangedSubview(day)
             }
             identity.addArrangedSubview(titleRow)
-            if !card.subtitle.isEmpty { identity.addArrangedSubview(label(card.subtitle, size: 11, color: .secondaryLabel)) }
+            if !card.subtitle.isEmpty { identity.addArrangedSubview(label(card.subtitle, size: 11, color: .secondaryLabel, lines: 2)) }
             header.addArrangedSubview(icon); header.addArrangedSubview(identity); content.addArrangedSubview(header)
             for (index, visit) in card.visits.enumerated() {
                 if index > 0 {
@@ -264,7 +269,7 @@ private struct JourneyGuideMap: UIViewRepresentable {
             box.addSubview(content); content.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 10), content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10), content.topAnchor.constraint(equalTo: box.topAnchor, constant: 8), content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -8)])
             let natural = content.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width + 20
-            let width = min(280, max(208, natural))
+            let width = min(220, max(150, natural))
             let size = box.systemLayoutSizeFitting(CGSize(width: width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
             box.frame.size = CGSize(width: width, height: size.height)
             box.layoutIfNeeded()
@@ -280,74 +285,156 @@ private struct JourneyGuideMap: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
             layoutTask?.cancel(); layoutGeneration = UUID()
-            UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.15) { self.cards.forEach { $0.1.alpha = 0 }; self.leaders.opacity = 0 }
         }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            layout(mapView)
+            project(mapView)
+            if fitted { layout(mapView) }
         }
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { project(mapView) }
+        private func layoutArea(_ map: MKMapView) -> CGRect {
+            map.bounds.inset(by: UIEdgeInsets(top: max(90, map.safeAreaInsets.top + 56), left: 12, bottom: max(24, map.safeAreaInsets.bottom + 12), right: 12))
+        }
+        private func anchorPoint(_ card: Card, _ map: MKMapView) -> CGPoint {
+            var p = map.convert(card.coordinate, toPointTo: map)
+            if let id = card.routeID, let route = routes.first(where: { $0.id == id }) {
+                let projected = route.points.filter(\.isValid).map {
+                    map.convert(CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude), toPointTo: map)
+                }
+                let lengths = zip(projected, projected.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) }
+                var remaining = lengths.reduce(0, +) / 2
+                for (index, length) in lengths.enumerated() {
+                    if remaining <= length, length > 0 {
+                        let a = projected[index], b = projected[index + 1], t = remaining / length
+                        p = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t); break
+                    }
+                    remaining -= length
+                }
+            }
+            return p
+        }
+        /// Cards follow the map during gestures and keep their pinned layout. After the camera settles, a new layout is
+        /// only computed when the set of anchors on screen changes; zooming alone never relayouts. The overview layout
+        /// is reused when every anchor is back on screen at the overview zoom.
         func layout(_ map: MKMapView) {
             layoutTask?.cancel()
             let generation = UUID(); layoutGeneration = generation
-            let anchors = cards.map { card, box in
-                var p = map.convert(card.coordinate, toPointTo: map)
-                if let id = card.routeID, let route = routes.first(where: { $0.id == id }) {
-                    let projected = route.points.filter(\.isValid).map {
-                        map.convert(CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude), toPointTo: map)
-                    }
-                    let lengths = zip(projected, projected.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) }
-                    var remaining = lengths.reduce(0, +) / 2
-                    for (index, length) in lengths.enumerated() {
-                        if remaining <= length, length > 0 {
-                            let a = projected[index], b = projected[index + 1], t = remaining / length
-                            p = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t); break
-                        }
-                        remaining -= length
-                    }
-                }
+            let first = overviewDistance == 0
+            if first {
+                for (card, _) in cards { anchors[card.id] = map.convert(anchorPoint(card, map), toCoordinateFrom: map) }
+            }
+            let area = layoutArea(map)
+            let input: [ItineraryLayoutAnchor] = cards.compactMap { card, box in
+                guard let coordinate = anchors[card.id] else { return nil }
+                let p = map.convert(coordinate, toPointTo: map)
+                guard first || area.contains(p) else { return nil }
                 return ItineraryLayoutAnchor(id: card.id, x: p.x, y: p.y, width: box.bounds.width, height: box.bounds.height)
+            }
+            if !first {
+                let ids = Set(input.map(\.id))
+                if ids == Set(pinned.keys) { return }
+                if ids == Set(overview.keys), map.camera.centerCoordinateDistance >= overviewDistance * 0.98 {
+                    apply(overview, map); return
+                }
+            }
+            let previous: [ItineraryLayoutPlacement] = input.compactMap { anchor in
+                guard let center = pinned[anchor.id] else { return nil }
+                let c = map.convert(center, toPointTo: map)
+                let left = c.x - anchor.width / 2, top = c.y - anchor.height / 2
+                return ItineraryLayoutPlacement(id: anchor.id, x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.height, left: left, top: top,
+                                                end: ItineraryCardLayout.leaderEnd(left: left, top: top, width: anchor.width, height: anchor.height, anchor: ItineraryLayoutPoint(x: anchor.x, y: anchor.y)))
             }
             let paths = routes.map { route in route.points.filter(\.isValid).map { point in
                 let p = map.convert(CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude), toPointTo: map)
                 return ItineraryLayoutPoint(x: p.x, y: p.y)
             } }
-            let area = map.bounds.inset(by: UIEdgeInsets(top: max(90, map.safeAreaInsets.top + 56), left: 12, bottom: max(24, map.safeAreaInsets.bottom + 12), right: 12))
             let bounds = ItineraryLayoutBounds(left: area.minX, top: area.minY, right: area.maxX, bottom: area.maxY)
-            let previous = placements
             layoutTask = Task { [weak self, weak map] in
                 do {
-                    try await Task.sleep(for: .milliseconds(180))
+                    try await Task.sleep(for: .milliseconds(first ? 180 : 250))
                     guard let self else { return }
-                    let result = try await self.solver.layout(anchors: anchors, bounds: bounds, paths: paths, previous: previous)
+                    let result = try await self.solver.layout(anchors: input, bounds: bounds, paths: paths, previous: previous)
                     guard !Task.isCancelled, self.layoutGeneration == generation, let map else { return }
-                    self.placements = result
-                    self.cards.forEach { $0.1.isHidden = true }
-                    self.leaders.sublayers?.forEach { $0.removeFromSuperlayer() }
-                    for p in result {
-                        guard let (card, box) = self.cards.first(where: { $0.0.id == p.id }) else { continue }
-                        box.isHidden = false; box.alpha = 0
-                        box.frame = CGRect(x: p.left, y: p.top, width: p.width, height: p.height)
-                        let path = UIBezierPath()
-                        path.move(to: CGPoint(x: p.x, y: p.y)); path.addLine(to: CGPoint(x: p.end.x, y: p.end.y))
-                        for (color, width) in [(UIColor.white.withAlphaComponent(0.85), 3.5), (card.color, 1.5)] {
-                            let line = CAShapeLayer(); line.path = path.cgPath
-                            line.strokeColor = color.cgColor; line.fillColor = UIColor.clear.cgColor
-                            line.lineWidth = width; line.lineCap = .round; self.leaders.addSublayer(line)
-                        }
-                        let dot = CAShapeLayer()
-                        dot.path = UIBezierPath(ovalIn: CGRect(x: p.x - 4.5, y: p.y - 4.5, width: 9, height: 9)).cgPath
-                        dot.fillColor = card.color.cgColor; dot.strokeColor = UIColor.white.cgColor; dot.lineWidth = 2
-                        self.leaders.addSublayer(dot)
-                        map.bringSubviewToFront(box)
+                    // Any camera move cancels this task, so the projection used for the inputs is still current.
+                    var next: [String: CLLocationCoordinate2D] = [:]
+                    for p in result { next[p.id] = map.convert(CGPoint(x: p.left + p.width / 2, y: p.top + p.height / 2), toCoordinateFrom: map) }
+                    if first {
+                        self.overview = next; self.overviewDistance = map.camera.centerCoordinateDistance
+                        map.cameraZoomRange = MKMapView.CameraZoomRange(maxCenterCoordinateDistance: self.overviewDistance)
                     }
-                    CATransaction.begin(); CATransaction.setDisableActions(true)
-                    self.leaders.path = nil; CATransaction.commit()
-                    UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.2) {
-                        self.cards.forEach { $0.1.alpha = $0.1.isHidden ? 0 : 1 }; self.leaders.opacity = 1
-                    }
+                    self.apply(next, map)
                 } catch is CancellationError {} catch {
-                    if let self, !self.layoutErrorReported { self.layoutErrorReported = true; NSLog("Shared itinerary layout unavailable") }
+                    if let self, !self.layoutErrorReported { self.layoutErrorReported = true; NSLog("Itinerary layout unavailable") }
                 }
             }
+        }
+        private func layers(for card: Card) -> [CAShapeLayer] {
+            if let existing = leaderLayers[card.id] { return existing }
+            let layers = [CAShapeLayer(), CAShapeLayer(), CAShapeLayer()]
+            for (line, (color, width)) in zip(layers, [(UIColor.white.withAlphaComponent(0.85), 3.5), (card.color, 1.5)]) {
+                line.strokeColor = color.cgColor; line.fillColor = UIColor.clear.cgColor
+                line.lineWidth = width; line.lineCap = .round
+            }
+            layers[2].fillColor = card.color.cgColor; layers[2].strokeColor = UIColor.white.cgColor; layers[2].lineWidth = 2
+            layers.forEach(leaders.addSublayer)
+            leaderLayers[card.id] = layers
+            return layers
+        }
+        /// Moves cards to a new pinned layout: leaving cards fade out, new ones fade in, kept ones glide while their
+        /// leaders are hidden, then leaders are redrawn at the final positions.
+        private func apply(_ next: [String: CLLocationCoordinate2D], _ map: MKMapView) {
+            let reduce = UIAccessibility.isReduceMotionEnabled
+            let old = pinned
+            pinned = next
+            var appearing: [UIView] = [], leaving: [UIView] = [], moving: [(UIView, CGPoint)] = []
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            for (card, box) in cards {
+                let layers = layers(for: card)
+                if let center = next[card.id] {
+                    let target = map.convert(center, toPointTo: map)
+                    if old[card.id] == nil {
+                        box.isHidden = false; box.alpha = 0; box.center = target; appearing.append(box)
+                        map.bringSubviewToFront(box)
+                    } else if hypot(box.center.x - target.x, box.center.y - target.y) > 0.5 {
+                        moving.append((box, target)); layers.forEach { $0.opacity = 0 }
+                    }
+                } else if old[card.id] != nil {
+                    leaving.append(box); layers.forEach { $0.opacity = 0 }
+                }
+            }
+            CATransaction.commit()
+            let generation = layoutGeneration
+            UIView.animate(withDuration: reduce ? 0 : 0.25, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState]) {
+                appearing.forEach { $0.alpha = 1 }
+                leaving.forEach { $0.alpha = 0 }
+                moving.forEach { $0.0.center = $0.1 }
+            } completion: { [weak self, weak map] _ in
+                guard let self, let map else { return }
+                for (card, box) in self.cards where self.pinned[card.id] == nil && leaving.contains(where: { $0 === box }) { box.isHidden = true }
+                guard self.layoutGeneration == generation else { return }
+                self.project(map)
+            }
+            project(map, skip: Set(moving.map { ObjectIdentifier($0.0) }))
+        }
+        func project(_ map: MKMapView, skip: Set<ObjectIdentifier> = []) {
+            guard !pinned.isEmpty else { return }
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            for (card, box) in cards {
+                guard let layers = leaderLayers[card.id] else { continue }
+                guard let center = pinned[card.id], let anchor = anchors[card.id], !skip.contains(ObjectIdentifier(box)) else {
+                    if pinned[card.id] == nil { layers.forEach { $0.opacity = 0 } }
+                    continue
+                }
+                let size = box.bounds.size
+                let c = map.convert(center, toPointTo: map), a = map.convert(anchor, toPointTo: map)
+                box.center = c
+                let end = ItineraryCardLayout.leaderEnd(left: c.x - size.width / 2, top: c.y - size.height / 2, width: size.width, height: size.height,
+                                                        anchor: ItineraryLayoutPoint(x: a.x, y: a.y))
+                let path = UIBezierPath(); path.move(to: a); path.addLine(to: CGPoint(x: end.x, y: end.y))
+                layers[0].path = path.cgPath; layers[1].path = path.cgPath
+                layers[2].path = UIBezierPath(ovalIn: CGRect(x: a.x - 4.5, y: a.y - 4.5, width: 9, height: 9)).cgPath
+                layers.forEach { $0.opacity = 1 }
+            }
+            CATransaction.commit()
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let line = overlay as? Line else { return MKOverlayRenderer(overlay: overlay) }

@@ -2,6 +2,31 @@ import XCTest
 import UIKit
 
 final class NativeJourneyTests: XCTestCase {
+    @MainActor func testLongNoteDownwardScrollDoesNotCollapsePanel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--long-note-preview"]
+        app.launch()
+        let marker = app.buttons["map-marker-demo-1"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 10)); marker.tap()
+        XCTAssertTrue(app.buttons["close-marker-detail"].waitForExistence(timeout: 5))
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 5))
+        let panel = app.otherElements["edge-attached-panel"].firstMatch
+        for _ in 0..<4 {
+            let frame = panel.frame
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: frame.midX, dy: frame.maxY - 100))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -180)))
+        }
+        let before = panel.frame
+        let start = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: before.midX, dy: before.midY))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)))
+        XCTAssertEqual(panel.frame.minY, before.minY, accuracy: 5)
+        XCTAssertEqual(panel.frame.height, before.height, accuracy: 5)
+        XCTAssertTrue(app.buttons["close-marker-detail"].exists)
+    }
+
     @MainActor func testMarkerHeaderDragDoesNotAlsoScrollContent() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--long-note-preview"]

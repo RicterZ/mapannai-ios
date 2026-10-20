@@ -11,7 +11,7 @@ MapAnNai iOS is the native iPhone and iPad app for [MapAnNai Plus](https://githu
 
 ## What you can do
 
-- **Collect places.** Search, tap a point of interest, or long-press the map to save restaurants, hotels and sights. Add a cover photo and notes such as booking details or travel tips.
+- **Collect places.** Search, tap a point of interest, or long-press the map to save restaurants, hotels and sights. Add a cover photo and notes such as booking details or travel tips. Web URLs in place notes and itinerary remarks are tappable and open externally. Tap note images or the place cover for a full-screen, pinch-to-zoom preview; the note itself stays at a fixed scale.
 - **Plan trips day by day.** Create a trip with its destinations and dates, then add places to each day. Group them into routes, reorder visits, and note visit times, transport, train numbers and departures. Mark individual visits or transport legs as highlights in their schedule editor; these settings sync with the web.
 - **See your plan on the map.** Each day has its own color. Routes connect places in visit order, with planned distances between stops. Tap a place or route to open it.
 - **Look back at your trips.** My Trips shows upcoming and ongoing trips first. Past trips are stacked as cards and grouped by year. Each day reads like a chapter, with photos, the route and the day's weather.

@@ -251,7 +251,7 @@ struct ItineraryNote: View {
     @State private var collapsedHeight: CGFloat = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(text).font(.footnote).foregroundStyle(.secondary).lineLimit(expanded ? nil : collapsedLineLimit)
+            Text(LinkedNoteText.attributed(text)).font(.footnote).foregroundStyle(.secondary).tint(.blue).lineLimit(!allowsExpansion || expanded ? nil : collapsedLineLimit)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {

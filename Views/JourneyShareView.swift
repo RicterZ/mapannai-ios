@@ -89,11 +89,19 @@ struct JourneyShareView: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("分享旅途").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).foregroundStyle(Color(uiColor: .label))
+                        .accessibilityLabel("关闭")
+                }.journeyBareBackground
                 ToolbarItem(placement: .primaryAction) {
-                    if let file { ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享长图") }
+                    if let file {
+                        ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
+                            .buttonStyle(.plain).foregroundStyle(Color(uiColor: .label))
+                            .accessibilityLabel("分享长图")
+                    }
                     else { ProgressView() }
-                }
+                }.journeyBareBackground
             }
             .task { await prepare() }
         }
