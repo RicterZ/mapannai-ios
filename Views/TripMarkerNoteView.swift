@@ -128,13 +128,14 @@ struct MarkerScopeEditorView: View {
         }
     }
     private var noteForm: some View {
-        Form {
+        let id = selected
+        return Form {
             Section("本次旅行 · " + selectedName) {
                 Text(context.marker.title).font(.subheadline).foregroundStyle(.secondary)
-                if let draft = notes[selected] {
-                    TextField("本次旅行显示标题（可选）", text: Binding(get: { notes[selected]?.title ?? "" }, set: { notes[selected]?.title = $0 }))
+                if let draft = notes[id] {
+                    TextField("本次旅行显示标题（可选）", text: Binding(get: { notes[id]?.title ?? "" }, set: { notes[id]?.title = $0 }))
                         .accessibilityIdentifier("trip-note-title")
-                    Button(NoteContent.hasContent(draft.content) ? "编辑本次正文" : "编写本次正文") { composerScope = selected }
+                    Button(NoteContent.hasContent(draft.content) ? "编辑本次正文" : "编写本次正文") { composerScope = id }
                         .accessibilityIdentifier("trip-note-content")
                     Text("只保存所选旅行的标题和正文，通用资料由所有旅行共享。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -142,23 +143,23 @@ struct MarkerScopeEditorView: View {
                         .disabled(draft.changed || draft.mustRefresh || NoteContent.hasContent(draft.content))
                     if let error = draft.error { Text(error).foregroundStyle(.red) }
                     if draft.mustRefresh {
-                        Button("刷新服务器版本（保留草稿）") { let id = selected; Task { await load(id, preservingDraft: true) } }
+                        Button("刷新服务器版本（保留草稿）") { Task { await load(id, preservingDraft: true) } }
                         if draft.hasLatest {
                             Text("服务器标题：" + (draft.latest?.title ?? "无"))
                             if let content = draft.latest?.content, NoteContent.hasContent(content) { TripNoteHTML(html: content) }
                             else { Text("无正文").foregroundStyle(.secondary) }
                             Button("已核对，以此版本继续编辑") {
-                                notes[selected]?.version = draft.latest?.updatedAt
-                                notes[selected]?.hasLatest = false; notes[selected]?.mustRefresh = false; notes[selected]?.error = nil
+                                notes[id]?.version = draft.latest?.updatedAt
+                                notes[id]?.hasLatest = false; notes[id]?.mustRefresh = false; notes[id]?.error = nil
                             }
                         }
                     }
                 } else {
-                    if let error = loadErrors[selected] { Text(error).foregroundStyle(.red) }
-                    Button("加载旅行笔记") { let id = selected; Task { await load(id, preservingDraft: false) } }
+                    if let error = loadErrors[id] { Text(error).foregroundStyle(.red) }
+                    Button("加载旅行笔记") { Task { await load(id, preservingDraft: false) } }
                 }
             }
-        }.disabled(busy || !connectionMatches)
+        }.id(id).disabled(busy || !connectionMatches)
     }
     private func load(_ id: String, preservingDraft: Bool) async {
         guard connectionMatches, !busy else { return }
