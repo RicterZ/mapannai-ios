@@ -56,7 +56,7 @@ struct JourneyShareView: View {
     @State private var error: String?
 
     private var days: [TripDay] { trip.days.sorted { ($0.date, $0.id) < ($1.date, $1.id) } }
-    private var summaries: [JourneyDaySummary] { JourneyDaySummary.chapters(days: days, markers: markers) }
+    private var summaries: [JourneyDaySummary] { JourneyDaySummary.chapters(days: days, markers: markers, trip: trip) }
     private var poster: some View { poster(images: images, weather: weather) }
     private func poster(images: [URL: UIImage], weather: [String: TripDayWeather]) -> some View {
         VStack(alignment: .leading, spacing: 28) {

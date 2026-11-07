@@ -189,7 +189,7 @@ struct DayMapJourneyView: View {
             HStack(spacing: 8) {
                 PlaceIconView(emoji: stop.marker.icon.emoji, size: 28)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(stop.marker.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text(store.trip?.displayTitle(for: stop.marker) ?? stop.marker.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                     if let address = stop.marker.content.address, !address.isEmpty {
                         Text(address).font(.caption2).foregroundStyle(.secondary)
                     }

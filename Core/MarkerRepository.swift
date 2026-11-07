@@ -100,6 +100,15 @@ actor MarkerRepository {
         // Keep cached content available, but require refresh after mutations.
         if var value = snapshots[key] { value.fetchedAt = .distantPast; snapshots[key] = value; persist(value, key: key) }
     }
+    func storeTripNote(_ note: TripMarkerNote?, tripID: String, markerID: String, using client: APIClient) {
+        let key = Self.scope(client)
+        guard var snapshot = cached(using: client), let index = snapshot.trips.firstIndex(where: { $0.id == tripID }) else { return }
+        var notes = snapshot.trips[index].notes.filter { $0.markerId != markerID }
+        if let note { notes.append(note) }
+        snapshot.trips[index].markerNotes = notes
+        snapshot.fetchedAt = .distantPast
+        snapshots[key] = snapshot; persist(snapshot, key: key)
+    }
     private func file(_ key: String) -> URL { directory.appendingPathComponent(key + ".json") }
     private func persist(_ value: MarkerSnapshot, key: String) {
         guard let data = try? JSONEncoder().encode(value) else { return }

@@ -309,6 +309,55 @@ final class BackgroundSaveTests: XCTestCase {
         XCTAssertEqual(store.trips[0].days[0], day)
         XCTAssertNotNil(store.errorMessage)
     }
+    @MainActor func testTripBodyIsNeverGlobalAndPartialRetryKeepsEditedDraftAndVersion() async throws {
+        let store = store(), sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips
+        let trip = store.trips[0], day = trip.days[0]
+        store.beginAddingPlace(to: day)
+        var draft = MarkerDraft(coordinates: Coordinate(latitude: 31, longitude: 121), title: "Shared venue")
+        draft.html = "<p>FF14</p>"; draft.noteTripID = trip.id
+        var posts = 0, notes = 0, joins = 0
+        DelayedSaveProtocol.handler = { request in
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
+            if request.url?.path == "/api/markers" {
+                posts += 1; XCTAssertEqual(body["content"] as? String, "")
+                return (200, Data(#"{"id":"shared","coordinates":{"latitude":31,"longitude":121},"content":{"id":"shared","title":"Shared venue","markdownContent":""}}"#.utf8))
+            }
+            if request.url?.path.hasSuffix("/note") == true {
+                notes += 1; XCTAssertEqual(request.httpMethod, "PATCH")
+                if notes == 1 { XCTAssertTrue(body["expectedUpdatedAt"] is NSNull) }
+                else {
+                    XCTAssertEqual(body["expectedUpdatedAt"] as? String, "version-1")
+                    XCTAssertEqual(body["content"] as? String, "<p>revised draft</p>")
+                }
+                let note = TripMarkerNote(tripId: trip.id, markerId: "shared", title: "", content: body["content"] as! String, updatedAt: "version-1")
+                return (200, try JSONEncoder().encode(["note": note]))
+            }
+            if request.url?.path == "/api/markers/shared" {
+                XCTAssertEqual(body["markdownContent"] as? String, "")
+                return (200, Data("{}".utf8))
+            }
+            joins += 1
+            if joins == 1 { return (500, Data(#"{"error":"join failed"}"#.utf8)) }
+            var confirmed = day
+            confirmed.markerIds = body["markerIds"] as! [String]; confirmed.chains = body["chains"] as! [[String]]
+            return (200, try JSONEncoder().encode(confirmed))
+        }
+        defer { DelayedSaveProtocol.handler = nil }
+        XCTAssertTrue(store.saveMarkerInBackground(draft, using: client()))
+        try await settle(store)
+        XCTAssertTrue(store.canResumeFailedSave)
+        store.resumeFailedSave()
+        var recovered = try XCTUnwrap(store.draft); recovered.html = "<p>revised draft</p>"
+        XCTAssertTrue(store.saveMarkerInBackground(recovered, using: client()))
+        store.select(trip: trip, day: trip.days[1], focus: false)
+        try await settle(store)
+        XCTAssertEqual(posts, 1); XCTAssertEqual(notes, 2)
+        XCTAssertEqual(store.markers.first { $0.id == "shared" }?.content.markdownContent, "")
+        XCTAssertTrue(store.trips[0].days[0].markerIds.contains("shared"))
+        XCTAssertFalse(store.trips[0].days[1].markerIds.contains("shared"))
+    }
+
     @MainActor func testSearchSaveFinishesFrozenDayEvenIfSearchClosesImmediately() async throws {
         let store = store(), sample = AppStore(settings: Settings(), demo: true)
         store.trips = sample.trips

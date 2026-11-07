@@ -195,7 +195,7 @@ private struct JourneyGuideMap: UIViewRepresentable {
             }
             for id in merged.keys.sorted() {
                 guard let (marker, details, color) = merged[id] else { continue }
-                add(Card(id: "place:" + marker.id, coordinate: CLLocationCoordinate2D(latitude: marker.coordinates.latitude, longitude: marker.coordinates.longitude), title: marker.content.title ?? "未命名地点", visits: details, emoji: marker.icon.emoji, color: color, icon: marker.icon.symbol), to: map)
+                add(Card(id: "place:" + marker.id, coordinate: CLLocationCoordinate2D(latitude: marker.coordinates.latitude, longitude: marker.coordinates.longitude), title: trip.displayTitle(for: marker), visits: details, emoji: marker.icon.emoji, color: color, icon: marker.icon.symbol), to: map)
             }
             leaders.strokeColor = UIColor.secondaryLabel.withAlphaComponent(0.7).cgColor
             leaders.fillColor = UIColor.clear.cgColor; leaders.lineWidth = 1

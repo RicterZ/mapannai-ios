@@ -9,6 +9,9 @@ struct MarkerDetailView: View {
     var embedded = false
     var compact = false
     var usesDayContext = true
+    var noteTripID: String? = nil
+    @State private var historyTripID: String?
+    @State private var showingNotes = false
     var onExpand: () -> Void = {}
     var onConfirmationHeight: (CGFloat?) -> Void = { _ in }
     var searchPlace: Place?
@@ -39,6 +42,9 @@ struct MarkerDetailView: View {
         }
         guard let target = store.addPlaceDay else { return nil }
         return store.trips.first(where: { $0.id == target.tripId })?.days.first(where: { $0.id == target.id })
+    }
+    private var contextTripID: String? {
+        historyTripID ?? noteTripID ?? (usesDayContext ? (embedded ? (store.addPlaceDay?.tripId ?? store.addPlaceTripID) : (targetDay?.tripId ?? store.tripID)) : nil)
     }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
     private var itineraries: [MarkerItinerary] { MarkerPresentation.itineraries(for: current.id, trips: store.trips) }
@@ -121,7 +127,7 @@ struct MarkerDetailView: View {
         VStack(alignment: .leading, spacing: 24) {
             Label("移除行程", systemImage: "trash").font(.caption).foregroundStyle(.secondary)
             Text(removingFromDay ? "从今日行程移除" : "删除地点").font(.title2.weight(.semibold))
-            Text(removingFromDay ? "仅从当前日期和当天所有路线中移除，地点收藏及其他日期的安排会保留。" : "删除收藏，并从所有每日行程和路线中移除这个地点。")
+            Text(removingFromDay ? "仅从当前日期和当天所有路线中移除，地点收藏及其他日期的安排会保留。" : "删除收藏、全部旅行笔记（\(store.trips.reduce(0) { $0 + $1.notes.filter { $0.markerId == current.id }.count })份），并从所有每日行程和路线中移除这个地点。")
                 .font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack(spacing: 12) {
@@ -225,9 +231,24 @@ struct MarkerDetailView: View {
                             }
                         }
                     }
+                    if let tripID = contextTripID {
+                        Divider()
+                        TripMarkerNoteSection(store: store, tripID: tripID, marker: current).id(tripID + current.id)
+                        if let trip = store.trips.first(where: { $0.id == tripID }), targetDay == nil {
+                            Menu("加入此旅行的日期") {
+                                ForEach(trip.days.sorted { $0.date < $1.date }) { day in
+                                    Button(day.date) { _ = store.addMarkerInBackground(current, to: day) }
+                                        .disabled(day.markerIds.contains(current.id))
+                                }
+                            }
+                        }
+                    }
+                    ForEach(store.trips.filter { $0.note(for: current.id) != nil }) { trip in
+                        Button("旅行笔记 · " + trip.name) { historyTripID = trip.id }
+                    }
                     if hasNote {
                         if !itineraries.isEmpty { Divider().padding(.vertical, 4) }
-                        JourneyEditorHeading(title: "笔记")
+                        JourneyEditorHeading(title: "通用攻略（所有旅行共享）")
                         HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight, onImage: { previewImage = NoteImageSelection(url: $0) })
                             .frame(height: noteHeight).accessibilityIdentifier("marker-note")
                     }
@@ -306,7 +327,7 @@ struct MarkerDetailView: View {
                     markerActionLayout {
                         Button(action: navigate) { Label("导航", systemImage: "location").font(.subheadline).frame(minHeight: 44) }
                             .accessibilityIdentifier("marker-navigate").disabled(!current.coordinates.isValid)
-                        Button { editing = true } label: { Label("编辑", systemImage: "square.and.pencil").font(.subheadline).frame(minHeight: 44) }
+                        Button { editing = true } label: { Label("编辑通用地点", systemImage: "square.and.pencil").font(.subheadline).frame(minHeight: 44) }
                             .accessibilityIdentifier("edit-marker-detail")
                         if let day = targetDay, day.markerIds.contains(current.id) {
                             Button {
@@ -367,7 +388,11 @@ struct MarkerEditorView: View {
     @State private var iconPickerVisible = false
     @FocusState private var fieldsFocused: Bool
     init(store: AppStore, initial: MarkerDraft, embedded: Bool = false, onSaved: @escaping () -> Void = {}, onClosed: @escaping () -> Void = {}) {
-        self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; self.onClosed = onClosed; _draft = State(initialValue: initial)
+        self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; self.onClosed = onClosed
+        var frozen = initial
+        if initial.marker == nil, frozen.noteTripID == nil { frozen.noteTripID = store.addPlaceDay?.tripId ?? store.addPlaceTripID ?? store.day?.tripId }
+        if frozen.noteScope == nil { frozen.noteScope = MarkerRepository.scope(store.api) }
+        _draft = State(initialValue: frozen)
     }
     private var editorFields: some View {
         Group {
@@ -482,7 +507,7 @@ struct MarkerEditorView: View {
                     coverPicker.clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 VStack(alignment: .leading, spacing: 14) {
-                    JourneyEditorHeading(title: "地点笔记")
+                    JourneyEditorHeading(title: draft.noteTripID == nil ? "通用攻略（所有旅行共享）" : "本次旅行正文")
                     Button { fieldsFocused = false; noteEditorPresented = true } label: {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {

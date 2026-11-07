@@ -746,6 +746,9 @@ private struct RoutePlaceSelectionButton: View {
     var showsSchedule = true
     var editPlaces: () -> Void = {}
     var editSchedule: () -> Void = {}
+    private var scopedTitle: String {
+        store.trips.first { $0.days.contains { $0.id == dayID } }?.displayTitle(for: marker) ?? marker.title
+    }
     private var ordinal: String {
         guard let routeIndex, let day = store.trips.lazy.flatMap(\.days).first(where: { $0.id == dayID }),
               day.chains.indices.contains(routeIndex),
@@ -795,9 +798,9 @@ private struct RoutePlaceSelectionButton: View {
                                 .frame(width: editing ? 24 : identityHeight, height: editing ? 24 : identityHeight)
                             Group {
                                 if editing {
-                                    Text(marker.title).font(.body.weight(.semibold)).lineLimit(2)
+                                    Text(scopedTitle).font(.body.weight(.semibold)).lineLimit(2)
                                 } else {
-                                    Text(marker.title).font(.system(size: 18, weight: .semibold))
+                                    Text(scopedTitle).font(.system(size: 18, weight: .semibold))
                                         .lineLimit(1).truncationMode(.tail)
                                         .frame(height: identityHeight, alignment: .leading)
                                 }
