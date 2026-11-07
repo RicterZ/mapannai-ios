@@ -383,7 +383,7 @@ struct JourneyArchiveView: View {
     @State private var yearScreenTop: CGFloat = 0
     @State private var wideArchive = false
     @State private var recallScrollX: CGFloat = 0
-    @State private var horizontalPoses: [String: ArchiveHorizontalPose] = [:]
+    @State private var horizontalPoseStore = ArchiveHorizontalPoseStore()
 
     private var openedTrip: Trip? { trips.first { $0.id == openedID } }
     private var independent: [Marker] {
@@ -579,7 +579,7 @@ struct JourneyArchiveView: View {
         .onPreferenceChange(ArchiveYearLayout.self) { value in
             if openedID == nil, expandedYear != nil, !value.cards.isEmpty { yearLayout = value }
         }
-        .onPreferenceChange(ArchiveHorizontalPoses.self) { if openedID == nil { horizontalPoses = $0 } }
+        .onPreferenceChange(ArchiveHorizontalPoses.self) { if openedID == nil { horizontalPoseStore.poses = $0 } }
         .onPreferenceChange(ArchiveCardFrames.self) { if openedID == nil { cardFrames = $0 } }
         .onPreferenceChange(ArchiveSeparatorFrame.self) { if openedID == nil { separatorFrame = $0 } }
         .onPreferenceChange(ArchiveHeadingFrame.self) { if openedID == nil, !$0.isEmpty { archiveHeadingFrame = $0 } }
@@ -697,7 +697,7 @@ struct JourneyArchiveView: View {
                         .padding(.leading, reserve)
                         .padding(.trailing, max(24, recallWidth / 2 - cardWidth / 2 + reserve))
                         .padding(.vertical, 20)
-                        .onGeometryChange(for: CGFloat.self) { -$0.frame(in: .named("horizontal-archive")).minX } action: { recallScrollX = $0 }
+                        .onGeometryChange(for: CGFloat.self) { min(40, max(0, -$0.frame(in: .named("horizontal-archive")).minX)) } action: { recallScrollX = $0 }
                     }
                     .scrollIndicators(.hidden)
                     .coordinateSpace(name: "horizontal-archive")
@@ -706,7 +706,7 @@ struct JourneyArchiveView: View {
                     .mask {
                         HStack(spacing: 0) {
                             LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: min(20, max(0, recallScrollX) / 2))
+                                .frame(width: recallScrollX / 2)
                             Color.black
                         }
                     }
@@ -1093,6 +1093,7 @@ struct JourneyArchiveView: View {
     }
 
     private func open(_ trip: Trip, index: Int, viewportHeight: CGFloat) {
+        let horizontalPoses = horizontalPoseStore.poses
         let horizontal = wideArchive && expandedYear == nil
         let activeFrames = expandedYear == nil ? (horizontal ? horizontalPoses.mapValues(\.frame) : cardFrames) : yearLayout.cards
         let headingFrame = expandedYear == nil ? archiveHeadingFrame : yearLayout.heading
@@ -1542,6 +1543,10 @@ private struct JourneyArchiveCard: View {
 // Scrolling updates geometry without invalidating the archive and its card stack.
 private final class ArchiveHeaderGeometry {
     var frame = CGRect.zero
+}
+
+private final class ArchiveHorizontalPoseStore {
+    var poses: [String: ArchiveHorizontalPose] = [:]
 }
 
 private struct ArchiveHeaderFrame: PreferenceKey {
