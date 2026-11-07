@@ -284,6 +284,25 @@ struct MarkerDetailView: View {
                                 .accessibilityLabel(addDayLabel(day))
                         }
                     }
+                    if searchPlace == nil, let day = targetDay, day.chains.contains(where: { $0.contains(current.id) }) {
+                        ForEach(Array(day.chains.enumerated()), id: \.offset) { index, chain in
+                            Button {
+                                guard chain.last != current.id else { return }
+                                var updated = day
+                                var orders = day.chains
+                                orders[index].append(current.id)
+                                updated.setRouteOrders(orders)
+                                if store.saveDayInBackground(updated) { onClose() }
+                            } label: {
+                                Label("再次附加到路线 \(index + 1) 中", systemImage: "plus")
+                                    .font(.footnote).foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity, minHeight: 36)
+                                    .background(Color.black, in: RoundedRectangle(cornerRadius: 10))
+                                    .contentShape(Rectangle())
+                            }.disabled(!store.canEditItinerary || chain.last == current.id)
+                                .accessibilityIdentifier("append-repeat-visit-\(index)")
+                        }
+                    }
                     markerActionLayout {
                         Button(action: navigate) { Label("导航", systemImage: "location").font(.subheadline).frame(minHeight: 44) }
                             .accessibilityIdentifier("marker-navigate").disabled(!current.coordinates.isValid)

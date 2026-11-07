@@ -175,13 +175,15 @@ struct HomeView: View {
                                 }
                                 .ignoresSafeArea(.container, edges: .bottom)
                                 // Clip during panel motion without resizing List and correcting its offset every frame.
-                                .frame(height: journeyPanelMoving && settledDayDetailHeight > 0 ? settledDayDetailHeight : detailHeight, alignment: .top)
+                                // Keep the frozen layout while shrinking, but fill an expanding panel
+                                // immediately so restoring a larger day view cannot expose its white host.
+                                .frame(height: journeyPanelMoving && settledDayDetailHeight > 0 ? max(settledDayDetailHeight, detailHeight) : detailHeight, alignment: .top)
                                 .onAppear { settledDayDetailHeight = detailHeight }
                                 .onChange(of: detailHeight) { _, height in
-                                    if !journeyPanelMoving { settledDayDetailHeight = height }
+                                    if !journeyPanelMoving && store.selectedMarker == nil { settledDayDetailHeight = height }
                                 }
                                 .onChange(of: journeyPanelMoving) { _, moving in
-                                    if !moving { settledDayDetailHeight = detailHeight }
+                                    if !moving && store.selectedMarker == nil { settledDayDetailHeight = detailHeight }
                                 }
                                 .fullScreenCover(item: $editingTrip) { TripEditorView(store: store, trip: $0) }
                               }

@@ -160,7 +160,7 @@ struct TripDay: Codable, Identifiable, Hashable {
         return copy
     }
     func replacingChain(at index: Int?, with ids: [String]) throws -> TripDay {
-        guard !ids.isEmpty, Set(ids).count == ids.count else { throw AppError.message("请选择至少一个地点，且不能重复") }
+        guard !ids.isEmpty, Self.allowsVisitOrder(ids) else { throw AppError.message("请选择至少一个地点，相邻访问不能为同一地点") }
         var copy = self
         for id in ids where !copy.markerIds.contains(id) { copy.markerIds.append(id) }
         if let index {

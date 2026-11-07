@@ -10,6 +10,25 @@ final class RouteScheduleTests: XCTestCase {
                        ["https://example.com/book?a=1&b=2", "https://example.org"])
         XCTAssertTrue(LinkedNoteText.attributed("普通备注").runs.compactMap(\.link).isEmpty)
     }
+    func testRepeatedVisitsKeepIndependentSchedulesAndExactRemoval() throws {
+        let first = ChainStop(id: "a1", markerId: "a", note: "早上")
+        let second = ChainStop(id: "a2", markerId: "a", note: "晚上")
+        let route = RouteChain(id: "r", stops: [first, ChainStop(id: "b", markerId: "b"), second], legs: [])
+        let day = TripDay(id: "d", tripId: "t", date: "2026-10-20", markerIds: ["a", "b"], chains: [["a", "b", "a"]], routeChains: [route])
+        XCTAssertEqual(day.placeReferences.count, 3)
+        XCTAssertEqual(route.reordered(to: ["a", "b", "a"]).stops.map(\.id), ["a1", "b", "a2"])
+        let removed = day.removingReferences([DayPlaceReference(markerID: "a", routeIndex: 0, visitID: "a1")])
+        XCTAssertEqual(removed.routeChains?.first?.stops.map(\.id), ["b", "a2"])
+        XCTAssertEqual(removed.routeChains?.first?.stops.last?.note, "晚上")
+        XCTAssertTrue(removed.markerIds.contains("a"))
+        let write = try RouteOrderWrite(previous: day, updated: removed)
+        XCTAssertEqual(write.body["stopIds"] as? [String], ["b", "a2"])
+        XCTAssertTrue(TripDay.allowsVisitOrder(["a", "b", "a"]))
+        XCTAssertFalse(TripDay.allowsVisitOrder(["a", "a", "b"]))
+        let invalid = day.removingReferences([DayPlaceReference(markerID: "b", routeIndex: 0, visitID: "b")])
+        XCTAssertThrowsError(try RouteOrderWrite(previous: day, updated: invalid))
+    }
+
     private let json = #"{"id":"day","tripId":"trip","date":"2026-10-03","markerIds":["a","b"],"chains":[["a","b"]],"routeChains":[{"id":"route","stops":[{"id":"visit-a","markerId":"a","startTime":"09:30","durationMinutes":60},{"id":"visit-b","markerId":"b"}],"legs":[{"fromStopId":"visit-a","toStopId":"visit-b","mode":"train","serviceNumber":"G123","startTime":"10:30","durationMinutes":30,"note":"2号站台"}]}]}"#
     func testOldServerAndScheduledServerDecodeAndRejectStaleOrder() throws {
         var day = try JSONDecoder().decode(TripDay.self, from: Data(json.utf8))

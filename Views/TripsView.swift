@@ -281,7 +281,7 @@ struct DayContentsView: View {
                         ForEach(chain.enumerated().map { RoutePlaceSlot(markerID: $0.element, position: $0.offset) }) { slot in
                             let id = slot.markerID
                             let position = slot.position
-                            let reference = DayPlaceReference(markerID: id, routeIndex: index)
+                            let reference = DayPlaceReference(markerID: id, routeIndex: index, visitID: day.visitID(route: index, position: position))
                             if let marker = store.markers.first(where: { $0.id == id }) {
                                 RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: index, marker: marker, tint: routeTint,
                                     stop: day.scheduledRoute(at: index)?.stops[position], editPlaces: { beginPlaceEditing() })
@@ -296,7 +296,7 @@ struct DayContentsView: View {
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                                 .tag(reference)
                                 .selectionDisabled()
-                                .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id, from: index) }
+                                .accessibilityAction(named: "移出路线") { makeDayPlaceUnplanned(id, from: index, visitID: reference.visitID) }
                                 if position + 1 < chain.count {
                                     transportRow(chain: chain, index: index, position: position)
                                         .background {
@@ -316,14 +316,15 @@ struct DayContentsView: View {
             }
             let linked = Set(day.chains.flatMap { $0 })
             let available = Set(store.markers.map(\.id))
-            let unlinked = day.markerIds.filter { !linked.contains($0) && available.contains($0) }
+            let unlinked = store.unplannedVisits(for: day).filter { available.contains($0.markerId) }
             if !unlinked.isEmpty {
             Section {
                     JourneyPlaceGroupHeading(title: "未安排", count: unlinked.count)
                         .accessibilityIdentifier("day-unplanned-heading")
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                    ForEach(unlinked, id: \.self) { id in
-                        let reference = DayPlaceReference(markerID: id, routeIndex: nil)
+                    ForEach(unlinked) { visit in
+                        let id = visit.markerId
+                        let reference = DayPlaceReference(markerID: id, routeIndex: nil, visitID: visit.id)
                         if let marker = store.markers.first(where: { $0.id == id }) {
                             RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: nil,
                                 marker: marker, tint: .secondary, editPlaces: { beginPlaceEditing() })
@@ -387,7 +388,6 @@ struct DayContentsView: View {
         .sheet(isPresented: Binding(get: { !deletingPlaces.isEmpty }, set: { if !$0 { deletingPlaces = [] } })) {
             let ids = deletingPlaces
             let sourceDay = day
-            let markerIDs = Set(ids.map(\.markerID))
             let submit: (TripDay) -> Void = { updated in
                 deletingPlaces = []
                 guard store.trips.first(where: { $0.id == sourceDay.tripId })?.days.first(where: { $0.id == sourceDay.id }) == sourceDay else {
@@ -397,17 +397,26 @@ struct DayContentsView: View {
                 if store.saveDayInBackground(updated) { selectedPlaces.subtract(ids) }
             }
             let choices = [DeletionConfirmationChoice(id: "today", title: "从今天删除") {
-                submit(markerIDs.reduce(sourceDay) { $0.removing($1) })
+                guard store.trips.flatMap(\.days).contains(sourceDay) else {
+                    store.errorMessage = "行程已更新，请重新选择地点。"; return
+                }
+                let pending = store.unplannedVisits(for: sourceDay)
+                let pendingIDs = Set(ids.compactMap(\.visitID))
+                let remainingPending = pending.filter { !pendingIDs.contains($0.id) }
+                var updated = sourceDay.removingReferences(ids)
+                for visit in remainingPending where !updated.markerIds.contains(visit.markerId) { updated.markerIds.append(visit.markerId) }
+                if store.saveDayInBackground(updated, pendingVisits: remainingPending) {
+                    deletingPlaces = []; selectedPlaces.subtract(ids)
+                }
             }] + sourceDay.chains.indices.filter { index in
-                sourceDay.chains[index].contains { markerIDs.contains($0) }
+                ids.contains { $0.routeIndex == index }
             }.map { index in
                 DeletionConfirmationChoice(id: "route-\(index)", title: "从路线\(index + 1)删除") {
-                    let references = Set(sourceDay.chains[index].filter { markerIDs.contains($0) }
-                        .map { DayPlaceReference(markerID: $0, routeIndex: index) })
+                    let references = Set(ids.filter { $0.routeIndex == index })
                     submit(sourceDay.removingReferences(references, keepMembership: true))
                 }
             }
-            DeletionConfirmationView(store: store, title: "删除地点", message: "请选择删除范围。从路线删除会保留当天地点；从今天删除会清理当天所有路线引用。收藏和其他日期不受影响。", kind: "day-places", offersExclusiveMarkers: false, choices: choices) { _ in }
+            DeletionConfirmationView(store: store, title: "删除地点", message: "仅移除选中的访问，不影响同一地点的其他访问。移出路线会保留当天地点，收藏和其他日期不受影响。", kind: "day-places", offersExclusiveMarkers: false, choices: choices) { _ in }
 
         }
         .onChange(of: day.placeReferences) { _, _ in selectedPlaces = [] }
@@ -498,12 +507,14 @@ struct DayContentsView: View {
 
     private var editingList: some View {
         let available = Set(store.markers.map(\.id))
-        let linked = Set(day.chains.flatMap { $0 })
-        let unlinked = day.markerIds.filter { !linked.contains($0) && available.contains($0) }
+        let unlinked = store.unplannedVisits(for: day).filter { available.contains($0.markerId) }
         var sections: [(section: DayReorderSection, items: [DayReorderItem])] = day.chains.enumerated().map { index, chain in
-            (.route(index), chain.flatMap { [DayReorderItem.place(markerID: $0, route: index), .detail(markerID: $0, route: index)] })
+            (.route(index), chain.enumerated().flatMap { position, id in
+                let visit = day.visitID(route: index, position: position)
+                return [DayReorderItem.place(markerID: id, route: index, visitID: visit), .detail(markerID: id, route: index, visitID: visit)]
+            })
         }
-        sections.append((.unplanned, unlinked.isEmpty ? [.placeholder] : unlinked.map { .place(markerID: $0, route: nil) }))
+        sections.append((.unplanned, unlinked.isEmpty ? [.placeholder] : unlinked.map { .place(markerID: $0.markerId, route: nil, visitID: $0.id) }))
         return DayPlaceReorderList(
             sections: sections,
             canReorder: store.canEditItinerary,
@@ -521,19 +532,33 @@ struct DayContentsView: View {
             },
             cell: { item in AnyView(editingCell(item)) },
             onSelect: { item in
-                guard case .place(let id, let route) = item else { return }
-                let reference = DayPlaceReference(markerID: id, routeIndex: route)
+                guard case .place(let id, let route, let visitID) = item else { return }
+                let reference = DayPlaceReference(markerID: id, routeIndex: route, visitID: visitID)
                 if selectedPlaces.contains(reference) { selectedPlaces.remove(reference) } else { selectedPlaces.insert(reference) }
             },
-            commit: { orders in
+            commit: { orders, unplanned in
                 guard store.canEditItinerary,
                       store.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) == day else {
                     store.errorMessage = "行程已更新，请重新排序。"; return false
                 }
-                guard orders.allSatisfy({ Set($0).count == $0.count }) else { return false }
-                guard orders != day.chains else { return true }
-                var updated = day; updated.setRouteOrders(orders)
-                return commitDay(updated, animated: false)
+                guard orders.allSatisfy({ TripDay.allowsVisitOrder($0.map(\.markerID)) }) else { return false }
+                let visits = day.chains.enumerated().flatMap { route, ids in ids.indices.map { day.visit(route: route, position: $0) } }
+                    + store.unplannedVisits(for: day)
+                func stop(_ ref: DayPlaceReference) -> ChainStop {
+                    visits.first { $0.id == ref.visitID } ?? ChainStop(id: "stop_" + UUID().uuidString, markerId: ref.markerID)
+                }
+                var updated = day
+                updated.setVisitOrders(orders.enumerated().map { index, refs in
+                    refs.map { ref in
+                        ref.routeIndex == index ? stop(ref) : ChainStop(id: "stop_" + UUID().uuidString, markerId: ref.markerID)
+                    }
+                })
+                let pending = unplanned.map { ref in
+                    ref.routeIndex == nil ? stop(ref) : ChainStop(id: "stop_" + UUID().uuidString, markerId: ref.markerID)
+                }
+                guard updated != day else { store.pendingDayVisits[day.id] = pending; return true }
+                guard store.saveDayInBackground(updated, animated: false, pendingVisits: pending) else { return false }
+                return true
             })
     }
 
@@ -543,11 +568,11 @@ struct DayContentsView: View {
             Text("拖到这里移出路线").font(.footnote).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 60)
                 .accessibilityIdentifier("day-unplanned-drop-area")
-        case .place(let id, let route):
+        case .place(let id, let route, let visitID):
             if let marker = store.markers.first(where: { $0.id == id }) {
-                let reference = DayPlaceReference(markerID: id, routeIndex: route)
+                let reference = DayPlaceReference(markerID: id, routeIndex: route, visitID: visitID)
                 let chain = route.flatMap { day.chains.indices.contains($0) ? day.chains[$0] : nil } ?? []
-                let position = chain.firstIndex(of: id)
+                let position = chain.indices.first { day.visitID(route: route!, position: $0) == visitID }
                 RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: route, marker: marker,
                     tint: route == nil ? .secondary : routeTint, editing: true,
                     selected: selectedPlaces.contains(reference), toggleSelection: {
@@ -556,9 +581,9 @@ struct DayContentsView: View {
                     stop: route.flatMap { r in position.flatMap { day.scheduledRoute(at: r)?.stops[$0] } },
                     showsSchedule: false)
             }
-        case .detail(let id, let route):
+        case .detail(let id, let route, let visitID):
             let chain = day.chains.indices.contains(route) ? day.chains[route] : []
-            if let marker = store.markers.first(where: { $0.id == id }), let position = chain.firstIndex(of: id) {
+            if let marker = store.markers.first(where: { $0.id == id }), let position = chain.indices.first(where: { day.visitID(route: route, position: $0) == visitID }) {
                 VStack(spacing: 0) {
                     if let scheduled = day.scheduledRoute(at: route) {
                         RoutePlaceSelectionButton(store: store, dayID: day.id, routeIndex: route,
@@ -578,13 +603,13 @@ struct DayContentsView: View {
         let summary = JourneyDaySummary(day: day, index: index, markers: store.markers)
         return summary.theme ?? "\(summary.count) 个地点 · \(day.chains.count) 条路线"
     }
-    private func makeDayPlaceUnplanned(_ id: String, from source: Int?, animated: Bool = true) {
+    private func makeDayPlaceUnplanned(_ id: String, from source: Int?, visitID: String? = nil, animated: Bool = true) {
         guard let ti = store.trips.firstIndex(where: { $0.id == day.tripId }),
               let di = store.trips[ti].days.firstIndex(where: { $0.id == day.id }),
               store.canEditItinerary else { return }
         var current = store.trips[ti].days[di]
         guard current == day, let source, current.chains.indices.contains(source) else { return }
-        commitDay(current.removingReferences([DayPlaceReference(markerID: id, routeIndex: source)], keepMembership: true),
+        commitDay(current.removingReferences([DayPlaceReference(markerID: id, routeIndex: source, visitID: visitID)], keepMembership: true),
             animated: animated && !reduceMotion)
     }
 
@@ -724,7 +749,7 @@ private struct RoutePlaceSelectionButton: View {
     private var ordinal: String {
         guard let routeIndex, let day = store.trips.lazy.flatMap(\.days).first(where: { $0.id == dayID }),
               day.chains.indices.contains(routeIndex),
-              let position = day.chains[routeIndex].firstIndex(of: marker.id) else { return "" }
+              let position = stop.flatMap({ stop in day.scheduledRoute(at: routeIndex)?.stops.firstIndex(where: { $0.id == stop.id }) }) ?? day.chains[routeIndex].firstIndex(of: marker.id) else { return "" }
         return String(position + 1)
     }
     private var accessibilityPrefix: String {
@@ -749,7 +774,7 @@ private struct RoutePlaceSelectionButton: View {
                     .accessibilityIdentifier("\(accessibilityPrefix)-select-\(marker.id)")
                     .accessibilityValue(selected ? "已选中" : "未选中")
             } else if let routeIndex {
-            RouteOrdinalLabel(store: store, dayID: dayID, routeIndex: routeIndex, markerID: marker.id, tint: tint)
+            RouteOrdinalLabel(store: store, dayID: dayID, routeIndex: routeIndex, markerID: marker.id, visitID: stop?.id, tint: tint)
                     .frame(width: 24, height: 24)
                     .background(Color(uiColor: .systemBackground), in: Circle())
                     .overlay { Circle().stroke(Color(uiColor: .separator), lineWidth: 0.7) }
@@ -923,6 +948,7 @@ private struct RouteOrdinalLabel: UIViewRepresentable {
     let dayID: String
     let routeIndex: Int
     let markerID: String
+    let visitID: String?
     let tint: Color
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> UILabel {
@@ -939,7 +965,8 @@ private struct RouteOrdinalLabel: UIViewRepresentable {
             guard let label else { return }
             let day = trips.lazy.flatMap(\.days).first { $0.id == dayID }
             let position = day.flatMap { day in
-                day.chains.indices.contains(routeIndex) ? day.chains[routeIndex].firstIndex(of: markerID) : nil
+                visitID.flatMap { id in day.scheduledRoute(at: routeIndex)?.stops.firstIndex(where: { $0.id == id }) }
+                    ?? (day.chains.indices.contains(routeIndex) ? day.chains[routeIndex].firstIndex(of: markerID) : nil)
             }
             label.text = position.map { String($0 + 1) } ?? ""
             label.invalidateIntrinsicContentSize()
@@ -962,14 +989,15 @@ struct ChainEditorView: View {
     @ObservedObject var store: AppStore
     let request: ChainEditRequest
     @Environment(\.dismiss) private var dismiss
-    @State private var ids: [String] = []
+    @State private var visits: [ChainStop] = []
+    private var ids: [String] { visits.map(\.markerId) }
     @State private var error: String?
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     private var candidates: [Marker] {
         let members = Set(request.day.markerIds)
         return store.markers.filter {
-            members.contains($0.id) && !ids.contains($0.id) &&
+            members.contains($0.id) && ids.last != $0.id &&
             (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || ($0.content.address ?? "").localizedCaseInsensitiveContains(query))
         }
     }
@@ -982,7 +1010,8 @@ struct ChainEditorView: View {
                             .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 12)
                             .deleteDisabled(true).moveDisabled(true)
                     }
-                    ForEach(Array(ids.enumerated()), id: \.element) { index, id in
+                    ForEach(Array(visits.enumerated()), id: \.element.id) { index, visit in
+                        let id = visit.markerId
                         if let marker = store.markers.first(where: { $0.id == id }) {
                             HStack(spacing: 12) {
                                 Text(String(format: "%02d", index + 1)).font(.caption.monospacedDigit())
@@ -995,8 +1024,13 @@ struct ChainEditorView: View {
                                 }.padding(.vertical, 8)
                             }.accessibilityIdentifier("chain-selected-" + id)
                         }
-                    }.onMove { from, to in ids.move(fromOffsets: from, toOffset: to) }
-                        .onDelete { ids.remove(atOffsets: $0) }
+                    }.onMove { from, to in
+                        var next = visits; next.move(fromOffsets: from, toOffset: to)
+                        if TripDay.allowsVisitOrder(next.map(\.markerId)) { visits = next }
+                    }.onDelete { offsets in
+                        var next = visits; next.remove(atOffsets: offsets)
+                        if TripDay.allowsVisitOrder(next.map(\.markerId)) { visits = next }
+                    }
                 } header: {
                     HStack {
                         JourneyEditorHeading(title: "访问顺序")
@@ -1014,7 +1048,7 @@ struct ChainEditorView: View {
                             .accessibilityIdentifier("chain-candidate-search")
                     }.padding(.vertical, 6).deleteDisabled(true).moveDisabled(true)
                     ForEach(candidates) { marker in
-                        Button { ids.append(marker.id); searchFocused = false } label: {
+                        Button { visits.append(ChainStop(id: "stop_" + UUID().uuidString, markerId: marker.id)); searchFocused = false } label: {
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(marker.title).font(.body.weight(.medium))
@@ -1061,15 +1095,22 @@ struct ChainEditorView: View {
                         .accessibilityLabel("取消").accessibilityIdentifier("cancel-chain-editor")
                 }.journeyBareBackground
             }
-        }.tint(Color(uiColor: .label)).onAppear { ids = request.ids }.interactiveDismissDisabled(false)
+        }.tint(Color(uiColor: .label)).onAppear { visits = request.index.flatMap { request.day.scheduledRoute(at: $0)?.stops } ?? request.ids.map { ChainStop(id: "stop_" + UUID().uuidString, markerId: $0) } }.interactiveDismissDisabled(false)
     }
     private func save() {
         searchFocused = false
         do {
-            guard let latest = store.trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }), latest.chains == request.day.chains else {
+            guard let latest = store.trips.first(where: { $0.id == request.day.tripId })?.days.first(where: { $0.id == request.day.id }), latest == request.day else {
                 throw AppError.message("路线已更新，请关闭后重新编辑")
             }
-            let updated = try RouteEditSession(day: request.day, index: request.index, ids: ids).applying(to: latest)
+            var updated = try RouteEditSession(day: request.day, index: request.index, ids: ids).applying(to: latest)
+            if !visits.isEmpty {
+                let slot = request.index ?? request.day.chains.count
+                if updated.routeChains?.indices.contains(slot) == true {
+                    let original = request.index.flatMap { request.day.scheduledRoute(at: $0) } ?? RouteChain(id: updated.routeChains![slot].id, stops: [], legs: [])
+                    updated.routeChains?[slot] = original.reordered(stops: visits)
+                }
+            }
             guard ids.allSatisfy({ id in store.markers.contains(where: { $0.id == id }) }) else { throw AppError.message("部分地点已被删除，请重新选择") }
             if updated == latest { dismiss(); return }
             if store.saveDayInBackground(updated) { dismiss() } else { error = store.errorMessage }
@@ -1484,14 +1525,14 @@ struct DayPlaceTransferPicker: View {
                         Button(action: onCancel) { Image(systemName: "xmark").font(.body).frame(width: 44, height: 44) }
                             .buttonStyle(.plain).accessibilityLabel("取消").accessibilityIdentifier("transfer-day-cancel")
                     }
-                    Text("\(request.ids.count) 个地点 · \(request.copy ? "保留原日期的安排" : "移出原日期的安排")")
+                    Text("\(request.references?.count ?? request.ids.count) 次访问 · \(request.copy ? "保留原日期的安排" : "移出原日期的安排")")
                         .font(.footnote).foregroundStyle(.secondary)
-                    if days.count < 2 {
+                    if days.count < 2 && !request.copy {
                         Text("旅途只有一天，延长旅途后可选择其他日期。")
                             .font(.body).foregroundStyle(.secondary)
                     }
                     ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
-                        if day.id != request.source.id {
+                        if request.copy || day.id != request.source.id {
                             Button { destinationID = day.id } label: {
                                 HStack(spacing: 14) {
                                     Image(systemName: destinationID == day.id ? "checkmark.circle.fill" : "circle")

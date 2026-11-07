@@ -69,7 +69,7 @@ final class DirectedRouteMoveTests: XCTestCase {
         let write = try RouteOrderWrite(previous: previous, updated: updated)
         XCTAssertEqual(write.path, "trips/trip/days/day/chains/r")
         XCTAssertEqual(write.method, "PATCH")
-        XCTAssertEqual(write.body["markerIds"] as? [String], ["c", "b", "a"])
+        XCTAssertEqual(write.body["stopIds"] as? [String], ["r-c", "r-b", "r-a"])
         XCTAssertNil(write.body["legs"]); XCTAssertNil(write.body["routeChains"])
     }
     func testAmbiguousLegacyCrossRouteCannotSilentlyReassignSchedules() {

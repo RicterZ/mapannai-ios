@@ -530,20 +530,24 @@ private struct JourneyRoutePreview: View {
                             VStack(alignment: .leading, spacing: 9) {
                                 let visit = scheduledDay?.scheduledRoute(at: routeIndex)?.stops
                                 let stop = visit.flatMap { $0.indices.contains(index) ? $0[index] : nil }
+                                let timing = RouteScheduleText.summary(time: stop?.startTime,
+                                    duration: stop?.durationMinutes.flatMap { $0 > 0 ? $0 : nil })
                                 ViewThatFits(in: .horizontal) {
                                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                                         Text(name).font(.subheadline).foregroundStyle(.primary)
                                             .fixedSize(horizontal: true, vertical: false)
                                         Spacer(minLength: 0)
-                                        stopTiming(stop).fixedSize(horizontal: true, vertical: false)
+                                        if !timing.isEmpty { stopTiming(stop).fixedSize(horizontal: true, vertical: false) }
                                     }
                                     .frame(maxWidth: .infinity)
                                     .fixedSize(horizontal: false, vertical: true)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(name).font(.subheadline).foregroundStyle(.primary)
                                             .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 2)
-                                        stopTiming(stop)
-                                            .frame(maxWidth: .infinity, alignment: .trailing)
+                                        if !timing.isEmpty {
+                                            stopTiming(stop)
+                                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                        }
                                     }
                                 }
                                 if let leg = scheduledDay?.scheduledRoute(at: routeIndex)?.leg(at: index) {

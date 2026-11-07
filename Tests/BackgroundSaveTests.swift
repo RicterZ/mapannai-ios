@@ -34,6 +34,24 @@ final class BackgroundSaveTests: XCTestCase {
         else { defaults.removeObject(forKey: "baseURL") }
         return AppStore(settings: settings, demo: false)
     }
+    @MainActor func testCopyToSameDayCreatesIndependentUnplannedDraftsWithoutChangingMembership() throws {
+        let store = store()
+        let sample = AppStore(settings: Settings(), demo: true)
+        store.trips = sample.trips; store.markers = sample.markers
+        let day = store.trips[0].days[0]
+        let marker = try XCTUnwrap(day.chains.first?.first)
+        let reference = DayPlaceReference(markerID: marker, routeIndex: 0, visitID: day.visitID(route: 0, position: 0))
+        let before = store.unplannedVisits(for: day)
+        XCTAssertTrue(store.transferDayPlaces([marker], from: day, to: day, copy: true, references: [reference]))
+        XCTAssertTrue(store.transferDayPlaces([marker], from: day, to: day, copy: true, references: [reference]))
+        let drafts = store.unplannedVisits(for: day)
+        XCTAssertEqual(drafts.count, before.count + 2)
+        XCTAssertEqual(Set(drafts.map(\.id)).count, drafts.count)
+        XCTAssertEqual(store.trips[0].days[0], day)
+        XCTAssertFalse(store.saving)
+        XCTAssertFalse(store.transferDayPlaces([marker], from: day, to: day, copy: false, using: client()))
+    }
+
     private func client() -> APIClient {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [DelayedSaveProtocol.self]

@@ -22,6 +22,16 @@ struct DayEditorDraft: Identifiable {
 }
 
 @MainActor final class AppStore: ObservableObject {
+    // Unarranged repeat visits are interaction-only drafts; membership remains a set on the server.
+    @Published var pendingDayVisits: [String: [ChainStop]] = [:]
+    private var awaitingVisitIDs: Set<String> = []
+    func unplannedVisits(for day: TripDay) -> [ChainStop] {
+        let routed = Set(day.chains.flatMap { $0 })
+        let active = Set((day.routeChains ?? []).flatMap { $0.stops.map(\.id) })
+        let pending = (pendingDayVisits[day.id] ?? []).filter { !active.contains($0.id) && day.markerIds.contains($0.markerId) }
+        let drafted = Set(pending.map(\.markerId))
+        return day.markerIds.filter { !routed.contains($0) && !drafted.contains($0) }.map { ChainStop(id: "member-" + $0, markerId: $0) } + pending
+    }
     private var appleMapItems: [String: (coordinate: Coordinate, references: PlaceReferences?, item: MKMapItem)] = [:]
     func appleMapItem(for marker: Marker) -> MKMapItem? {
         guard let cached = appleMapItems[marker.id], cached.coordinate == marker.coordinates, cached.references == marker.placeReferences else { return nil }
@@ -228,6 +238,7 @@ struct DayEditorDraft: Identifiable {
         hasLoadedJourneySnapshot = demo || !settings.configured
         applePOIRequest?.task.cancel(); applePOIRequest = nil; appleMapItems = [:]
         itineraryWriteGeneration = UUID(); itineraryWriteTail = nil; itineraryRollbacks = []
+        pendingDayVisits = [:]; awaitingVisitIDs = []
         connectionRevision = UUID(); refreshGeneration = UUID(); dataRevision = UUID()
         loading = false; refreshing = false; saving = false
         failedSaveAction = nil; canResumeFailedSave = false; tripSaveRecovery = nil
@@ -1017,19 +1028,31 @@ struct DayEditorDraft: Identifiable {
     }
 
     @discardableResult
-    func saveDayInBackground(_ day: TripDay, animated: Bool = true, using suppliedClient: APIClient? = nil) -> Bool {
+    func saveDayInBackground(_ day: TripDay, animated: Bool = true, using suppliedClient: APIClient? = nil, pendingVisits: [ChainStop]? = nil) -> Bool {
         guard let previous = trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) else { return false }
+        if day == previous, let pendingVisits { pendingDayVisits[day.id] = pendingVisits; return true }
+        guard !awaitingVisitIDs.contains(day.id) else { errorMessage = "正在保存新增访问，请稍后再调整"; return false }
+        let oldIDs = Set((previous.routeChains ?? []).flatMap { $0.stops.map(\.id) })
+        let createsVisits = (day.routeChains ?? []).flatMap(\.stops).contains { !oldIDs.contains($0.id) }
         let write: RouteOrderWrite
         do { write = try RouteOrderWrite(previous: previous, updated: day) }
         catch { report(error); return false }
         let revision = connectionRevision
-        return persistDayInBackground(day, animated: animated, using: suppliedClient) { client in
+        let previousPending = pendingDayVisits[day.id]
+        let accepted = persistDayInBackground(day, animated: animated, using: suppliedClient, rollback: {
+            self.awaitingVisitIDs.remove(day.id)
+            if let pendingVisits, self.pendingDayVisits[day.id] == pendingVisits { self.pendingDayVisits[day.id] = previousPending }
+        }) { client in
+            defer { if revision == self.connectionRevision { self.awaitingVisitIDs.remove(day.id) } }
             let confirmed: TripDay = try await client.request(write.path, method: write.method, body: write.body)
             guard self.trips.first(where: { $0.id == day.tripId })?.days.first(where: { $0.id == day.id }) == day else { return }
             self.acceptRouteSchedule(confirmed, revision: revision)
         }
+        if accepted && createsVisits && !itineraryDraftOnly { awaitingVisitIDs.insert(day.id) }
+        if accepted, let pendingVisits { pendingDayVisits[day.id] = pendingVisits }
+        return accepted
     }
-    private func persistDayInBackground(_ day: TripDay, animated: Bool, using suppliedClient: APIClient? = nil, operation: @escaping (APIClient) async throws -> Void) -> Bool {
+    private func persistDayInBackground(_ day: TripDay, animated: Bool, using suppliedClient: APIClient? = nil, rollback: @escaping () -> Void = {}, operation: @escaping (APIClient) async throws -> Void) -> Bool {
         if itineraryDraftOnly {
             guard let ti = trips.firstIndex(where: { $0.id == day.tripId }),
                   let di = trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return false }
@@ -1051,6 +1074,7 @@ struct DayEditorDraft: Identifiable {
         }
         rebuildRoutes(preservingPlannedGeometry: true)
         enqueueItineraryWrite(using: client, rollback: {
+            rollback()
             guard let ti = self.trips.firstIndex(where: { $0.id == day.tripId }),
                   let di = self.trips[ti].days.firstIndex(where: { $0.id == day.id }) else { return }
             self.trips[ti].days[di] = previous
@@ -1065,6 +1089,16 @@ struct DayEditorDraft: Identifiable {
     @discardableResult
     func transferDayPlaces(_ ids: Set<String>, from source: TripDay, to destination: TripDay,
                            copy: Bool, using suppliedClient: APIClient? = nil, references: Set<DayPlaceReference>? = nil) -> Bool {
+        if copy && source.id == destination.id {
+            guard canEditItinerary, trips.flatMap(\.days).contains(source) else { return false }
+            let orderedReferences = source.chains.enumerated().flatMap { route, ids in
+                ids.indices.map { DayPlaceReference(markerID: ids[$0], routeIndex: route, visitID: source.visitID(route: route, position: $0)) }
+            } + unplannedVisits(for: source).map { DayPlaceReference(markerID: $0.markerId, routeIndex: nil, visitID: $0.id) }
+            let selected = references.map { selected in orderedReferences.filter { selected.contains($0) } }
+                ?? ids.sorted().map { DayPlaceReference(markerID: $0, routeIndex: nil) }
+            pendingDayVisits[source.id] = unplannedVisits(for: source) + selected.map { ChainStop(id: "stop_" + UUID().uuidString, markerId: $0.markerID) }
+            return true
+        }
         guard !demo || suppliedClient != nil else { errorMessage = "当前为只读示例，无法保存。"; return false }
         guard canEditItinerary, source.tripId == destination.tripId, source.id != destination.id,
               let ti = trips.firstIndex(where: { $0.id == source.tripId }),

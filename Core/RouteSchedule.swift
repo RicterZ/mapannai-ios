@@ -44,9 +44,16 @@ struct RouteChain: Codable, Hashable, Identifiable {
     /// Visit identity and its schedule stay in this route. A new member gets a new visit.
     func reordered(to markerIDs: [String]) -> RouteChain {
         var copy = self
+        var available = stops
         copy.stops = markerIDs.map { markerID in
-            stops.first { $0.markerId == markerID } ?? ChainStop(id: "stop_" + UUID().uuidString, markerId: markerID)
+            if let index = available.firstIndex(where: { $0.markerId == markerID }) { return available.remove(at: index) }
+            return ChainStop(id: "stop_" + UUID().uuidString, markerId: markerID)
         }
+        return reordered(stops: copy.stops)
+    }
+    func reordered(stops: [ChainStop]) -> RouteChain {
+        var copy = self
+        copy.stops = stops
         let visits = Set(copy.stops.map(\.id))
         let pairs = Set(zip(copy.stops, copy.stops.dropFirst()).map { DirectedVisitPair(from: $0.id, to: $1.id) })
         let edges = (legs + (inactiveLegs ?? [])).filter { visits.contains($0.fromStopId) && visits.contains($0.toStopId) }
@@ -112,13 +119,27 @@ struct RouteOrderWrite {
     let method: String
     let body: [String: Any]
     init(previous: TripDay, updated: TripDay) throws {
+        guard updated.chains.allSatisfy(TripDay.allowsVisitOrder) else { throw AppError.message("相邻访问不能是同一个地点，请在两次访问之间安排其他地点") }
         let base = "trips/" + APIClient.id(previous.tripId) + "/days/" + APIClient.id(previous.id)
         if previous.markerIds == updated.markerIds,
            let old = previous.routeChains, let new = updated.routeChains, old.map(\.id) == new.map(\.id) {
-            let changed = old.indices.filter { old[$0].stops.map(\.markerId) != new[$0].stops.map(\.markerId) }
-            if changed.count == 1, let index = changed.first, new[index].stops.count >= 2 {
+            let changed = old.indices.filter { old[$0].stops != new[$0].stops }
+            if changed.count == 1, let index = changed.first, !new[index].stops.isEmpty {
                 path = base + "/chains/" + APIClient.id(old[index].id)
-                method = "PATCH"; body = ["markerIds": new[index].stops.map(\.markerId)]; return
+                method = "PATCH"
+                let existing = Set(old[index].stops.map(\.id))
+                if new[index].stops.allSatisfy({ existing.contains($0.id) }) {
+                    body = ["stopIds": new[index].stops.map(\.id)]
+                } else {
+                    guard new[index].stops.count >= 2 else { throw AppError.message("新增访问至少需要两个地点") }
+                    let projected = old[index].reordered(to: new[index].stops.map(\.markerId))
+                    let retained = new[index].stops.filter { existing.contains($0.id) }.map(\.id)
+                    guard projected.stops.filter({ existing.contains($0.id) }).map(\.id) == retained else {
+                        throw AppError.message("请先保存已有访问的排序，再添加新的访问")
+                    }
+                    body = ["markerIds": new[index].stops.map(\.markerId)]
+                }
+                return
             }
         }
         if let old = previous.routeChains, let new = updated.routeChains, previous.chains != updated.chains {
@@ -137,6 +158,14 @@ struct RouteOrderWrite {
                 }
                 let intended = new[index]
                 let inferred = matches[index]
+                if let inferred {
+                    let existing = Set(inferred.stops.map(\.id))
+                    let projected = inferred.reordered(to: updated.chains[index])
+                    guard projected.stops.filter({ existing.contains($0.id) }).map(\.id)
+                            == intended.stops.filter({ existing.contains($0.id) }).map(\.id) else {
+                        throw AppError.message("这次移动无法保留重复访问的安排归属，请分别调整路线")
+                    }
+                }
                 if inferred?.id != intended.id && (intended.hasSchedule || inferred?.hasSchedule == true || old.contains { $0.id == intended.id && $0.hasSchedule }) {
                     throw AppError.message("当前服务无法保留这次跨路线移动的安排归属，请先调整路线后重试")
                 }
@@ -151,25 +180,53 @@ struct RouteOrderWrite {
 struct DayPlaceReference: Hashable {
     let markerID: String
     let routeIndex: Int?
+    var visitID: String? = nil
 }
 extension TripDay {
     var placeReferences: Set<DayPlaceReference> {
         let routed = Set(chains.flatMap { $0 })
         return Set(chains.enumerated().flatMap { index, ids in
-            ids.map { DayPlaceReference(markerID: $0, routeIndex: index) }
+            ids.enumerated().map { position, id in DayPlaceReference(markerID: id, routeIndex: index, visitID: visitID(route: index, position: position)) }
         } + markerIds.filter { !routed.contains($0) }.map { DayPlaceReference(markerID: $0, routeIndex: nil) })
     }
     func removingReferences(_ references: Set<DayPlaceReference>, keepMembership: Bool = false) -> TripDay {
         var result = self
         let orders = chains.enumerated().map { index, ids in
-            ids.filter { !references.contains(DayPlaceReference(markerID: $0, routeIndex: index)) }
+            ids.enumerated().filter { position, id in
+                !references.contains { $0.markerID == id && $0.routeIndex == index && ($0.visitID == nil || $0.visitID == visitID(route: index, position: position)) }
+            }.map(\.element)
         }
-        result.setRouteOrders(orders)
+        let kept = chains.enumerated().map { index, ids in
+            ids.enumerated().filter { position, id in
+                !references.contains { $0.markerID == id && $0.routeIndex == index && ($0.visitID == nil || $0.visitID == visitID(route: index, position: position)) }
+            }.map { visit(route: index, position: $0.offset) }
+        }
+        result.setVisitOrders(kept)
         if !keepMembership {
             let remaining = Set(orders.flatMap { $0 })
             let removed = Set(references.map(\.markerID)).subtracting(remaining)
             result.markerIds.removeAll { removed.contains($0) }
         }
         return result
+    }
+}
+
+extension TripDay {
+    func visitID(route: Int, position: Int) -> String {
+        scheduledRoute(at: route)?.stops[position].id ?? "local-visit-\(id)-\(route)-\(position)"
+    }
+    func visit(route: Int, position: Int) -> ChainStop {
+        scheduledRoute(at: route)?.stops[position] ?? ChainStop(id: visitID(route: route, position: position), markerId: chains[route][position])
+    }
+    mutating func setVisitOrders(_ orders: [[ChainStop]]) {
+        let old = self
+        routeChains = orders.enumerated().compactMap { index, stops in
+            guard !stops.isEmpty else { return nil }
+            return (old.scheduledRoute(at: index) ?? RouteChain(id: "chain_" + UUID().uuidString, stops: [], legs: [])).reordered(stops: stops)
+        }
+        chains = orders.filter { !$0.isEmpty }.map { $0.map(\.markerId) }
+    }
+    static func allowsVisitOrder(_ ids: [String]) -> Bool {
+        !zip(ids, ids.dropFirst()).contains { $0 == $1 }
     }
 }

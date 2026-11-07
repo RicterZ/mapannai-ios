@@ -7,9 +7,9 @@ enum DayReorderSection: Hashable {
 }
 
 enum DayReorderItem: Hashable {
-    case place(markerID: String, route: Int?)
+    case place(markerID: String, route: Int?, visitID: String? = nil)
     /// Schedule and transport under a route place; hidden while a handle is held.
-    case detail(markerID: String, route: Int)
+    case detail(markerID: String, route: Int, visitID: String? = nil)
     case placeholder
 }
 
@@ -24,7 +24,7 @@ struct DayPlaceReorderList: UIViewControllerRepresentable {
     let cell: (DayReorderItem) -> AnyView
     let onSelect: (DayReorderItem) -> Void
     /// Receives each route's final marker order; returns false to restore the model order.
-    let commit: ([[String]]) -> Bool
+    let commit: ([[DayPlaceReference]], [DayPlaceReference]) -> Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -217,15 +217,20 @@ struct DayPlaceReorderList: UIViewControllerRepresentable {
         }
 
         private func finishReorder(_ snapshot: NSDiffableDataSourceSnapshot<DayReorderSection, DayReorderItem>) {
-            let orders: [[String]] = snapshot.sectionIdentifiers.compactMap { section in
-                guard case .route = section else { return nil }
-                return snapshot.itemIdentifiers(inSection: section).compactMap { item in
-                    if case let .place(markerID, _) = item { return markerID }
+            func references(_ section: DayReorderSection) -> [DayPlaceReference] {
+                snapshot.itemIdentifiers(inSection: section).compactMap { item in
+                    if case let .place(markerID, route, visitID) = item {
+                        return DayPlaceReference(markerID: markerID, routeIndex: route, visitID: visitID)
+                    }
                     return nil
                 }
             }
-            if !parent.commit(orders) {
-                dataSource?.apply(modelSnapshot(), animatingDifferences: false)
+            let orders = snapshot.sectionIdentifiers.compactMap { section -> [DayPlaceReference]? in
+                guard case .route = section else { return nil }
+                return references(section)
+            }
+            if !parent.commit(orders, references(.unplanned)) {
+                dataSource?.apply(modelSnapshot(), animatingDifferences: !UIAccessibility.isReduceMotionEnabled)
             }
             // Wait for SwiftUI to publish the committed model before restoring details.
             DispatchQueue.main.async { [weak self] in
