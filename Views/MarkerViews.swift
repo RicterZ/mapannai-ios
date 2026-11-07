@@ -79,6 +79,7 @@ struct MarkerDetailView: View {
                 if !active { confirmationHeight = nil; onConfirmationHeight(nil) }
             }
             .onDisappear { onConfirmationHeight(nil) }
+            .onChange(of: current.id) { _, _ in historyTripID = nil }
             .onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
             .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
             .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose, confirmationHeight: confirmationHeight))
