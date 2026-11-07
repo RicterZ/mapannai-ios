@@ -68,8 +68,8 @@ struct JourneyDaysContents: View {
             Section {
                 JourneyActionGroup(compact: true) {
                     Button { showingPlaceNotes = true } label: { Label("地点笔记", systemImage: "note.text") }
-            .accessibilityIdentifier("journey-place-notes")
-        Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
+                        .accessibilityIdentifier("journey-place-notes")
+                    Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
                         .accessibilityIdentifier("journey-guide")
                     Button { editing = true } label: { Label("编辑旅途", systemImage: "pencil") }
                         .accessibilityIdentifier("journey-edit-trip")
@@ -189,7 +189,7 @@ struct JourneyDaysContents: View {
         }
         }
             .sheet(isPresented: $showingPlaceNotes) { TripPlaceNotesView(store: store, tripID: trip.id) }
-        .fullScreenCover(isPresented: $showingGuide) { JourneyGuideView(store: store, trip: trip, markers: store.markers) }
+            .fullScreenCover(isPresented: $showingGuide) { JourneyGuideView(store: store, trip: trip, markers: store.markers) }
             .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: Binding(get: { archiveColorIndex != nil && store.dayEditorDraft?.tripID == trip.id ? store.dayEditorDraft : nil },
                 set: { if $0 == nil, archiveColorIndex != nil, store.dayEditorDraft?.tripID == trip.id { store.dayEditorDraft = nil } })) { draft in

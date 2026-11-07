@@ -40,3 +40,20 @@ extension Trip {
         return candidates.subtracting(retained)
     }
 }
+
+struct TripNoteEditDraft: Equatable {
+    var title: String
+    var content: String
+    var version: String?
+    var originalTitle: String
+    var originalContent: String
+    var error: String? = nil
+    var mustRefresh = false
+    var latest: TripMarkerNote? = nil
+    var hasLatest = false
+    init(note: TripMarkerNote?) {
+        title = note?.title ?? ""; content = note?.content ?? ""; version = note?.updatedAt
+        originalTitle = title; originalContent = content
+    }
+    var changed: Bool { title != originalTitle || content != originalContent }
+}

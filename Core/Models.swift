@@ -296,7 +296,7 @@ enum AppError: LocalizedError {
     case message(String)
     var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
 }
-struct MarkerDraft: Identifiable {
+struct MarkerDraft: Identifiable, Equatable {
     var id = UUID()
     var marker: Marker?
     var noteTripID: String? = nil

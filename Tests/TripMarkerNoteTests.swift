@@ -26,6 +26,73 @@ final class TripMarkerNoteTests: XCTestCase {
             TripDay(id: id + "-empty", tripId: id, date: "2026-11-09", markerIds: [], chains: [])],
             markerNotes: note ? [TripMarkerNote(tripId: id, markerId: "m", title: id, content: "<p>" + id + "</p>", updatedAt: "raw-version")] : nil)
     }
+    func testMembershipsIncludeRetainedAndUnassignedButExcludeUnrelatedContext() {
+        let dated = trip("dated", member: true)
+        let retained = trip("retained", note: true)
+        var unassigned = trip("unassigned"); unassigned.markerIds = ["m"]
+        let unrelated = trip("unrelated")
+        let trips = [dated, retained, unassigned, unrelated]
+        let memberships = MarkerPresentation.memberships(for: "m", trips: trips)
+        XCTAssertEqual(memberships.map(\.id), ["dated", "retained", "unassigned"])
+        XCTAssertTrue(memberships[0].label.contains("第1天"))
+        XCTAssertEqual(memberships[1].label, "保留旅行笔记")
+        XCTAssertEqual(memberships[2].label, "未分配日期")
+        XCTAssertNil(MarkerPresentation.noteTripID(for: "m", requested: "unrelated", trips: trips))
+        XCTAssertNil(MarkerPresentation.noteTripID(for: "m", requested: nil, trips: trips))
+        XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: "retained", trips: trips), "retained")
+    }
+    func testScopeDraftsKeepOpeningVersionsAndChangesIndependently() {
+        var drafts = ["a": TripNoteEditDraft(note: trip("a", note: true).notes[0]),
+                      "b": TripNoteEditDraft(note: trip("b", note: true).notes[0])]
+        drafts["a"]?.title = "FF14 draft"
+        drafts["b"]?.content = "<p>BA draft</p>"
+        drafts["a"]?.mustRefresh = true
+        drafts["a"]?.latest = TripMarkerNote(tripId: "a", markerId: "m", title: "remote", content: "remote", updatedAt: "new-version")
+        drafts["a"]?.hasLatest = true
+        XCTAssertEqual(drafts["a"]?.title, "FF14 draft")
+        XCTAssertEqual(drafts["a"]?.version, "raw-version")
+        XCTAssertEqual(drafts["b"]?.content, "<p>BA draft</p>")
+        XCTAssertEqual(drafts["b"]?.version, "raw-version")
+        XCTAssertTrue(drafts["a"]!.changed); XCTAssertTrue(drafts["b"]!.changed)
+        XCTAssertFalse(drafts["b"]!.mustRefresh)
+    }
+    @MainActor func testWritingAnUnrelatedTripIsRejectedBeforeNetwork() async throws {
+        let store = AppStore(settings: Settings(), demo: true)
+        let marker = try XCTUnwrap(store.markers.first)
+        store.trips = [trip("unrelated")]
+        var requests = 0
+        NoteProtocol.handler = { _ in requests += 1; return (200, Data(#"{"note":null}"#.utf8)) }
+        defer { NoteProtocol.handler = nil }
+        do {
+            _ = try await store.writeTripNote(tripID: "unrelated", markerID: marker.id, title: "draft", content: "draft", version: nil, copy: false, using: client())
+            XCTFail("Unrelated place must not acquire implicit membership")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("不属于")) }
+        XCTAssertEqual(requests, 0); XCTAssertTrue(store.trips[0].notes.isEmpty)
+    }
+    @MainActor func testSaveWritesOnlyOneTripAndConflictKeepsItsLastServerSnapshot() async throws {
+        let store = AppStore(settings: Settings(), demo: false)
+        store.trips = [trip("a", note: true), trip("b", note: true)]
+        store.markers = AppStore(settings: Settings(), demo: true).markers
+        let originalMarkers = store.markers, other = store.trips[1]
+        let saved = TripMarkerNote(tripId: "a", markerId: "m", title: "FF14", content: "<p>trip only</p>", updatedAt: "new-version")
+        NoteProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/api/trips/a/markers/m/note")
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            return (200, try JSONEncoder().encode(["note": saved]))
+        }
+        defer { NoteProtocol.handler = nil }
+        _ = try await store.writeTripNote(tripID: "a", markerID: "m", title: "FF14", content: "<p>trip only</p>", version: "raw-version", copy: false, using: client())
+        XCTAssertEqual(store.trips[0].note(for: "m"), saved)
+        XCTAssertEqual(store.trips[1], other); XCTAssertEqual(store.markers, originalMarkers)
+        NoteProtocol.handler = { _ in (409, Data(#"{"error":"changed"}"#.utf8)) }
+        do {
+            _ = try await store.writeTripNote(tripID: "a", markerID: "m", title: "unsaved", content: "draft", version: "new-version", copy: false, using: client())
+            XCTFail("Conflict must propagate to the retained editor draft")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("草稿已保留")) }
+        XCTAssertFalse(store.saving)
+        XCTAssertEqual(store.trips[0].note(for: "m"), saved)
+        XCTAssertEqual(store.trips[1], other); XCTAssertEqual(store.markers, originalMarkers)
+    }
     func testOldTripAndSnapshotRoundTrip() throws {
         let data = Data(#"{"id":"old","name":"old","startDate":"2026-11-08","endDate":"2026-11-08","days":[]}"#.utf8)
         XCTAssertTrue(try JSONDecoder().decode(Trip.self, from: data).notes.isEmpty)

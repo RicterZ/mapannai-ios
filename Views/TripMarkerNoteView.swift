@@ -1,151 +1,187 @@
 import SwiftUI
 
-struct TripMarkerNoteSection: View {
-    @ObservedObject var store: AppStore
-    let tripID: String
-    let marker: Marker
-    @State private var editing = false
+struct TripNoteHTML: View {
+    let html: String
     @State private var height: CGFloat = 1
     @State private var preview: NoteImageSelection?
-    private var trip: Trip? { store.trips.first { $0.id == tripID } }
-    private var note: TripMarkerNote? { trip?.note(for: marker.id) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                JourneyEditorHeading(title: "本次旅行笔记")
-                Spacer()
-                Button("编辑") { editing = true }.accessibilityIdentifier("edit-trip-marker-note")
-            }
-            Text(trip?.name ?? "旅行").font(.footnote).foregroundStyle(.secondary)
-            if let title = note?.title, !title.isEmpty { Text(title).font(.headline) }
-            if let content = note?.content, NoteContent.hasContent(content) {
-                HTMLReader(html: content, contentHeight: $height, onImage: { preview = NoteImageSelection(url: $0) })
-                    .frame(height: height)
-            } else { Text("尚无本次旅行正文").font(.footnote).foregroundStyle(.secondary) }
-        }
-        .sheet(isPresented: $editing) { TripMarkerNoteEditor(store: store, tripID: tripID, marker: marker) }
-        .fullScreenCover(item: $preview) { NoteImagePreview(url: $0.url) }
+        HTMLReader(html: html, contentHeight: $height, onImage: { preview = NoteImageSelection(url: $0) })
+            .frame(height: height)
+            .fullScreenCover(item: $preview) { NoteImagePreview(url: $0.url) }
     }
 }
 
-struct TripMarkerNoteEditor: View {
+struct TripMarkerNoteSection: View {
+    let trip: Trip
+    let marker: Marker
+    private var note: TripMarkerNote? { trip.note(for: marker.id) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            JourneyEditorHeading(title: "旅行笔记 · " + trip.name)
+            if let title = note?.title, !title.isEmpty { Text(title).font(.headline) }
+            if let content = note?.content, NoteContent.hasContent(content) {
+                TripNoteHTML(html: content)
+            } else { Text("尚无本次旅行正文").font(.footnote).foregroundStyle(.secondary) }
+        }.accessibilityIdentifier("trip-note-reading")
+    }
+}
+
+/// One sheet owns every scope, so switching never replaces a draft or its opening version.
+struct MarkerScopeEditorView: View {
     @ObservedObject var store: AppStore
     private struct Context {
-        let tripID: String
         let marker: Marker
+        let trips: [Trip]
         let client: APIClient
         let scope: String
     }
     @State private var context: Context
-    private var tripID: String { context.tripID }
-    private var marker: Marker { context.marker }
-    private var client: APIClient { context.client }
-    private var scope: String { context.scope }
-    @State private var title = ""
-    @State private var content = ""
-    @State private var version: String?
-    @State private var loaded = false
+    @State private var selected: String
+    @State private var globalDraft: MarkerDraft
+    @State private var globalBaseline: MarkerDraft
+    @State private var notes: [String: TripNoteEditDraft] = [:]
+    @State private var loadErrors: [String: String] = [:]
     @State private var busy = false
-    @State private var error: String?
-    @State private var composer = false
+    @State private var globalBusy = false
+    @State private var composerScope: String?
     @State private var discard = false
-    @State private var originalTitle = ""
-    @State private var originalContent = ""
-    private var changed: Bool { title != originalTitle || content != originalContent }
-    @State private var mustRefresh = false
-    @State private var latest: APIClient.NoteResponse?
+    @State private var status: String?
     @Environment(\.dismiss) private var dismiss
-    init(store: AppStore, tripID: String, marker: Marker) {
+    init(store: AppStore, marker: Marker, defaultTripID: String?) {
         self.store = store
-        _context = State(initialValue: Context(tripID: tripID, marker: marker, client: store.api, scope: MarkerRepository.scope(store.api)))
+        let trips = MarkerPresentation.memberships(for: marker.id, trips: store.trips).map(\.trip)
+        let scope = MarkerRepository.scope(store.api)
+        _context = State(initialValue: Context(marker: marker, trips: trips, client: store.api, scope: scope))
+        _selected = State(initialValue: trips.first { $0.id == defaultTripID }?.id ?? "")
+        var draft = MarkerDraft(marker: marker); draft.noteScope = scope
+        _globalDraft = State(initialValue: draft); _globalBaseline = State(initialValue: draft)
     }
-    private var connectionMatches: Bool { scope == MarkerRepository.scope(store.api) }
+    private var connectionMatches: Bool { context.scope == MarkerRepository.scope(store.api) }
+    private var working: Bool { busy || globalBusy || store.saving }
+    private var changed: Bool { globalDraft != globalBaseline || notes.values.contains(where: \.changed) }
+    private var selectedName: String { context.trips.first { $0.id == selected }?.name ?? "通用资料" }
     var body: some View {
         NavigationStack {
-            Form {
-                Section("本次旅行 · " + (store.trips.first { $0.id == tripID }?.name ?? "")) {
-                    Text(marker.title).font(.subheadline).foregroundStyle(.secondary)
-                    TextField("本次旅行标题（可选）", text: $title)
-                        .accessibilityIdentifier("trip-note-title")
-                    Button(NoteContent.hasContent(content) ? "编辑本次正文" : "编写本次正文") { composer = true }
-                        .accessibilityIdentifier("trip-note-content")
-                    Text("名称、位置、封面和通用攻略由所有旅行共享；此处只保存本次标题和正文。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }.disabled(!loaded || busy)
-                if loaded {
-                    Section {
-                        Button("复制通用攻略到本次正文") { write(copy: true) }
-                            .disabled(busy || changed || mustRefresh || NoteContent.hasContent(content))
-                        Text("仅复制到空正文，保留通用攻略及本次标题。请先保存当前修改。")
-                            .font(.footnote).foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                Menu {
+                    Button { selected = ""; status = nil } label: {
+                        Label("通用资料", systemImage: selected.isEmpty ? "checkmark" : "circle")
+                    }.accessibilityIdentifier("edit-scope-general")
+                    ForEach(context.trips) { trip in
+                        Button { selected = trip.id; status = nil } label: {
+                            Label(trip.name, systemImage: selected == trip.id ? "checkmark" : "circle")
+                        }.accessibilityIdentifier("edit-scope-" + trip.id)
+                    }
+                } label: {
+                    HStack {
+                        Text("编辑范围").foregroundStyle(.secondary)
+                        Spacer()
+                        Text(selectedName).fontWeight(.medium).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.caption)
+                    }.padding(16).contentShape(Rectangle())
+                }.disabled(working || !connectionMatches).accessibilityIdentifier("marker-edit-scope")
+                if !connectionMatches {
+                    Text("连接已切换，请关闭后重新打开。草稿不会发送到其他服务器。").font(.footnote).foregroundStyle(.red).padding(.horizontal)
+                }
+                if let status { Text(status).font(.footnote).foregroundStyle(.secondary) }
+                ZStack {
+                    MarkerEditorView(store: store, initial: globalDraft, embedded: true,
+                        onSaved: { globalBaseline = globalDraft; status = "通用资料已提交" }, scopeManaged: true,
+                        onDraftChange: { globalDraft = $0 }, onBusyChange: { globalBusy = $0 })
+                        .opacity(selected.isEmpty ? 1 : 0)
+                        .allowsHitTesting(selected.isEmpty && connectionMatches)
+                        .accessibilityHidden(!selected.isEmpty)
+                    if !selected.isEmpty { noteForm }
+                }
+            }
+            .navigationTitle("编辑地点").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { if changed { discard = true } else { dismiss() } }.disabled(working)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if !selected.isEmpty {
+                        Button("保存") { write(copy: false) }
+                            .disabled(working || !connectionMatches || notes[selected] == nil || notes[selected]?.mustRefresh == true
+                                || (notes[selected]?.title.count ?? 0) > 200 || (notes[selected]?.content.count ?? 0) > 500_000)
+                            .accessibilityIdentifier("save-trip-note")
                     }
                 }
-                if let error {
-                    Section {
-                        Text(error).foregroundStyle(.red)
-                        Button("刷新服务器版本（保留草稿）") { load(preservingDraft: loaded) }.disabled(busy)
-                        if let latest {
-                            Text("服务器标题：" + (latest.note?.title ?? "无"))
-                            Text(latest.note?.content ?? "无正文").font(.footnote).lineLimit(8)
+            }
+            .task(id: selected) { if !selected.isEmpty, notes[selected] == nil { await load(selected, preservingDraft: false) } }
+            .interactiveDismissDisabled(changed || working)
+            .confirmationDialog("放弃未保存的修改？", isPresented: $discard, titleVisibility: .visible) {
+                Button("放弃修改", role: .destructive) { dismiss() }
+            }
+            .fullScreenCover(isPresented: Binding(get: { composerScope != nil }, set: { if !$0 { composerScope = nil } })) {
+                if let id = composerScope, let draft = notes[id] {
+                    NoteComposerPreview(placeName: draft.title.isEmpty ? context.marker.title : draft.title,
+                        address: context.marker.title, initialHTML: draft.content, preview: false,
+                        uploadPhoto: { data in
+                            guard connectionMatches else { throw CancellationError() }
+                            let url = try await context.client.uploadImage(data)
+                            guard connectionMatches else { throw CancellationError() }
+                            return url
+                        }, onSave: { notes[id]?.content = $0 })
+                }
+            }
+        }
+    }
+    private var noteForm: some View {
+        Form {
+            Section("本次旅行 · " + selectedName) {
+                Text(context.marker.title).font(.subheadline).foregroundStyle(.secondary)
+                if let draft = notes[selected] {
+                    TextField("本次旅行显示标题（可选）", text: Binding(get: { notes[selected]?.title ?? "" }, set: { notes[selected]?.title = $0 }))
+                        .accessibilityIdentifier("trip-note-title")
+                    Button(NoteContent.hasContent(draft.content) ? "编辑本次正文" : "编写本次正文") { composerScope = selected }
+                        .accessibilityIdentifier("trip-note-content")
+                    Text("只保存所选旅行的标题和正文，通用资料由所有旅行共享。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("复制通用攻略到本次正文") { write(copy: true) }
+                        .disabled(draft.changed || draft.mustRefresh || NoteContent.hasContent(draft.content))
+                    if let error = draft.error { Text(error).foregroundStyle(.red) }
+                    if draft.mustRefresh {
+                        Button("刷新服务器版本（保留草稿）") { let id = selected; Task { await load(id, preservingDraft: true) } }
+                        if draft.hasLatest {
+                            Text("服务器标题：" + (draft.latest?.title ?? "无"))
+                            if let content = draft.latest?.content, NoteContent.hasContent(content) { TripNoteHTML(html: content) }
+                            else { Text("无正文").foregroundStyle(.secondary) }
                             Button("已核对，以此版本继续编辑") {
-                                version = latest.note?.updatedAt; self.latest = nil; mustRefresh = false; self.error = nil
+                                notes[selected]?.version = draft.latest?.updatedAt
+                                notes[selected]?.hasLatest = false; notes[selected]?.mustRefresh = false; notes[selected]?.error = nil
                             }
                         }
                     }
-                }
-                if !connectionMatches { Text("连接已切换，请关闭此页后重新打开。草稿不会发送到其他服务器。").foregroundStyle(.red) }
-            }
-            .navigationTitle("旅行地点笔记").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { if changed { discard = true } else { dismiss() } }.disabled(busy)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") { write(copy: false) }
-                        .disabled(!loaded || busy || mustRefresh || !connectionMatches || title.count > 200 || content.count > 500_000)
-                        .accessibilityIdentifier("save-trip-note")
+                } else {
+                    if let error = loadErrors[selected] { Text(error).foregroundStyle(.red) }
+                    Button("加载旅行笔记") { let id = selected; Task { await load(id, preservingDraft: false) } }
                 }
             }
-            .task { if !loaded { load(preservingDraft: false) } }
-            .interactiveDismissDisabled(changed || busy)
-            .confirmationDialog("放弃本次修改？", isPresented: $discard, titleVisibility: .visible) {
-                Button("放弃修改", role: .destructive) { dismiss() }
-            }
-            .fullScreenCover(isPresented: $composer) {
-                NoteComposerPreview(placeName: title.isEmpty ? marker.title : title, address: marker.title,
-                    initialHTML: content, preview: false,
-                    uploadPhoto: { data in
-                        guard connectionMatches else { throw CancellationError() }
-                        return try await client.uploadImage(data)
-                    }, onSave: { content = $0 })
-            }
-        }
+        }.disabled(busy || !connectionMatches)
     }
-    private func load(preservingDraft: Bool) {
+    private func load(_ id: String, preservingDraft: Bool) async {
         guard connectionMatches, !busy else { return }
-        busy = true
-        Task {
-            defer { busy = false }
-            do {
-                let note = try await store.loadTripNote(tripID: tripID, markerID: marker.id, using: client)
-                guard connectionMatches else { return }
-                if preservingDraft { latest = APIClient.NoteResponse(note: note) }
-                else { title = note?.title ?? ""; content = note?.content ?? ""; version = note?.updatedAt; originalTitle = title; originalContent = content; loaded = true; error = nil }
-            } catch { self.error = error.localizedDescription }
-        }
+        busy = true; defer { busy = false }
+        do {
+            let note = try await store.loadTripNote(tripID: id, markerID: context.marker.id, using: context.client)
+            guard connectionMatches else { return }
+            if preservingDraft { notes[id]?.latest = note; notes[id]?.hasLatest = true }
+            else { notes[id] = TripNoteEditDraft(note: note); loadErrors[id] = nil }
+        } catch { loadErrors[id] = error.localizedDescription; notes[id]?.error = error.localizedDescription }
     }
     private func write(copy: Bool) {
-        guard connectionMatches, loaded, !busy, !mustRefresh else { return }
+        let id = selected
+        guard connectionMatches, !working, let draft = notes[id], !draft.mustRefresh else { return }
         busy = true
         Task {
             defer { busy = false }
             do {
-                let note = try await store.writeTripNote(tripID: tripID, markerID: marker.id, title: title,
-                    content: content, version: version, copy: copy, using: client)
+                let note = try await store.writeTripNote(tripID: id, markerID: context.marker.id, title: draft.title,
+                    content: draft.content, version: draft.version, copy: copy, using: context.client)
                 guard connectionMatches else { return }
-                if copy { title = note?.title ?? ""; content = note?.content ?? ""; version = note?.updatedAt; originalTitle = title; originalContent = content }
-                else { dismiss() }
-            } catch { self.error = error.localizedDescription; mustRefresh = true }
+                notes[id] = TripNoteEditDraft(note: note); status = copy ? "已复制到本次旅行" : "旅行笔记已保存"
+            } catch { notes[id]?.error = error.localizedDescription; notes[id]?.mustRefresh = true }
         }
     }
 }

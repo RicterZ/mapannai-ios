@@ -498,6 +498,9 @@ struct DayEditorDraft: Identifiable {
     func writeTripNote(tripID: String, markerID: String, title: String, content: String,
                        version: String?, copy: Bool, using client: APIClient) async throws -> TripMarkerNote? {
         guard title.count <= 200, content.count <= 500_000 else { throw AppError.message("标题或正文超出长度限制") }
+        guard trips.first(where: { $0.id == tripID })?.referencedMarkerIDs.contains(markerID) == true else {
+            throw AppError.message("此地点不属于所选旅行，请先明确加入行程。草稿已保留。")
+        }
         guard reserveEditorSave() else { throw AppError.message(errorMessage ?? "暂时无法保存") }
         let revision = connectionRevision
         defer { if revision == connectionRevision { saving = false } }
