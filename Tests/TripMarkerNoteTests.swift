@@ -93,6 +93,90 @@ final class TripMarkerNoteTests: XCTestCase {
         XCTAssertEqual(store.trips[0].note(for: "m"), saved)
         XCTAssertEqual(store.trips[1], other); XCTAssertEqual(store.markers, originalMarkers)
     }
+    @MainActor func testScopedImagesMatchWebAndKeepTripPhotosIsolated() throws {
+        var marker = try XCTUnwrap(AppStore(settings: Settings(), demo: true).markers.first)
+        marker.id = "m"; marker.content.headerImage = "https://images.invalid/shared.jpg"
+        var old = trip("old", note: true), newer = trip("new", note: true), empty = trip("empty", note: true)
+        old.startDate = "2026-01-01"; newer.startDate = "2027-01-01"; empty.startDate = "2028-01-01"
+        old.markerNotes?[0].headerImage = "https://images.invalid/old.jpg"
+        newer.markerNotes?[0].content = #"<img src='https://images.invalid/new.jpg?a=1&amp;b=2'>"#
+        let trips = [empty, old, newer]
+        XCTAssertEqual(PlaceImage.image(marker: marker, trips: trips, tripID: "old"), "https://images.invalid/old.jpg")
+        XCTAssertEqual(PlaceImage.image(marker: marker, trips: trips), "https://images.invalid/new.jpg?a=1&b=2")
+        XCTAssertNil(PlaceImage.image(marker: marker, trips: trips, tripID: "empty"))
+        XCTAssertNil(PlaceImage.image(marker: marker, trips: trips, tripID: "missing"))
+        XCTAssertEqual(PlaceImage.image(marker: marker, trips: []), marker.content.headerImage)
+        marker.content.headerImage = nil; marker.content.markdownContent = #"<img src="https://images.invalid/general.jpg">"#
+        XCTAssertEqual(PlaceImage.image(marker: marker, trips: []), "https://images.invalid/general.jpg")
+        XCTAssertNil(PlaceImage.firstImage(#"<img src="javascript:alert(1)">"#))
+        old.startDate = newer.startDate; old.updatedAt = "z"; newer.updatedAt = "a"
+        XCTAssertEqual(PlaceImage.image(marker: marker, trips: [newer, old]), "https://images.invalid/old.jpg")
+        old.updatedAt = "a"; old.id = "a"
+        XCTAssertEqual(PlaceImage.image(marker: marker, trips: [newer, old]), "https://images.invalid/old.jpg")
+    }
+    func testCoverOnlyNotesAndDraftClearKeepVersionAndMembership() throws {
+        var owner = trip("cover")
+        let note = TripMarkerNote(tripId: owner.id, markerId: "m", title: "", content: "", updatedAt: "raw", headerImage: "https://images.invalid/cover.jpg")
+        owner.markerNotes = [note]
+        XCTAssertTrue(owner.referencedMarkerIDs.contains("m"))
+        var draft = TripNoteEditDraft(note: note)
+        draft.headerImage = nil
+        XCTAssertTrue(draft.changed); XCTAssertEqual(draft.version, "raw")
+        if case .set(let image) = draft.coverPatch { XCTAssertNil(image) } else { XCTFail("Explicit clear required") }
+        let legacy = Data(#"{"tripId":"t","markerId":"m","title":"","content":"","updatedAt":"v"}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(TripMarkerNote.self, from: legacy).headerImage)
+        var selection = MarkerNoteSelection(); selection.initialize("cover")
+        selection.toggle("cover"); selection.initialize("cover")
+        XCTAssertNil(selection.tripID, "Explicit cancel must not fall back to current trip")
+        selection.toggle("other"); XCTAssertEqual(selection.tripID, "other")
+    }
+    func testCoverPatchSupportsOmissionNullAndValidation() async throws {
+        var bodies: [[String: Any]] = []
+        NoteProtocol.handler = { request in
+            var data = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }; var bytes = [UInt8](repeating: 0, count: 8192)
+                while stream.hasBytesAvailable { let n = stream.read(&bytes, maxLength: bytes.count); if n <= 0 { break }; data.append(contentsOf: bytes.prefix(n)) }
+            }
+            bodies.append(try JSONSerialization.jsonObject(with: data) as! [String: Any])
+            return (200, Data(#"{"note":null}"#.utf8))
+        }
+        defer { NoteProtocol.handler = nil }
+        for patch: NoteCoverPatch in [.omitted, .set(nil), .set(""), .set("https://images.invalid/new.jpg")] {
+            _ = try await client().tripMarkerNote(tripID: "t", markerID: "m", method: "PATCH", title: "", content: "", headerImage: patch)
+        }
+        XCTAssertNil(bodies[0]["headerImage"]); XCTAssertTrue(bodies[1]["headerImage"] is NSNull)
+        XCTAssertEqual(bodies[2]["headerImage"] as? String, "")
+        XCTAssertEqual(bodies[3]["headerImage"] as? String, "https://images.invalid/new.jpg")
+        for invalid in ["file:///photo", "https://images.invalid/" + String(repeating: "a", count: 4096)] {
+            do {
+                _ = try await client().tripMarkerNote(tripID: "t", markerID: "m", method: "PATCH", title: "", content: "", headerImage: .set(invalid))
+                XCTFail("Invalid cover must not send")
+            } catch { }
+        }
+        XCTAssertEqual(bodies.count, 4)
+    }
+    @MainActor func testCoverOnlyServerResponseAndConflictDoNotChangeGlobalCover() async throws {
+        let store = AppStore(settings: Settings(), demo: false)
+        store.trips = [trip("t", member: true)]
+        store.markers = AppStore(settings: Settings(), demo: true).markers
+        let shared = store.markers
+        let note = TripMarkerNote(tripId: "t", markerId: "m", title: "", content: "", updatedAt: "cover-version", headerImage: "https://images.invalid/only-cover.jpg")
+        NoteProtocol.handler = { _ in (200, try JSONEncoder().encode(["note": note])) }
+        defer { NoteProtocol.handler = nil }
+        _ = try await store.writeTripNote(tripID: "t", markerID: "m", title: "", content: "", version: nil, copy: false, headerImage: .set(note.headerImage), using: client())
+        XCTAssertEqual(store.trips[0].note(for: "m"), note)
+        XCTAssertEqual(store.markers, shared)
+        var draft = TripNoteEditDraft(note: note); draft.headerImage = nil
+        NoteProtocol.handler = { _ in (409, Data(#"{"error":"changed"}"#.utf8)) }
+        do {
+            _ = try await store.writeTripNote(tripID: "t", markerID: "m", title: draft.title, content: draft.content, version: draft.version, copy: false, headerImage: draft.coverPatch, using: client())
+            XCTFail("Conflict must preserve the cover draft")
+        } catch { }
+        XCTAssertNil(draft.headerImage); XCTAssertTrue(draft.changed)
+        XCTAssertEqual(store.trips[0].note(for: "m"), note)
+        XCTAssertEqual(store.markers, shared)
+    }
     func testOldTripAndSnapshotRoundTrip() throws {
         let data = Data(#"{"id":"old","name":"old","startDate":"2026-11-08","endDate":"2026-11-08","days":[]}"#.utf8)
         XCTAssertTrue(try JSONDecoder().decode(Trip.self, from: data).notes.isEmpty)

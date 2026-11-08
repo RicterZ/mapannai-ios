@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct TripNoteHTML: View {
     let html: String
@@ -46,6 +47,7 @@ struct MarkerScopeEditorView: View {
     @State private var composerScope: String?
     @State private var discard = false
     @State private var status: String?
+    @State private var coverPhoto: PhotosPickerItem?
     @Environment(\.dismiss) private var dismiss
     init(store: AppStore, marker: Marker, defaultTripID: String?) {
         self.store = store
@@ -119,6 +121,7 @@ struct MarkerScopeEditorView: View {
                         address: context.marker.title, initialHTML: draft.content, preview: false,
                         uploadPhoto: { data in
                             guard connectionMatches else { throw CancellationError() }
+                            guard !store.demo else { throw AppError.message("只读示例不上传照片") }
                             let url = try await context.client.uploadImage(data)
                             guard connectionMatches else { throw CancellationError() }
                             return url
@@ -137,7 +140,23 @@ struct MarkerScopeEditorView: View {
                         .accessibilityIdentifier("trip-note-title")
                     Button(NoteContent.hasContent(draft.content) ? "编辑本次正文" : "编写本次正文") { composerScope = id }
                         .accessibilityIdentifier("trip-note-content")
-                    Text("只保存所选旅行的标题和正文，通用资料由所有旅行共享。")
+                    PhotosPicker(selection: $coverPhoto, matching: .images) {
+                        MarkerCoverBanner {
+                            if let raw = draft.headerImage, let url = imageURL(raw) {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image { image.resizable().scaledToFill() }
+                                    else { Color(uiColor: .secondarySystemBackground) }
+                                }
+                            } else {
+                                Label("添加旅行封面", systemImage: "photo.badge.plus").frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                    }.buttonStyle(.plain).accessibilityIdentifier("trip-note-cover")
+                    if draft.headerImage?.isEmpty == false {
+                        Button("移除旅行封面", role: .destructive) { notes[id]?.headerImage = nil }
+                            .accessibilityIdentifier("trip-note-cover-remove")
+                    }
+                    Text("只保存所选旅行的标题、正文和封面，通用资料由所有旅行共享。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("复制通用攻略到本次正文") { write(copy: true) }
                         .disabled(draft.changed || draft.mustRefresh || NoteContent.hasContent(draft.content))
@@ -146,6 +165,9 @@ struct MarkerScopeEditorView: View {
                         Button("刷新服务器版本（保留草稿）") { Task { await load(id, preservingDraft: true) } }
                         if draft.hasLatest {
                             Text("服务器标题：" + (draft.latest?.title ?? "无"))
+                            if let image = draft.latest?.headerImage, let url = imageURL(image) {
+                                AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }
+                            }
                             if let content = draft.latest?.content, NoteContent.hasContent(content) { TripNoteHTML(html: content) }
                             else { Text("无正文").foregroundStyle(.secondary) }
                             Button("已核对，以此版本继续编辑") {
@@ -160,6 +182,23 @@ struct MarkerScopeEditorView: View {
                 }
             }
         }.id(id).disabled(busy || !connectionMatches)
+            .onChange(of: coverPhoto) { _, item in
+                guard let item else { return }
+                let scopeID = id
+                busy = true
+                Task {
+                    defer { busy = false; coverPhoto = nil }
+                    do {
+                        guard connectionMatches, let bytes = try await item.loadTransferable(type: Data.self) else { throw CancellationError() }
+                        let data = try await Task.detached { try MarkerImageCompression.jpeg(from: bytes) }.value
+                        guard connectionMatches else { throw CancellationError() }
+                        guard !store.demo else { throw AppError.message("只读示例不上传照片") }
+                        let url = try await context.client.uploadImage(data)
+                        guard connectionMatches else { return }
+                        notes[scopeID]?.headerImage = url
+                    } catch { notes[scopeID]?.error = error.localizedDescription }
+                }
+            }
     }
     private func load(_ id: String, preservingDraft: Bool) async {
         guard connectionMatches, !busy else { return }
@@ -179,7 +218,7 @@ struct MarkerScopeEditorView: View {
             defer { busy = false }
             do {
                 let note = try await store.writeTripNote(tripID: id, markerID: context.marker.id, title: draft.title,
-                    content: draft.content, version: draft.version, copy: copy, using: context.client)
+                    content: draft.content, version: draft.version, copy: copy, headerImage: draft.coverPatch, using: context.client)
                 guard connectionMatches else { return }
                 notes[id] = TripNoteEditDraft(note: note); status = copy ? "已复制到本次旅行" : "旅行笔记已保存"
             } catch { notes[id]?.error = error.localizedDescription; notes[id]?.mustRefresh = true }

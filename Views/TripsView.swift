@@ -193,8 +193,10 @@ private struct DayPagingInteraction: UIViewRepresentable {
 struct DayPlaceArtwork: View {
     let marker: Marker
     var fallbackBackground = Color(uiColor: .secondarySystemBackground)
+    var trips: [Trip] = []
+    var tripID: String? = nil
     @State private var photo: UIImage?
-    private var url: URL? { marker.content.headerImage.flatMap(imageURL) }
+    private var url: URL? { PlaceImage.image(marker: marker, trips: trips, tripID: tripID).flatMap(imageURL) }
     var body: some View {
         Group {
             if let photo {
@@ -600,7 +602,7 @@ struct DayContentsView: View {
     private var daySummary: String {
         let days = store.trips.first { $0.id == day.tripId }?.days.sorted { $0.date < $1.date } ?? []
         let index = days.firstIndex { $0.id == day.id } ?? 0
-        let summary = JourneyDaySummary(day: day, index: index, markers: store.markers)
+        let summary = JourneyDaySummary(day: day, index: index, markers: store.markers, trip: store.trips.first { $0.id == day.tripId })
         return summary.theme ?? "\(summary.count) 个地点 · \(day.chains.count) 条路线"
     }
     private func makeDayPlaceUnplanned(_ id: String, from source: Int?, visitID: String? = nil, animated: Bool = true) {
@@ -746,6 +748,7 @@ private struct RoutePlaceSelectionButton: View {
     var showsSchedule = true
     var editPlaces: () -> Void = {}
     var editSchedule: () -> Void = {}
+    private var owningTrip: Trip? { store.trips.first { $0.days.contains { $0.id == dayID } } }
     private var scopedTitle: String {
         store.trips.first { $0.days.contains { $0.id == dayID } }?.displayTitle(for: marker) ?? marker.title
     }
@@ -821,14 +824,14 @@ private struct RoutePlaceSelectionButton: View {
                 }
                 if !editing && typeSize.isAccessibilitySize { scheduleButton }
                 if !editing {
-                    if marker.content.headerImage.flatMap(imageURL) != nil {
+                    if PlaceImage.image(marker: marker, trips: store.trips, tripID: owningTrip?.id) != nil {
                         Color.clear.frame(height: 140)
                             .accessibilityElement()
                             .accessibilityLabel("地点照片")
                             .accessibilityIdentifier("\(accessibilityPrefix)-cover-\(marker.id)")
                             .background {
                                 GeometryReader { geometry in
-                                    DayPlaceArtwork(marker: marker)
+                                    DayPlaceArtwork(marker: marker, trips: store.trips, tripID: owningTrip?.id)
                                         .frame(width: geometry.size.width, height: geometry.size.height)
                                         .clipped().allowsHitTesting(false)
                                 }.allowsHitTesting(false)
@@ -907,10 +910,12 @@ private struct RouteSequenceLine: Shape {
 
 struct DayPlaceIdentity: View {
     let marker: Marker
+    var trips: [Trip] = []
+    var tripID: String? = nil
     var editing = false
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            DayPlaceArtwork(marker: marker).frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 9))
+            DayPlaceArtwork(marker: marker, trips: trips, tripID: tripID).frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 4) {
                 Text(marker.title).font(.body.weight(.medium)).foregroundStyle(.primary)
                     .lineLimit(1).truncationMode(.tail)

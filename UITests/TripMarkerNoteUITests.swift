@@ -44,6 +44,33 @@ final class TripMarkerNoteUITests: XCTestCase {
         XCTAssertTrue(app.textFields["trip-note-title"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields["trip-note-title"].value as? String, "另一场活动")
     }
+    @MainActor func testMembershipSelectionTogglesReadingWithoutNavigation() {
+        let app = openPlace("demo-1")
+        let next = app.buttons["marker-membership-next-year"]
+        next.tap()
+        XCTAssertTrue(app.staticTexts["另一场活动"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["edit-marker-detail"].exists)
+        next.tap()
+        XCTAssertFalse(app.staticTexts["另一场活动"].exists)
+        app.buttons["edit-marker-detail"].tap()
+        XCTAssertTrue(app.textFields["marker-name-field"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.textFields["trip-note-title"].exists)
+    }
+    @MainActor func testCoverRemovalDraftIsIsolatedAcrossTripSwitches() {
+        let app = openPlace("demo-1")
+        app.buttons["edit-marker-detail"].tap()
+        let remove = app.buttons["trip-note-cover-remove"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5)); remove.tap()
+        XCTAssertFalse(remove.exists)
+        select("edit-scope-next-year", in: app)
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        select("edit-scope-demo-trip", in: app)
+        XCTAssertFalse(remove.exists)
+        select("edit-scope-general", in: app)
+        XCTAssertFalse(remove.exists)
+        select("edit-scope-next-year", in: app)
+        XCTAssertTrue(remove.exists)
+    }
     @MainActor func testSwitchingGeneralAndTwoTripsKeepsEachDraft() {
         let app = openPlace("demo-1")
         XCTAssertTrue(app.buttons["marker-membership-demo-trip"].exists)

@@ -315,7 +315,7 @@ final class BackgroundSaveTests: XCTestCase {
         let trip = store.trips[0], day = trip.days[0]
         store.beginAddingPlace(to: day)
         var draft = MarkerDraft(coordinates: Coordinate(latitude: 31, longitude: 121), title: "Shared venue")
-        draft.html = "<p>FF14</p>"; draft.noteTripID = trip.id
+        draft.html = "<p>FF14</p>"; draft.noteTripID = trip.id; draft.headerImage = "https://images.invalid/ff14.jpg"
         var posts = 0, notes = 0, joins = 0
         DelayedSaveProtocol.handler = { request in
             let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: Any]
@@ -325,6 +325,7 @@ final class BackgroundSaveTests: XCTestCase {
             }
             if request.url?.path.hasSuffix("/note") == true {
                 notes += 1; XCTAssertEqual(request.httpMethod, "PATCH")
+                XCTAssertEqual(body["headerImage"] as? String, notes == 1 ? "https://images.invalid/ff14.jpg" : "https://images.invalid/revised.jpg")
                 if notes == 1 { XCTAssertTrue(body["expectedUpdatedAt"] is NSNull) }
                 else {
                     XCTAssertEqual(body["expectedUpdatedAt"] as? String, "version-1")
@@ -348,12 +349,13 @@ final class BackgroundSaveTests: XCTestCase {
         try await settle(store)
         XCTAssertTrue(store.canResumeFailedSave)
         store.resumeFailedSave()
-        var recovered = try XCTUnwrap(store.draft); recovered.html = "<p>revised draft</p>"
+        var recovered = try XCTUnwrap(store.draft); recovered.html = "<p>revised draft</p>"; recovered.headerImage = "https://images.invalid/revised.jpg"
         XCTAssertTrue(store.saveMarkerInBackground(recovered, using: client()))
         store.select(trip: trip, day: trip.days[1], focus: false)
         try await settle(store)
         XCTAssertEqual(posts, 1); XCTAssertEqual(notes, 2)
         XCTAssertEqual(store.markers.first { $0.id == "shared" }?.content.markdownContent, "")
+        XCTAssertEqual(store.markers.first { $0.id == "shared" }?.content.headerImage, "")
         XCTAssertTrue(store.trips[0].days[0].markerIds.contains("shared"))
         XCTAssertFalse(store.trips[0].days[1].markerIds.contains("shared"))
     }

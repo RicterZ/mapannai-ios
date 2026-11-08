@@ -121,7 +121,7 @@ struct JourneyDaysContents: View {
                     JourneyPlaceGroupHeading(title: "未安排日期", count: unscheduledPlaces.count)
                     ForEach(unscheduledPlaces) { marker in
                         VStack(alignment: .leading) {
-                            DayPlaceIdentity(marker: marker)
+                            DayPlaceIdentity(marker: marker, trips: store.trips, tripID: trip.id)
                             if let title = trip.note(for: marker.id)?.title, !title.isEmpty { Text(title).font(.subheadline) }
                         }
                             .listRowBackground(Color(uiColor: .systemBackground))
@@ -226,7 +226,7 @@ struct JourneyDaysContents: View {
                             ForEach(unscheduledPlaces) { marker in
                                 Button { store.select(trip: trip, focus: false); store.focus(marker) } label: {
                                     VStack(alignment: .leading) {
-                                        DayPlaceIdentity(marker: marker)
+                                        DayPlaceIdentity(marker: marker, trips: store.trips, tripID: trip.id)
                                         if let title = trip.note(for: marker.id)?.title, !title.isEmpty { Text(title).font(.subheadline) }
                                     }
                                 }.buttonStyle(.plain)
@@ -739,7 +739,7 @@ struct JourneyArchiveView: View {
                             HStack(spacing: 12) {
                                 ForEach(independent) { marker in
                                     Button { store.selectedMarker = marker; independentDetail = marker } label: {
-                                        ArchiveSavedPlaceCard(marker: marker)
+                                        ArchiveSavedPlaceCard(marker: marker, trips: store.trips)
                                     }.buttonStyle(.plain)
                                 }
                             }
@@ -898,7 +898,7 @@ struct JourneyArchiveView: View {
                             HStack(alignment: .top, spacing: 12) {
                                 ForEach(independent) { marker in
                                     Button { store.selectedMarker = marker; independentDetail = marker } label: {
-                                        ArchiveSavedPlaceCard(marker: marker)
+                                        ArchiveSavedPlaceCard(marker: marker, trips: store.trips)
                                     }.buttonStyle(.plain).accessibilityIdentifier("independent-marker-\(marker.id)")
                                 }
                             }
@@ -1247,6 +1247,7 @@ private struct JourneyArchiveYearCard: View {
 
 private struct ArchiveSavedPlaceCard: View {
     let marker: Marker
+    var trips: [Trip] = []
     @ScaledMetric(relativeTo: .body) private var width = 220
     private var artworkBackground: Color {
         let palette: [Color] = [.blue, .green, .orange, .pink, .teal, .yellow]
@@ -1258,7 +1259,7 @@ private struct ArchiveSavedPlaceCard: View {
             Color.clear.frame(height: 132)
                 .overlay {
                     GeometryReader { geometry in
-                        DayPlaceArtwork(marker: marker, fallbackBackground: artworkBackground)
+                        DayPlaceArtwork(marker: marker, fallbackBackground: artworkBackground, trips: trips)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }

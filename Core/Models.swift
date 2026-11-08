@@ -90,6 +90,7 @@ struct TripMarkerNote: Codable, Hashable {
     var title: String
     var content: String
     let updatedAt: String
+    var headerImage: String? = nil
 }
 
 struct Trip: Codable, Identifiable, Hashable {
@@ -104,6 +105,7 @@ struct Trip: Codable, Identifiable, Hashable {
     var markerIds: [String]? = nil
     var destination: TripDestination? = nil
     var destinations: [TripDestination]? = nil
+    var updatedAt: String? = nil
     var markerNotes: [TripMarkerNote]? = nil
     var notes: [TripMarkerNote] { markerNotes ?? [] }
     var referencedMarkerIDs: Set<String> { Set((markerIds ?? []) + days.flatMap { $0.markerIds + $0.chains.flatMap { $0 } } + notes.map(\.markerId)) }

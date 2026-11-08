@@ -496,7 +496,7 @@ struct DayEditorDraft: Identifiable {
         return note
     }
     func writeTripNote(tripID: String, markerID: String, title: String, content: String,
-                       version: String?, copy: Bool, using client: APIClient) async throws -> TripMarkerNote? {
+                       version: String?, copy: Bool, headerImage: NoteCoverPatch = .omitted, using client: APIClient) async throws -> TripMarkerNote? {
         guard title.count <= 200, content.count <= 500_000 else { throw AppError.message("标题或正文超出长度限制") }
         guard trips.first(where: { $0.id == tripID })?.referencedMarkerIDs.contains(markerID) == true else {
             throw AppError.message("此地点不属于所选旅行，请先明确加入行程。草稿已保留。")
@@ -505,7 +505,7 @@ struct DayEditorDraft: Identifiable {
         let revision = connectionRevision
         defer { if revision == connectionRevision { saving = false } }
         let note = try await client.tripMarkerNote(tripID: tripID, markerID: markerID, method: copy ? "POST" : "PATCH",
-            title: title, content: content, expectedUpdatedAt: version)
+            title: title, content: content, headerImage: headerImage, expectedUpdatedAt: version)
         guard revision == connectionRevision else { throw CancellationError() }
         if let index = trips.firstIndex(where: { $0.id == tripID }) {
             var notes = trips[index].notes.filter { $0.markerId != markerID }
@@ -741,29 +741,30 @@ struct DayEditorDraft: Identifiable {
         let revision = expectedRevision ?? connectionRevision
         let noteTripID = draft.marker == nil ? (draft.noteTripID ?? targetDay?.tripId ?? tripTarget) : nil
         let globalHTML = noteTripID == nil ? draft.html : ""
+        let globalCover = noteTripID == nil ? draft.headerImage : ""
         var createdMarker: Marker?
         var joinedDay: TripDay?
         let ok = await perform(reserved: reserved, expectedRevision: revision) { defaultClient in
             let client = suppliedClient ?? defaultClient
             if let marker = draft.marker {
-                try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": globalHTML, "headerImage": draft.headerImage])
+                try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": globalHTML, "headerImage": globalCover])
             } else {
                 let created: Marker
                 if let pending = self.pendingCreatedMarkers[draft.id] {
                     created = pending
-                    try await client.mutate("markers/\(APIClient.id(pending.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": globalHTML, "headerImage": draft.headerImage])
+                    try await client.mutate("markers/\(APIClient.id(pending.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": globalHTML, "headerImage": globalCover])
                 } else {
                     created = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": globalHTML, "placeReferences": draft.placeReferences?.requestBody ?? [:]])
                     guard revision == self.connectionRevision else { throw CancellationError() }
                     self.pendingCreatedMarkers[draft.id] = created
                 }
-                if !draft.headerImage.isEmpty { try await client.mutate("markers/\(APIClient.id(created.id))", method: "PUT", body: ["headerImage": draft.headerImage]) }
+                if !globalCover.isEmpty { try await client.mutate("markers/\(APIClient.id(created.id))", method: "PUT", body: ["headerImage": globalCover]) }
                 createdMarker = created
             }
             guard revision == self.connectionRevision else { throw CancellationError() }
-            if let noteTripID, let marker = createdMarker ?? draft.marker, !draft.html.isEmpty || self.pendingCreatedNoteVersions[draft.id] != nil {
+            if let noteTripID, let marker = createdMarker ?? draft.marker, !draft.html.isEmpty || !draft.headerImage.isEmpty || self.pendingCreatedNoteVersions[draft.id] != nil {
                 let note = try await client.tripMarkerNote(tripID: noteTripID, markerID: marker.id, method: "PATCH",
-                    title: "", content: draft.html, expectedUpdatedAt: self.pendingCreatedNoteVersions[draft.id])
+                    title: "", content: draft.html, headerImage: .set(draft.headerImage.isEmpty ? nil : draft.headerImage), expectedUpdatedAt: self.pendingCreatedNoteVersions[draft.id])
                 guard revision == self.connectionRevision else { throw CancellationError() }
                 self.pendingCreatedNoteVersions[draft.id] = note?.updatedAt
             }
@@ -785,7 +786,7 @@ struct DayEditorDraft: Identifiable {
             var saved = createdMarker ?? draft.marker
             if var updated = saved {
                 updated.content.title = draft.title; updated.content.iconType = draft.icon
-                updated.content.markdownContent = globalHTML; updated.content.headerImage = draft.headerImage
+                updated.content.markdownContent = globalHTML; updated.content.headerImage = globalCover
                 if draft.marker == nil { updated.content.address = draft.address }
                 if let index = markers.firstIndex(where: { $0.id == updated.id }) { markers[index] = updated }
                 else { markers.append(updated) }
@@ -1936,9 +1937,13 @@ struct DayEditorDraft: Identifiable {
             trips[0].markerNotes = [
                 TripMarkerNote(tripId: id, markerId: "demo-1", title: "今年的活动", content: "<p>本次旅行专属正文</p>", updatedAt: "fixture-v1"),
                 TripMarkerNote(tripId: id, markerId: "demo-4", title: "已移出日程的活动", content: "<p>保留的旅行笔记</p>", updatedAt: "fixture-v2")]
+            trips[0].markerNotes?[0].headerImage = "https://images.invalid/this-trip.jpg"
             trips[0].days = trips[0].days.map { $0.removing("demo-4") }
             trips.append(Trip(id: "next-year", name: "明年的活动", startDate: "2027-10-01", endDate: "2027-10-01", days: [],
                 markerNotes: [TripMarkerNote(tripId: "next-year", markerId: "demo-1", title: "另一场活动", content: "<p>另一份独立正文</p>", updatedAt: "fixture-v3")]))
+        }
+        if ProcessInfo.processInfo.arguments.contains("--trip-note-preview"), let index = trips.firstIndex(where: { $0.id == "next-year" }) {
+            trips[index].markerNotes?[0].headerImage = "https://images.invalid/next-trip.jpg"
         }
         #endif
         rebuildRoutes(); fly(markers.map(\.coordinates))

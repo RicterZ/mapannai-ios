@@ -14,7 +14,7 @@ struct JourneyDaySummary {
         let title: String
         let headerImage: String?
         init(_ marker: Marker, trip: Trip? = nil) {
-            id = marker.id; title = trip?.displayTitle(for: marker) ?? marker.title; headerImage = marker.content.headerImage
+            id = marker.id; title = trip?.displayTitle(for: marker) ?? marker.title; headerImage = PlaceImage.image(marker: marker, trips: trip.map { [$0] } ?? [], tripID: trip?.id)
         }
     }
     let theme: String?
@@ -28,8 +28,8 @@ struct JourneyDaySummary {
     var coverURL: URL? { photos.first?.url }
     var coverTitle: String? { photos.first?.title }
 
-    init(day: TripDay, index: Int, markers: [Marker], excludingPhotos: Set<URL> = []) {
-        self.init(day: day, index: index, lookup: Self.lookup(markers.map { Place($0) }), excludingPhotos: excludingPhotos)
+    init(day: TripDay, index: Int, markers: [Marker], excludingPhotos: Set<URL> = [], trip: Trip? = nil) {
+        self.init(day: day, index: index, lookup: Self.lookup(markers.map { Place($0, trip: trip) }), excludingPhotos: excludingPhotos)
     }
 
     private init(day: TripDay, index: Int, lookup: [String: Place], excludingPhotos: Set<URL>) {
@@ -88,7 +88,7 @@ struct JourneyDaySummary {
     }
 
     static func cover(trip: Trip, markers: [Marker]) -> URL? {
-        cover(trip: trip, lookup: lookup(markers.map { Place($0) }))
+        cover(trip: trip, lookup: lookup(markers.map { Place($0, trip: trip) }))
     }
     fileprivate static func lookup(_ places: [Place]) -> [String: Place] {
         Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

@@ -216,7 +216,7 @@ struct TripCreationView: View {
     private var coverPlaces: [Marker] {
         guard let trip else { return [] }
         let ids = Set((trip.markerIds ?? []) + trip.days.flatMap { $0.markerIds + $0.chains.flatMap { $0 } })
-        return store.markers.filter { ids.contains($0.id) && $0.content.headerImage.flatMap(imageURL) != nil }
+        return store.markers.filter { ids.contains($0.id) && PlaceImage.image(marker: $0, trips: store.trips, tripID: trip.id).flatMap(imageURL) != nil }
             .sorted { $0.id < $1.id }
     }
 
@@ -227,7 +227,7 @@ struct TripCreationView: View {
                 Spacer()
                 Button {
                     coverImage = TripCoverSelection.toggled(current: coverImage,
-                        firstPhoto: coverPlaces.first?.content.headerImage)
+                        firstPhoto: coverPlaces.first.flatMap { PlaceImage.image(marker: $0, trips: store.trips, tripID: trip?.id) })
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: coverImage == nil ? "checkmark.circle.fill" : "circle")
@@ -251,11 +251,11 @@ struct TripCreationView: View {
             } else {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                     ForEach(coverPlaces) { marker in
-                        Button { coverImage = marker.content.headerImage } label: {
-                            TripCoverThumbnail(url: marker.content.headerImage.flatMap(imageURL),
-                                selected: coverImage == marker.content.headerImage)
+                        Button { coverImage = PlaceImage.image(marker: marker, trips: store.trips, tripID: trip?.id) } label: {
+                            TripCoverThumbnail(url: PlaceImage.image(marker: marker, trips: store.trips, tripID: trip?.id).flatMap(imageURL),
+                                selected: coverImage == PlaceImage.image(marker: marker, trips: store.trips, tripID: trip?.id))
                         }.buttonStyle(.plain).accessibilityLabel(marker.title)
-                            .accessibilityAddTraits(coverImage == marker.content.headerImage ? .isSelected : [])
+                            .accessibilityAddTraits(coverImage == PlaceImage.image(marker: marker, trips: store.trips, tripID: trip?.id) ? .isSelected : [])
                             .accessibilityIdentifier("trip-cover-" + marker.id)
                     }
                 }

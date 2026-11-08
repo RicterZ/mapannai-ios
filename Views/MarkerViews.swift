@@ -19,6 +19,7 @@ struct MarkerDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationUnavailable = false
     @State private var editing = false
+    @State private var noteSelection = MarkerNoteSelection()
     @State private var confirmationHeight: CGFloat?
     @State private var deleting = false
     @State private var removingFromDay = false
@@ -42,9 +43,12 @@ struct MarkerDetailView: View {
         return store.trips.first(where: { $0.id == target.tripId })?.days.first(where: { $0.id == target.id })
     }
     private var memberships: [MarkerTripMembership] { MarkerPresentation.memberships(for: current.id, trips: store.trips) }
-    private var contextTripID: String? {
+    private var defaultNoteTripID: String? {
         let requested = noteTripID ?? (usesDayContext ? (embedded ? (store.addPlaceDay?.tripId ?? store.addPlaceTripID) : (targetDay?.tripId ?? store.tripID)) : nil)
         return MarkerPresentation.noteTripID(for: current.id, requested: requested, trips: store.trips)
+    }
+    private var contextTripID: String? {
+        MarkerPresentation.noteTripID(for: current.id, requested: noteSelection.initialized ? noteSelection.tripID : defaultNoteTripID, trips: store.trips)
     }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
     var body: some View {
@@ -78,6 +82,8 @@ struct MarkerDetailView: View {
                 if !active { confirmationHeight = nil; onConfirmationHeight(nil) }
             }
             .onDisappear { onConfirmationHeight(nil) }
+            .onAppear { noteSelection.initialize(defaultNoteTripID) }
+            .onChange(of: current.id) { _, _ in noteSelection = MarkerNoteSelection(); noteSelection.initialize(defaultNoteTripID) }
             .onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
             .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
             .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose, confirmationHeight: confirmationHeight))
@@ -182,7 +188,7 @@ struct MarkerDetailView: View {
                         }.buttonStyle(.plain).foregroundStyle(.primary)
                             .accessibilityLabel("关闭地点详情").accessibilityIdentifier(embedded ? "search-detail-back" : "close-marker-detail")
                     }
-                    if let image = current.content.headerImage, let url = imageURL(image) {
+                    if let image = PlaceImage.image(marker: current, trips: store.trips, tripID: contextTripID), let url = imageURL(image) {
                         MarkerCoverBanner {
                             AsyncImage(url: url) { phase in
                                 if let image = phase.image { image.resizable().scaledToFill() }
@@ -201,9 +207,7 @@ struct MarkerDetailView: View {
                             JourneyEditorHeading(title: "所属行程").accessibilityIdentifier("marker-itineraries-heading")
                             ForEach(memberships) { membership in
                                 Button {
-                                    store.select(trip: membership.trip, focus: false)
-                                    onNavigateItinerary()
-                                    onClose()
+                                    noteSelection.toggle(membership.id)
                                 } label: {
                                     HStack(spacing: 8) {
                                         VStack(alignment: .leading, spacing: 4) {
@@ -222,30 +226,19 @@ struct MarkerDetailView: View {
                                 }.buttonStyle(.plain).foregroundStyle(.primary)
                                     .accessibilityIdentifier("marker-membership-" + membership.id)
                                     .accessibilityAddTraits(contextTripID == membership.id ? .isSelected : [])
-                                ForEach(membership.days) { day in
-                                    Button {
-                                        store.select(trip: membership.trip, day: day, focus: false)
-                                        onNavigateItinerary()
-                                        onClose()
-                                    } label: {
-                                        let sorted = membership.trip.days.sorted { ($0.date, $0.id) < ($1.date, $1.id) }
-                                        Text("第\((sorted.firstIndex { $0.id == day.id } ?? 0) + 1)天 · " + day.date)
-                                            .font(.caption).foregroundStyle(.secondary)
-                                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                            .padding(.horizontal, 10).contentShape(Rectangle())
-                                    }.buttonStyle(.plain).accessibilityIdentifier("marker-itinerary-" + day.id)
-                                }
+                                if !membership.days.isEmpty { Text(membership.label).font(.caption).foregroundStyle(.secondary) }
+
                             }
                         }
                     }
                     if let tripID = contextTripID, let trip = store.trips.first(where: { $0.id == tripID }) {
                         TripMarkerNoteSection(trip: trip, marker: current).id(tripID + current.id)
-                    }
-                    Divider().padding(.vertical, 4)
-                    JourneyEditorHeading(title: "通用笔记（所有旅行共享）")
-                    if hasNote {
-                        HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight, onImage: { previewImage = NoteImageSelection(url: $0) })
-                            .frame(height: noteHeight).accessibilityIdentifier("marker-note")
+                    } else {
+                        JourneyEditorHeading(title: "通用笔记（所有旅行共享）")
+                        if hasNote {
+                            HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight, onImage: { previewImage = NoteImageSelection(url: $0) })
+                                .frame(height: noteHeight).accessibilityIdentifier("marker-note")
+                        } else { Text("尚无通用笔记").font(.footnote).foregroundStyle(.secondary) }
                     }
                 }.padding(24)
             }
