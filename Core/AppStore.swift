@@ -1943,7 +1943,7 @@ struct DayEditorDraft: Identifiable {
                 markerNotes: [TripMarkerNote(tripId: "next-year", markerId: "demo-1", title: "另一场活动", content: "<p>另一份独立正文</p>", updatedAt: "fixture-v3")]))
         }
         if ProcessInfo.processInfo.arguments.contains("--trip-note-preview"), let index = trips.firstIndex(where: { $0.id == "next-year" }) {
-            trips[index].markerNotes?[0].headerImage = "https://images.invalid/next-trip.jpg"
+            trips[index].markerNotes?[0].headerImage = ProcessInfo.processInfo.arguments.contains("--cover-order-review") ? nil : "https://images.invalid/next-trip.jpg"
         }
         #endif
         rebuildRoutes(); fly(markers.map(\.coordinates))
