@@ -80,10 +80,10 @@ enum PlaceImage {
               ["http", "https"].contains(scheme), url.host != nil else { return nil }
         return url
     }
+    private static let imagePattern = try! NSRegularExpression(pattern: #"<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']"#, options: .caseInsensitive)
     static func firstImage(_ html: String) -> String? {
-        let pattern = #"<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+        guard !html.isEmpty,
+              let match = imagePattern.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
               let range = Range(match.range(at: 1), in: html) else { return nil }
         let raw = String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
         return httpURL(raw) == nil ? nil : raw
