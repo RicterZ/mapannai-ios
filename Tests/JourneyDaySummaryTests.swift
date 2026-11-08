@@ -26,7 +26,8 @@ final class JourneyDaySummaryTests: XCTestCase {
     @MainActor func testChapterCacheReusesSnapshotsAndIgnoresNotesAndCoordinates() {
         let cache = JourneyChapterCache()
         let day = TripDay(id: "d", tripId: "t", date: "2026-10-01", markerIds: ["a", "b"], chains: [["a", "b"]])
-        let trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: day.date, days: [day])
+        var trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: day.date, days: [day])
+        trip.markerNotes = markers.map { TripMarkerNote(tripId: "t", markerId: $0.id, title: "", content: "", updatedAt: "v", headerImage: $0.content.headerImage) }
         let initial = cache.snapshot(trip: trip, markers: markers)
         for _ in 0..<20 {
             XCTAssertTrue(cache.snapshot(trip: trip, markers: markers) === initial)
@@ -39,7 +40,9 @@ final class JourneyDaySummaryTests: XCTestCase {
         let renamed = cache.snapshot(trip: trip, markers: edited)
         XCTAssertFalse(renamed === initial)
         XCTAssertEqual(renamed.summaries.first?.routePreviews, [["New title", "B"]])
-        edited[0].content.headerImage = "https://example.invalid/new.jpg"
+        edited[0].content.headerImage = "https://example.invalid/shared-new.jpg"
+        XCTAssertTrue(cache.snapshot(trip: trip, markers: edited) === renamed, "Trip never borrows a shared cover")
+        trip.markerNotes?[0].headerImage = "https://example.invalid/new.jpg"
         let newPhoto = cache.snapshot(trip: trip, markers: edited)
         XCTAssertFalse(newPhoto === renamed)
         XCTAssertEqual(newPhoto.coverURL?.lastPathComponent, "new.jpg")
@@ -116,7 +119,8 @@ final class JourneyDaySummaryTests: XCTestCase {
         var next = day
         next.id = "second"
         next.date = "2026-10-02"
-        let trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: next.date, days: [day, next])
+        var trip = Trip(id: "t", name: "Trip", startDate: day.date, endDate: next.date, days: [day, next])
+        trip.markerNotes = [TripMarkerNote(tripId: "t", markerId: "a", title: "", content: "", updatedAt: "v", headerImage: "https://example.invalid/shared-cover.jpg")]
         var places = markers
         places[0].content.headerImage = "https://example.invalid/shared-cover.jpg"
         let snapshot = JourneyChapterCache().snapshot(trip: trip, markers: places)

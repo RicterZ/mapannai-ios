@@ -13,8 +13,8 @@ struct JourneyDaySummary {
         let id: String
         let title: String
         let headerImage: String?
-        init(_ marker: Marker) {
-            id = marker.id; title = marker.title; headerImage = marker.content.headerImage
+        init(_ marker: Marker, trip: Trip? = nil) {
+            id = marker.id; title = trip?.displayTitle(for: marker) ?? marker.title; headerImage = PlaceImage.image(marker: marker, trips: trip.map { [$0] } ?? [], tripID: trip?.id)
         }
     }
     let theme: String?
@@ -28,8 +28,8 @@ struct JourneyDaySummary {
     var coverURL: URL? { photos.first?.url }
     var coverTitle: String? { photos.first?.title }
 
-    init(day: TripDay, index: Int, markers: [Marker], excludingPhotos: Set<URL> = []) {
-        self.init(day: day, index: index, lookup: Self.lookup(markers.map(Place.init)), excludingPhotos: excludingPhotos)
+    init(day: TripDay, index: Int, markers: [Marker], excludingPhotos: Set<URL> = [], trip: Trip? = nil) {
+        self.init(day: day, index: index, lookup: Self.lookup(markers.map { Place($0, trip: trip) }), excludingPhotos: excludingPhotos)
     }
 
     private init(day: TripDay, index: Int, lookup: [String: Place], excludingPhotos: Set<URL>) {
@@ -74,8 +74,8 @@ struct JourneyDaySummary {
     }
 
     // Assign in display order, not image-load or scroll order.
-    static func chapters(days: [TripDay], markers: [Marker], excludingPhotos: Set<URL> = []) -> [JourneyDaySummary] {
-        chapters(days: days, lookup: lookup(markers.map(Place.init)), excludingPhotos: excludingPhotos)
+    static func chapters(days: [TripDay], markers: [Marker], excludingPhotos: Set<URL> = [], trip: Trip? = nil) -> [JourneyDaySummary] {
+        chapters(days: days, lookup: lookup(markers.map { Place($0, trip: trip) }), excludingPhotos: excludingPhotos)
     }
 
     fileprivate static func chapters(days: [TripDay], lookup: [String: Place], excludingPhotos: Set<URL>) -> [JourneyDaySummary] {
@@ -88,7 +88,7 @@ struct JourneyDaySummary {
     }
 
     static func cover(trip: Trip, markers: [Marker]) -> URL? {
-        cover(trip: trip, lookup: lookup(markers.map(Place.init)))
+        cover(trip: trip, lookup: lookup(markers.map { Place($0, trip: trip) }))
     }
     fileprivate static func lookup(_ places: [Place]) -> [String: Place] {
         Dictionary(places.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -123,7 +123,7 @@ struct JourneyDaySummary {
     private var entries: [String: Entry] = [:]
 
     func snapshot(trip: Trip, markers: [Marker]) -> Snapshot {
-        let places = markers.map(JourneyDaySummary.Place.init)
+        let places = markers.map { JourneyDaySummary.Place($0, trip: trip) }
         if let entry = entries[trip.id], entry.trip == trip, entry.places == places { return entry.snapshot }
         let snapshot = Snapshot(trip: trip, places: places)
         if entries.count >= 64 { entries.removeAll(keepingCapacity: true) }

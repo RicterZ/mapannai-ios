@@ -57,14 +57,18 @@
 		40D75353D7FB6F3862F2FA5B /* ItineraryScrollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1967E749797AC413790F093E /* ItineraryScrollTests.swift */; };
 		45397352C2053DEBBC4C5CB8 /* DayTemperatureReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3386A7BADAA06E3300BBCE /* DayTemperatureReview.swift */; };
 		4692A1E0AFE15F940C05AF1A /* PanelControlsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4869E83E16B78BCCC652AAF2 /* PanelControlsTests.swift */; };
+		4889937EBC6D148155AA1176 /* TripMarkerNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4374CBCFED347BFF87917D0 /* TripMarkerNoteView.swift */; };
 		49854BE16EBA83ACCBB42D5E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5AAA4D8D79DFD1AE6A2DFD48 /* PrivacyInfo.xcprivacy */; };
 		4ACB817D344D263D4236929F /* MarkerEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA085D1BA8DACA6C746B7934 /* MarkerEditorTests.swift */; };
 		5538217A971FAC9AA8F693F5 /* RouteSpatialIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 643D80F501C97FDAC85C6252 /* RouteSpatialIndex.swift */; };
 		58C717798F7574DE7E8ADDC8 /* RouteDirectionArrows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 952CB681D43782DFE76952A6 /* RouteDirectionArrows.swift */; };
+		5C5DEC13C1A9719B834AEC49 /* TripMarkerNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE16DE798EF83D40E045861 /* TripMarkerNotes.swift */; };
 		5C9EA6A5EA50DF5C6538B4F1 /* AIPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E64E5D5CCD66C47F3724D18 /* AIPlannerView.swift */; };
+		5CC6D0AE404E26809339EABA /* TripMarkerNoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E970933F01E91F6189857AD /* TripMarkerNoteTests.swift */; };
 		5CCABAA3486D28DF2DC9407A /* TripCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A371047CAA76B217A5760D /* TripCreationView.swift */; };
 		5DF08649B912E7DCD153DAF9 /* SearchMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B62253EAC3829164040323C /* SearchMapTests.swift */; };
 		5E5B7F87B301257F05899C5B /* CameraMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A5131C016B257343D4A0CD /* CameraMotion.swift */; };
+		5F3F24458AEA5CBEE420D2BA /* TripMarkerNoteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367973E2388265A6D3814B69 /* TripMarkerNoteUITests.swift */; };
 		5F7A707A3A4D3CC3E0F77B06 /* TripNameSuggestionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D340A51AF92E8B792305D45 /* TripNameSuggestionsTests.swift */; };
 		5FF3E71B09EF7B4C03D3F8F1 /* PlannedRoutePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25EFF3E1BB445C58E94A1D8 /* PlannedRoutePresentationTests.swift */; };
 		600AA5D63A9848C91732D1B2 /* MapZoomPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E638F7BC16C1CF3639093C55 /* MapZoomPresentation.swift */; };
@@ -221,9 +225,10 @@
 		1967E749797AC413790F093E /* ItineraryScrollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryScrollTests.swift; sourceTree = "<group>"; };
 		198C34C423C7BB478F9EC042 /* BackgroundSaveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSaveTests.swift; sourceTree = "<group>"; };
 		19E8C26CE0FD52259B26545B /* MapAnNaiWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MapAnNaiWidget.entitlements; sourceTree = "<group>"; };
+		1AE16DE798EF83D40E045861 /* TripMarkerNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMarkerNotes.swift; sourceTree = "<group>"; };
 		1B01B7D0E0377DDA8508CED5 /* MarkerPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerPresentation.swift; sourceTree = "<group>"; };
 		1C4EE1D4A3CFED767F0CC73D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		1D05C6D25966F6717D9418A3 /* MapAnNai.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MapAnNai.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1D05C6D25966F6717D9418A3 /* MapAnNai.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MapAnNai.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1D2B3B4CA639051EC71D17F6 /* TransportRoutePlanningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportRoutePlanningTests.swift; sourceTree = "<group>"; };
 		1D340A51AF92E8B792305D45 /* TripNameSuggestionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNameSuggestionsTests.swift; sourceTree = "<group>"; };
 		1EE4DC6DD0A68391E9F7832E /* JourneyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyViews.swift; sourceTree = "<group>"; };
@@ -239,6 +244,7 @@
 		300E21D1B221F08F4F3037F8 /* RouteSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSelection.swift; sourceTree = "<group>"; };
 		33D4E8DFC738036248B04B83 /* RouteMotionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteMotionOverlay.swift; sourceTree = "<group>"; };
 		342BDA1456401B4EAD539738 /* RouteOverlapPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteOverlapPresentation.swift; sourceTree = "<group>"; };
+		367973E2388265A6D3814B69 /* TripMarkerNoteUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMarkerNoteUITests.swift; sourceTree = "<group>"; };
 		37C16D7526C2682672D53176 /* RouteScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteScheduleTests.swift; sourceTree = "<group>"; };
 		38A371047CAA76B217A5760D /* TripCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCreationView.swift; sourceTree = "<group>"; };
 		3A22977B4FF9EFC08FDD71BC /* JourneyCardStyleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyCardStyleUITests.swift; sourceTree = "<group>"; };
@@ -251,7 +257,7 @@
 		40887600D8FC8AA9FB0BC71F /* WidgetSnapshotWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotWriter.swift; sourceTree = "<group>"; };
 		4140415A9DAD22E98BB13192 /* GoogleMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleMapView.swift; sourceTree = "<group>"; };
 		425DF5BCBE1273228F07E613 /* MarkerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerViews.swift; sourceTree = "<group>"; };
-		42CAE74097153A4CF3C81CE1 /* MapAnNaiTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MapAnNaiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		42CAE74097153A4CF3C81CE1 /* MapAnNaiTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MapAnNaiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		44F803700132C621981E8417 /* MapAnNai-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MapAnNai-Bridging-Header.h"; sourceTree = "<group>"; };
 		455D902A90E28E3E96034F8D /* IPadDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IPadDetailTests.swift; sourceTree = "<group>"; };
 		46A6CF522B46340965E00248 /* JourneyWeatherBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyWeatherBackground.swift; sourceTree = "<group>"; };
@@ -272,7 +278,7 @@
 		544F620FEF92FB9D812507C6 /* ItineraryCardLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItineraryCardLayoutTests.swift; sourceTree = "<group>"; };
 		5543717B3FBF113B9D8669E9 /* AIPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlanner.swift; sourceTree = "<group>"; };
 		56F9EE0EE65E5CD608401408 /* JourneyEditingActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyEditingActionsTests.swift; sourceTree = "<group>"; };
-		5AAA4D8D79DFD1AE6A2DFD48 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		5AAA4D8D79DFD1AE6A2DFD48 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		5AD8D5E25A1C9E0E2FACB862 /* AIPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerTests.swift; sourceTree = "<group>"; };
 		5B204CAEBC71F4234F1FC623 /* SearchReturnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchReturnTests.swift; sourceTree = "<group>"; };
 		5C8C9BD1EBF34357D9BDA56D /* JourneySheetBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneySheetBackground.swift; sourceTree = "<group>"; };
@@ -287,6 +293,7 @@
 		6B450235965289010509590A /* MapMarkerAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapMarkerAppearance.swift; sourceTree = "<group>"; };
 		6D5FCAF161DEB8BD62FACE0F /* TripWeatherLocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripWeatherLocationTests.swift; sourceTree = "<group>"; };
 		6E4AD4D1AFE0AC15923465D3 /* POIScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POIScreenshotTests.swift; sourceTree = "<group>"; };
+		6E970933F01E91F6189857AD /* TripMarkerNoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMarkerNoteTests.swift; sourceTree = "<group>"; };
 		6F00528A33C5070614ABF1CA /* JourneyBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyBackgroundTests.swift; sourceTree = "<group>"; };
 		71A017E8694F055DAB5D395B /* AIPlannerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPlannerUITests.swift; sourceTree = "<group>"; };
 		7242A04536ED3C50E6452593 /* MarkerImageCompression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerImageCompression.swift; sourceTree = "<group>"; };
@@ -336,7 +343,8 @@
 		BB3386A7BADAA06E3300BBCE /* DayTemperatureReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayTemperatureReview.swift; sourceTree = "<group>"; };
 		BDA0B7D85FB073D7062418B8 /* DirectedRouteMoveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectedRouteMoveTests.swift; sourceTree = "<group>"; };
 		C335E3944995E33E94762A45 /* SearchSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSelectionTests.swift; sourceTree = "<group>"; };
-		C7216D6CC38CC6E44C1FE4A8 /* MapAnNaiWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MapAnNaiWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C4374CBCFED347BFF87917D0 /* TripMarkerNoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMarkerNoteView.swift; sourceTree = "<group>"; };
+		C7216D6CC38CC6E44C1FE4A8 /* MapAnNaiWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = MapAnNaiWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C93BEB8BDCD7B18AE3AF5CAC /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		CB36EAD1DEBA4FC2D99ED368 /* AIInteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIInteractionTests.swift; sourceTree = "<group>"; };
 		CB49204DC62950AB6B319F2C /* MarkerRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerRepositoryTests.swift; sourceTree = "<group>"; };
@@ -364,7 +372,7 @@
 		F00A56773C523B6EC0BA67DC /* SearchPaginationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPaginationUITests.swift; sourceTree = "<group>"; };
 		F120DDA67261A84FB9EE3349 /* ArchiveChatEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveChatEntry.swift; sourceTree = "<group>"; };
 		F2D4BA8D277CAB844010A252 /* TripWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripWidget.swift; sourceTree = "<group>"; };
-		F68E87F16FD306CFB5F81815 /* MapAnNaiUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MapAnNaiUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F68E87F16FD306CFB5F81815 /* MapAnNaiUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MapAnNaiUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F72771F1E2B151FC279B7446 /* Geometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Geometry.swift; sourceTree = "<group>"; };
 		F96C9DF6A9CD060EB8FC5BF9 /* InteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionTests.swift; sourceTree = "<group>"; };
 		FB8D50F9FB8E05601301E564 /* TripDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDeletionView.swift; sourceTree = "<group>"; };
@@ -432,6 +440,7 @@
 				38A371047CAA76B217A5760D /* TripCreationView.swift */,
 				FB8D50F9FB8E05601301E564 /* TripDeletionView.swift */,
 				B2449AD6CA2FED9E965BCAB5 /* TripDestinationPicker.swift */,
+				C4374CBCFED347BFF87917D0 /* TripMarkerNoteView.swift */,
 				20C0EABB03B72041EAD86185 /* TripNamePlaceholder.swift */,
 				7DC8A3EBC540A61F7259026E /* TripsView.swift */,
 			);
@@ -474,6 +483,7 @@
 				77B1BBFF8F1D29583F6C7FF1 /* Settings.swift */,
 				8A3978F19A26A8C390918515 /* StartupCamera.swift */,
 				E17BB7F3AA59715AF13BD5C5 /* TripDateRange.swift */,
+				1AE16DE798EF83D40E045861 /* TripMarkerNotes.swift */,
 				A3C275D2F840DA64FD975E3D /* TripNameSuggestions.swift */,
 				DBC2B7BEEE485C615F6FA42E /* TripWeatherLocation.swift */,
 				85019C7C891CFD8D3A89E3A5 /* TripWeatherService.swift */,
@@ -516,6 +526,7 @@
 				C335E3944995E33E94762A45 /* SearchSelectionTests.swift */,
 				1D2B3B4CA639051EC71D17F6 /* TransportRoutePlanningTests.swift */,
 				50E47EABEE70D0B37F33EC7F /* TripDateRangeTests.swift */,
+				6E970933F01E91F6189857AD /* TripMarkerNoteTests.swift */,
 				1D340A51AF92E8B792305D45 /* TripNameSuggestionsTests.swift */,
 				6D5FCAF161DEB8BD62FACE0F /* TripWeatherLocationTests.swift */,
 				10616AE5244F0A9268F16CCB /* TripWeatherServiceTests.swift */,
@@ -595,6 +606,7 @@
 				92774D65BC939D985E2DBBC8 /* TripCreationTests.swift */,
 				98A6A81018435A3992E39030 /* TripDeletionTests.swift */,
 				5405CAA1777E9322D0EC643D /* TripEditorTests.swift */,
+				367973E2388265A6D3814B69 /* TripMarkerNoteUITests.swift */,
 			);
 			path = UITests;
 			sourceTree = "<group>";
@@ -855,6 +867,8 @@
 				C07D0E29CFA250A49B4B2C58 /* TripDateRange.swift in Sources */,
 				820E0ED4AE6E2330AA685E65 /* TripDeletionView.swift in Sources */,
 				93FEDBB14CC8A43BF7B270E9 /* TripDestinationPicker.swift in Sources */,
+				4889937EBC6D148155AA1176 /* TripMarkerNoteView.swift in Sources */,
+				5C5DEC13C1A9719B834AEC49 /* TripMarkerNotes.swift in Sources */,
 				A4263002C871C2357ECABBCC /* TripNamePlaceholder.swift in Sources */,
 				C30EBA5B6AAF6D30241CB053 /* TripNameSuggestions.swift in Sources */,
 				6167C5DC63CCDF1D96CB3FA2 /* TripWeatherLocation.swift in Sources */,
@@ -900,6 +914,7 @@
 				8FC298524B1D52C0FBF7C80B /* SearchSelectionTests.swift in Sources */,
 				A848178B36D1AC2EBF3AF00E /* TransportRoutePlanningTests.swift in Sources */,
 				0CED7738DB0106A6116DE30F /* TripDateRangeTests.swift in Sources */,
+				5CC6D0AE404E26809339EABA /* TripMarkerNoteTests.swift in Sources */,
 				5F7A707A3A4D3CC3E0F77B06 /* TripNameSuggestionsTests.swift in Sources */,
 				095B2322EC888730582FE624 /* TripWeatherLocationTests.swift in Sources */,
 				E50C179B529E1BEDE6B8CEB5 /* TripWeatherServiceTests.swift in Sources */,
@@ -952,6 +967,7 @@
 				7A15C7546CA9FCD383568747 /* TripCreationTests.swift in Sources */,
 				F23D930B9FB4B819515B5D30 /* TripDeletionTests.swift in Sources */,
 				0D8DA2E591B528E9625BE0C1 /* TripEditorTests.swift in Sources */,
+				5F3F24458AEA5CBEE420D2BA /* TripMarkerNoteUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -981,7 +997,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = X5767KXUH8;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1029,15 +1044,12 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 195;
+				CURRENT_PROJECT_VERSION = 410;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Vendor",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(inherited) $(PROJECT_DIR)/Vendor";
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -1056,29 +1068,10 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.0.5;
+				MARKETING_VERSION = 0.0.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
-					"$(inherited)",
-					"-ObjC",
-					"-framework",
-					MAMapKit,
-					"-framework",
-					AMapFoundationKit,
-					"-framework",
-					CoreTelephony,
-					"-framework",
-					SystemConfiguration,
-					"-framework",
-					Security,
-					"-framework",
-					OpenGLES,
-					"-framework",
-					GLKit,
-					"-lz",
-					"-lc++",
-				);
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(inherited) -ObjC -framework MAMapKit -framework AMapFoundationKit -framework CoreTelephony -framework SystemConfiguration -framework Security -framework OpenGLES -framework GLKit -lz -lc++";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -1109,8 +1102,8 @@
 		7D2D6311B10EF35EEEE41753 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
 				DEVELOPMENT_TEAM = X5767KXUH8;
+				APPLICATION_EXTENSION_API_ONLY = YES;
 				INFOPLIST_FILE = Widget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1146,9 +1139,9 @@
 		AEE5FDD00D8BFCCBCFED8B44 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				DEVELOPMENT_TEAM = X5767KXUH8;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = X5767KXUH8;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1180,8 +1173,8 @@
 		BA33E0707F0DE29600F603C9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
 				DEVELOPMENT_TEAM = X5767KXUH8;
+				APPLICATION_EXTENSION_API_ONLY = YES;
 				INFOPLIST_FILE = Widget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1233,15 +1226,12 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 195;
+				CURRENT_PROJECT_VERSION = 410;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Vendor",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(inherited) $(PROJECT_DIR)/Vendor";
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -1266,30 +1256,11 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 0.0.5;
+				MARKETING_VERSION = 0.0.6;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
-					"$(inherited)",
-					"-ObjC",
-					"-framework",
-					MAMapKit,
-					"-framework",
-					AMapFoundationKit,
-					"-framework",
-					CoreTelephony,
-					"-framework",
-					SystemConfiguration,
-					"-framework",
-					Security,
-					"-framework",
-					OpenGLES,
-					"-framework",
-					GLKit,
-					"-lz",
-					"-lc++",
-				);
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(inherited) -ObjC -framework MAMapKit -framework AMapFoundationKit -framework CoreTelephony -framework SystemConfiguration -framework Security -framework OpenGLES -framework GLKit -lz -lc++";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;

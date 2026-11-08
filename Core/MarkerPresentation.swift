@@ -7,7 +7,30 @@ struct MarkerItinerary: Identifiable {
     let dayNumber: Int
     var id: String { trip.id + "/" + day.id }
 }
+struct MarkerTripMembership: Identifiable {
+    let trip: Trip
+    let days: [TripDay]
+    let unassigned: Bool
+    var id: String { trip.id }
+    var label: String {
+        if !days.isEmpty {
+            let sorted = trip.days.sorted { ($0.date, $0.id) < ($1.date, $1.id) }
+            return days.map { day in "第\((sorted.firstIndex { $0.id == day.id } ?? 0) + 1)天 · " + day.date }.joined(separator: "、")
+        }
+        return unassigned ? "未分配日期" : "保留旅行笔记"
+    }
+}
 enum MarkerPresentation {
+    static func memberships(for markerID: String, trips: [Trip]) -> [MarkerTripMembership] {
+        trips.filter { $0.referencedMarkerIDs.contains(markerID) }.map { trip in
+            MarkerTripMembership(trip: trip, days: trip.days.filter {
+                $0.markerIds.contains(markerID) || $0.chains.contains { $0.contains(markerID) }
+            }.sorted { ($0.date, $0.id) < ($1.date, $1.id) }, unassigned: (trip.markerIds ?? []).contains(markerID))
+        }
+    }
+    static func noteTripID(for markerID: String, requested: String?, trips: [Trip]) -> String? {
+        memberships(for: markerID, trips: trips).first { $0.id == requested }?.id
+    }
     static func itineraries(for markerID: String, trips: [Trip]) -> [MarkerItinerary] {
         trips.flatMap { trip in
             trip.days.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }

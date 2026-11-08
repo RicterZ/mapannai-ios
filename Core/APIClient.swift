@@ -18,6 +18,12 @@ struct APIClient {
         guard let http = response as? HTTPURLResponse else { throw AppError.message("服务没有返回 HTTP 响应") }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 401 || http.statusCode == 403 { throw AppError.message("认证失败，请检查 API token") }
+            if path.hasSuffix("/note"), http.statusCode == 409 {
+                throw AppError.message("旅行笔记已更新或目标正文非空。草稿已保留，请刷新并核对后重新编辑，不能直接覆盖。")
+            }
+            if path.hasSuffix("/note"), http.statusCode == 404 {
+                throw AppError.message("此服务器缺少旅行笔记功能，或旅行/地点已删除。请升级服务并刷新；草稿已保留。")
+            }
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             throw AppError.message(object?["error"] as? String ?? "服务请求失败（\(http.statusCode)）")
         }

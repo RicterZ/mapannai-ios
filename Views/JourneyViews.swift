@@ -28,6 +28,7 @@ struct JourneyDaysContents: View {
     @State private var targetedDayID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingGuide = false
+    @State private var showingPlaceNotes = false
     @State private var editing = false
     @State private var deletion: TripDay?
     @State private var pendingInitialDayID: String?
@@ -66,6 +67,8 @@ struct JourneyDaysContents: View {
             Group {
             Section {
                 JourneyActionGroup(compact: true) {
+                    Button { showingPlaceNotes = true } label: { Label("地点笔记", systemImage: "note.text") }
+                        .accessibilityIdentifier("journey-place-notes")
                     Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
                         .accessibilityIdentifier("journey-guide")
                     Button { editing = true } label: { Label("编辑旅途", systemImage: "pencil") }
@@ -117,11 +120,14 @@ struct JourneyDaysContents: View {
                 Section {
                     JourneyPlaceGroupHeading(title: "未安排日期", count: unscheduledPlaces.count)
                     ForEach(unscheduledPlaces) { marker in
-                        DayPlaceIdentity(marker: marker)
+                        VStack(alignment: .leading) {
+                            DayPlaceIdentity(marker: marker, trips: store.trips, tripID: trip.id)
+                            if let title = trip.note(for: marker.id)?.title, !title.isEmpty { Text(title).font(.subheadline) }
+                        }
                             .listRowBackground(Color(uiColor: .systemBackground))
                             .listRowSeparator(.hidden)
                             .contentShape(Rectangle())
-                            .onTapGesture { store.focus(marker) }
+                            .onTapGesture { store.select(trip: trip, focus: false); store.focus(marker) }
                             .accessibilityElement(children: .combine)
                             .accessibilityAddTraits(.isButton)
                             .accessibilityIdentifier("trip-unscheduled-\(marker.id)")
@@ -182,6 +188,7 @@ struct JourneyDaysContents: View {
             })
         }
         }
+            .sheet(isPresented: $showingPlaceNotes) { TripPlaceNotesView(store: store, tripID: trip.id) }
             .fullScreenCover(isPresented: $showingGuide) { JourneyGuideView(store: store, trip: trip, markers: store.markers) }
             .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: Binding(get: { archiveColorIndex != nil && store.dayEditorDraft?.tripID == trip.id ? store.dayEditorDraft : nil },
@@ -217,8 +224,11 @@ struct JourneyDaysContents: View {
                         if !unscheduledPlaces.isEmpty {
                             JourneyPlaceGroupHeading(title: "未安排日期", count: unscheduledPlaces.count)
                             ForEach(unscheduledPlaces) { marker in
-                                Button { store.focus(marker) } label: {
-                                    DayPlaceIdentity(marker: marker)
+                                Button { store.select(trip: trip, focus: false); store.focus(marker) } label: {
+                                    VStack(alignment: .leading) {
+                                        DayPlaceIdentity(marker: marker, trips: store.trips, tripID: trip.id)
+                                        if let title = trip.note(for: marker.id)?.title, !title.isEmpty { Text(title).font(.subheadline) }
+                                    }
                                 }.buttonStyle(.plain)
                             }
                         }
@@ -271,6 +281,8 @@ struct JourneyDaysContents: View {
     }
 
     @ViewBuilder private var landscapeActionButtons: some View {
+        Button { showingPlaceNotes = true } label: { Label("地点笔记", systemImage: "note.text") }
+            .accessibilityIdentifier("journey-place-notes")
         Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
             .accessibilityIdentifier("journey-guide")
         Button { editing = true } label: { Label("编辑旅途", systemImage: "pencil") }
@@ -387,7 +399,7 @@ struct JourneyArchiveView: View {
 
     private var openedTrip: Trip? { trips.first { $0.id == openedID } }
     private var independent: [Marker] {
-        let assigned = Set(store.trips.flatMap { ($0.markerIds ?? []) + $0.days.flatMap(\.markerIds) })
+        let assigned = Set(store.trips.flatMap { Array($0.referencedMarkerIDs) })
         return store.markers.filter { !assigned.contains($0.id) }
     }
     private var trips: [Trip] {
@@ -727,7 +739,7 @@ struct JourneyArchiveView: View {
                             HStack(spacing: 12) {
                                 ForEach(independent) { marker in
                                     Button { store.selectedMarker = marker; independentDetail = marker } label: {
-                                        ArchiveSavedPlaceCard(marker: marker)
+                                        ArchiveSavedPlaceCard(marker: marker, trips: store.trips)
                                     }.buttonStyle(.plain)
                                 }
                             }
@@ -886,7 +898,7 @@ struct JourneyArchiveView: View {
                             HStack(alignment: .top, spacing: 12) {
                                 ForEach(independent) { marker in
                                     Button { store.selectedMarker = marker; independentDetail = marker } label: {
-                                        ArchiveSavedPlaceCard(marker: marker)
+                                        ArchiveSavedPlaceCard(marker: marker, trips: store.trips)
                                     }.buttonStyle(.plain).accessibilityIdentifier("independent-marker-\(marker.id)")
                                 }
                             }
@@ -1235,6 +1247,7 @@ private struct JourneyArchiveYearCard: View {
 
 private struct ArchiveSavedPlaceCard: View {
     let marker: Marker
+    var trips: [Trip] = []
     @ScaledMetric(relativeTo: .body) private var width = 220
     private var artworkBackground: Color {
         let palette: [Color] = [.blue, .green, .orange, .pink, .teal, .yellow]
@@ -1246,7 +1259,7 @@ private struct ArchiveSavedPlaceCard: View {
             Color.clear.frame(height: 132)
                 .overlay {
                     GeometryReader { geometry in
-                        DayPlaceArtwork(marker: marker, fallbackBackground: artworkBackground)
+                        DayPlaceArtwork(marker: marker, fallbackBackground: artworkBackground, trips: trips)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }
@@ -1491,7 +1504,7 @@ private struct JourneyArchiveCard: View {
                     Text(isPlaceholder ? "从一个想去的地方开始。" : "\(trip.startDate) — \(trip.endDate)")
                         .font(.footnote).foregroundStyle(.secondary)
                     if !isPlaceholder {
-                        Text("\(trip.days.count) 天 · \(Set(trip.days.flatMap(\.markerIds) + (trip.markerIds ?? [])).count) 个地点")
+                        Text("\(trip.days.count) 天 · \(trip.referencedMarkerIDs.count) 个地点")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

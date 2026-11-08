@@ -5,7 +5,7 @@ struct TripDeletionView: View {
     let trip: Trip
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        DeletionConfirmationView(store: store, title: "删除旅途", message: "“\(trip.name)”及其每日行程将被删除。", kind: "trip") { includeMarkers in
+        DeletionConfirmationView(store: store, title: "删除旅途", message: "“\(trip.name)”及其每日行程和\(trip.notes.count)份旅行地点笔记将被删除。", kind: "trip") { includeMarkers in
             store.deleteItinerary(tripID: trip.id, deleteExclusiveMarkers: includeMarkers, animated: !reduceMotion)
         }
     }
@@ -16,7 +16,7 @@ struct DayDeletionView: View {
     let day: TripDay
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        DeletionConfirmationView(store: store, title: "删除当天", message: "\(day.date) 的安排将被删除，后续日期依次前移。", kind: "day") { includeMarkers in
+        DeletionConfirmationView(store: store, title: "删除当天", message: "\(day.date) 的安排将被删除，后续日期依次前移。\(store.trips.first { $0.id == day.tripId }?.notes.count ?? 0)份旅行地点笔记保留。", kind: "day") { includeMarkers in
             store.deleteItinerary(tripID: day.tripId, dayID: day.id, deleteExclusiveMarkers: includeMarkers, animated: !reduceMotion)
         }
     }
@@ -76,7 +76,7 @@ struct DeletionConfirmationView: View {
                             .font(.title3).foregroundStyle(deleteExclusiveMarkers ? Color.primary : Color.secondary)
                         VStack(alignment: .leading, spacing: 6) {
                             Text("同时删除独占地点").font(.body).foregroundStyle(.primary)
-                            Text("其他行程仍在使用的地点会保留。")
+                            Text("其他行程或保留笔记引用的地点会保留。删除整旅时，也包含仅被该旅笔记引用的独占地点。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)

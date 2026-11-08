@@ -78,6 +78,7 @@ struct DayEditorDraft: Identifiable {
     private var pendingCreatedDays: [UUID: TripDay] = [:]
     @Published private(set) var canResumeFailedSave = false
     private var failedSaveAction: (() -> Void)?
+    private var pendingCreatedNoteVersions: [UUID: String] = [:]
     private var pendingCreatedMarkers: [UUID: Marker] = [:]
     private var pendingCreatedTrips: [UUID: Trip] = [:]
     @Published var draft: MarkerDraft?
@@ -242,7 +243,7 @@ struct DayEditorDraft: Identifiable {
         connectionRevision = UUID(); refreshGeneration = UUID(); dataRevision = UUID()
         loading = false; refreshing = false; saving = false
         failedSaveAction = nil; canResumeFailedSave = false; tripSaveRecovery = nil
-        pendingCreatedMarkers = [:]; pendingCreatedTrips = [:]
+        pendingCreatedNoteVersions = [:]; pendingCreatedMarkers = [:]; pendingCreatedTrips = [:]
         dayEditorDraft = nil; pendingCreatedDays = [:]
         endAddingPlace()
         endDayMapBrowsing()
@@ -300,7 +301,7 @@ struct DayEditorDraft: Identifiable {
             guard revision == connectionRevision, dataVersion == dataRevision, !saving else { return }
             guard let index = markers.firstIndex(where: { $0.id == id }) else {
                 guard trips.contains(where: { trip in
-                    (trip.markerIds ?? []).contains(id) || trip.days.contains(where: { $0.markerIds.contains(id) || $0.chains.contains(where: { $0.contains(id) }) })
+                    trip.notes.contains(where: { $0.markerId == id }) || (trip.markerIds ?? []).contains(id) || trip.days.contains(where: { $0.markerIds.contains(id) || $0.chains.contains(where: { $0.contains(id) }) })
                 }) else { return }
                 markers.append(marker); rebuildRoutes(); return
             }
@@ -441,13 +442,7 @@ struct DayEditorDraft: Identifiable {
         }
         let previousTrips = trips, previousMarkers = markers
         let revision = connectionRevision, client = api
-        let removedDays = owner.days.filter { targetDayID == nil || $0.id == targetDayID }
-        let candidates = Set(removedDays.flatMap { $0.markerIds + $0.chains.flatMap { $0 } } + (targetDayID == nil ? (owner.markerIds ?? []) : []))
-        let allDays = trips.flatMap { $0.days }
-        let exclusiveIDs = deleteExclusiveMarkers ? Set(candidates.filter { markerID in
-            allDays.filter { $0.markerIds.contains(markerID) || $0.chains.contains(where: { $0.contains(markerID) }) }.count
-                + trips.filter { ($0.markerIds ?? []).contains(markerID) }.count == 1
-        }) : []
+        let exclusiveIDs = deleteExclusiveMarkers ? Trip.exclusiveMarkerIDs(trips: trips, tripID: targetTripID, dayID: targetDayID) : []
         dataRevision = UUID(); refreshGeneration = UUID(); refreshing = false; loading = false
         saving = true
         withAnimation(AppMotion.listMutation(reduceMotion: !animated || UIAccessibility.isReduceMotionEnabled)) {
@@ -493,6 +488,34 @@ struct DayEditorDraft: Identifiable {
             }
         }
     }
+    func loadTripNote(tripID: String, markerID: String, using client: APIClient) async throws -> TripMarkerNote? {
+        if demo { return trips.first { $0.id == tripID }?.note(for: markerID) }
+        let revision = connectionRevision
+        let note = try await client.tripMarkerNote(tripID: tripID, markerID: markerID)
+        guard revision == connectionRevision else { throw CancellationError() }
+        return note
+    }
+    func writeTripNote(tripID: String, markerID: String, title: String, content: String,
+                       version: String?, copy: Bool, headerImage: NoteCoverPatch = .omitted, using client: APIClient) async throws -> TripMarkerNote? {
+        guard title.count <= 200, content.count <= 500_000 else { throw AppError.message("标题或正文超出长度限制") }
+        guard trips.first(where: { $0.id == tripID })?.referencedMarkerIDs.contains(markerID) == true else {
+            throw AppError.message("此地点不属于所选旅行，请先明确加入行程。草稿已保留。")
+        }
+        guard reserveEditorSave() else { throw AppError.message(errorMessage ?? "暂时无法保存") }
+        let revision = connectionRevision
+        defer { if revision == connectionRevision { saving = false } }
+        let note = try await client.tripMarkerNote(tripID: tripID, markerID: markerID, method: copy ? "POST" : "PATCH",
+            title: title, content: content, headerImage: headerImage, expectedUpdatedAt: version)
+        guard revision == connectionRevision else { throw CancellationError() }
+        if let index = trips.firstIndex(where: { $0.id == tripID }) {
+            var notes = trips[index].notes.filter { $0.markerId != markerID }
+            if let note { notes.append(note) }
+            trips[index].markerNotes = notes
+        }
+        await markerRepository.invalidate(using: client)
+        await markerRepository.storeTripNote(note, tripID: tripID, markerID: markerID, using: client)
+        return note
+    }
     private func reserveEditorSave() -> Bool {
         guard !demo else { errorMessage = "当前为只读示例，无法保存。"; return false }
         guard !saving else { errorMessage = "请等待当前保存完成"; return false }
@@ -511,6 +534,9 @@ struct DayEditorDraft: Identifiable {
     }
     @discardableResult
     func saveMarkerInBackground(_ value: MarkerDraft, using client: APIClient? = nil) -> Bool {
+        guard value.noteScope == nil || value.noteScope == MarkerRepository.scope(client ?? api) else {
+            errorMessage = "连接已切换，请重新打开添加页；草稿未发送。"; return false
+        }
         guard value.coordinates.isValid, !value.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             errorMessage = "请输入名称与有效坐标"; return false
         }
@@ -655,6 +681,9 @@ struct DayEditorDraft: Identifiable {
     @discardableResult
     func addSearchPlaceInBackground(_ place: Place, edited value: MarkerDraft, using suppliedClient: APIClient? = nil) -> Bool {
         guard placeSearchPresented, addingPlaceID == nil else { return false }
+        guard value.noteScope == nil || value.noteScope == MarkerRepository.scope(suppliedClient ?? api) else {
+            errorMessage = "连接已切换，请重新打开添加页；草稿未发送。"; return false
+        }
         guard value.coordinates.isValid, !value.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         let target = addPlaceDay, targetTripID = addPlaceTripID, session = addSession, revision = connectionRevision
         if let targetTripID, !trips.contains(where: { $0.id == targetTripID }) { errorMessage = "目标旅行已不存在"; return false }
@@ -710,26 +739,35 @@ struct DayEditorDraft: Identifiable {
         guard lookupRevision == connectionRevision else { return false }
         guard draft.coordinates.isValid, !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorMessage = "请输入名称与有效坐标"; return false }
         let revision = expectedRevision ?? connectionRevision
+        let noteTripID = draft.marker == nil ? (draft.noteTripID ?? targetDay?.tripId ?? tripTarget) : nil
+        let globalHTML = noteTripID == nil ? draft.html : ""
+        let globalCover = noteTripID == nil ? draft.headerImage : ""
         var createdMarker: Marker?
         var joinedDay: TripDay?
         let ok = await perform(reserved: reserved, expectedRevision: revision) { defaultClient in
             let client = suppliedClient ?? defaultClient
             if let marker = draft.marker {
-                try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": draft.html, "headerImage": draft.headerImage])
+                try await client.mutate("markers/\(APIClient.id(marker.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": globalHTML, "headerImage": globalCover])
             } else {
                 let created: Marker
                 if let pending = self.pendingCreatedMarkers[draft.id] {
                     created = pending
-                    try await client.mutate("markers/\(APIClient.id(pending.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": draft.html, "headerImage": draft.headerImage])
+                    try await client.mutate("markers/\(APIClient.id(pending.id))", method: "PUT", body: ["title": draft.title, "iconType": draft.icon.rawValue, "markdownContent": globalHTML, "headerImage": globalCover])
                 } else {
-                    created = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": draft.html, "placeReferences": draft.placeReferences?.requestBody ?? [:]])
+                    created = try await client.request("markers", method: "POST", body: ["coordinates": ["latitude": draft.coordinates.latitude, "longitude": draft.coordinates.longitude], "title": draft.title, "iconType": draft.icon.rawValue, "address": draft.address, "content": globalHTML, "placeReferences": draft.placeReferences?.requestBody ?? [:]])
                     guard revision == self.connectionRevision else { throw CancellationError() }
                     self.pendingCreatedMarkers[draft.id] = created
                 }
-                if !draft.headerImage.isEmpty { try await client.mutate("markers/\(APIClient.id(created.id))", method: "PUT", body: ["headerImage": draft.headerImage]) }
+                if !globalCover.isEmpty { try await client.mutate("markers/\(APIClient.id(created.id))", method: "PUT", body: ["headerImage": globalCover]) }
                 createdMarker = created
             }
             guard revision == self.connectionRevision else { throw CancellationError() }
+            if let noteTripID, let marker = createdMarker ?? draft.marker, !draft.html.isEmpty || !draft.headerImage.isEmpty || self.pendingCreatedNoteVersions[draft.id] != nil {
+                let note = try await client.tripMarkerNote(tripID: noteTripID, markerID: marker.id, method: "PATCH",
+                    title: "", content: draft.html, headerImage: .set(draft.headerImage.isEmpty ? nil : draft.headerImage), expectedUpdatedAt: self.pendingCreatedNoteVersions[draft.id])
+                guard revision == self.connectionRevision else { throw CancellationError() }
+                self.pendingCreatedNoteVersions[draft.id] = note?.updatedAt
+            }
             if let targetDay, let marker = createdMarker ?? draft.marker {
                 joinedDay = try await self.joinDefaultRoute(marker.id, day: targetDay, client: client, revision: revision)
             }
@@ -740,6 +778,7 @@ struct DayEditorDraft: Identifiable {
         guard revision == connectionRevision else { return false }
         if ok {
             pendingCreatedMarkers[draft.id] = nil
+            pendingCreatedNoteVersions[draft.id] = nil
             if let createdMarker, createdMarker.coordinates == draft.coordinates,
                createdMarker.placeReferences == draft.placeReferences, let resolvedAppleItem {
                 appleMapItems[createdMarker.id] = (createdMarker.coordinates, createdMarker.placeReferences, resolvedAppleItem)
@@ -747,7 +786,7 @@ struct DayEditorDraft: Identifiable {
             var saved = createdMarker ?? draft.marker
             if var updated = saved {
                 updated.content.title = draft.title; updated.content.iconType = draft.icon
-                updated.content.markdownContent = draft.html; updated.content.headerImage = draft.headerImage
+                updated.content.markdownContent = globalHTML; updated.content.headerImage = globalCover
                 if draft.marker == nil { updated.content.address = draft.address }
                 if let index = markers.firstIndex(where: { $0.id == updated.id }) { markers[index] = updated }
                 else { markers.append(updated) }
@@ -785,6 +824,7 @@ struct DayEditorDraft: Identifiable {
             markers.removeAll { $0.id == marker.id }
             for ti in trips.indices {
                 trips[ti].markerIds?.removeAll { $0 == marker.id }
+                trips[ti].markerNotes?.removeAll { $0.markerId == marker.id }
                 for di in trips[ti].days.indices {
                     trips[ti].days[di] = trips[ti].days[di].removing(marker.id)
                 }
@@ -923,7 +963,7 @@ struct DayEditorDraft: Identifiable {
         return true
     }
     func tripPlaces(_ trip: Trip) -> [Marker] {
-        let ids = (trip.markerIds ?? []) + trip.days.sorted { $0.date < $1.date }
+        let ids = trip.notes.map(\.markerId) + (trip.markerIds ?? []) + trip.days.sorted { $0.date < $1.date }
             .flatMap { $0.chains.flatMap { $0 } + $0.markerIds }
         let lookup = Dictionary(markers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var seen = Set<String>()
@@ -1594,6 +1634,7 @@ struct DayEditorDraft: Identifiable {
             }
             if let target, let ti = trips.firstIndex(where: { $0.id == target.tripId }) {
                 trips[ti].markerIds?.removeAll { $0 == marker.id }
+                trips[ti].markerNotes?.removeAll { $0.markerId == marker.id }
             }
             addedPlaceIDs.insert(place.id); rebuildRoutes(preservingPlannedGeometry: true)
             await markerRepository.invalidate(using: client)
@@ -1888,6 +1929,21 @@ struct DayEditorDraft: Identifiable {
                       ("year-2023", "2023-03-14", "春日出发")].map { id, date, name in
                 Trip(id: id, name: name, startDate: date, endDate: date, emoji: "🌿", days: [])
             }
+        }
+        #endif
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--trip-note-preview"), !trips.isEmpty {
+            let id = trips[0].id
+            trips[0].markerNotes = [
+                TripMarkerNote(tripId: id, markerId: "demo-1", title: "今年的活动", content: "<p>本次旅行专属正文</p>", updatedAt: "fixture-v1"),
+                TripMarkerNote(tripId: id, markerId: "demo-4", title: "已移出日程的活动", content: "<p>保留的旅行笔记</p>", updatedAt: "fixture-v2")]
+            trips[0].markerNotes?[0].headerImage = "https://images.invalid/this-trip.jpg"
+            trips[0].days = trips[0].days.map { $0.removing("demo-4") }
+            trips.append(Trip(id: "next-year", name: "明年的活动", startDate: "2027-10-01", endDate: "2027-10-01", days: [],
+                markerNotes: [TripMarkerNote(tripId: "next-year", markerId: "demo-1", title: "另一场活动", content: "<p>另一份独立正文</p>", updatedAt: "fixture-v3")]))
+        }
+        if ProcessInfo.processInfo.arguments.contains("--trip-note-preview"), let index = trips.firstIndex(where: { $0.id == "next-year" }) {
+            trips[index].markerNotes?[0].headerImage = "https://images.invalid/next-trip.jpg"
         }
         #endif
         rebuildRoutes(); fly(markers.map(\.coordinates))

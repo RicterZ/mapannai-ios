@@ -9,6 +9,7 @@ struct MarkerDetailView: View {
     var embedded = false
     var compact = false
     var usesDayContext = true
+    var noteTripID: String? = nil
     var onExpand: () -> Void = {}
     var onConfirmationHeight: (CGFloat?) -> Void = { _ in }
     var searchPlace: Place?
@@ -18,6 +19,7 @@ struct MarkerDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navigationUnavailable = false
     @State private var editing = false
+    @State private var noteSelection = MarkerNoteSelection()
     @State private var confirmationHeight: CGFloat?
     @State private var deleting = false
     @State private var removingFromDay = false
@@ -40,8 +42,15 @@ struct MarkerDetailView: View {
         guard let target = store.addPlaceDay else { return nil }
         return store.trips.first(where: { $0.id == target.tripId })?.days.first(where: { $0.id == target.id })
     }
+    private var memberships: [MarkerTripMembership] { MarkerPresentation.memberships(for: current.id, trips: store.trips) }
+    private var defaultNoteTripID: String? {
+        let requested = noteTripID ?? (usesDayContext ? (embedded ? (store.addPlaceDay?.tripId ?? store.addPlaceTripID) : (targetDay?.tripId ?? store.tripID)) : nil)
+        return MarkerPresentation.noteTripID(for: current.id, requested: requested, trips: store.trips)
+    }
+    private var contextTripID: String? {
+        MarkerPresentation.noteTripID(for: current.id, requested: noteSelection.initialized ? noteSelection.tripID : defaultNoteTripID, trips: store.trips)
+    }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
-    private var itineraries: [MarkerItinerary] { MarkerPresentation.itineraries(for: current.id, trips: store.trips) }
     var body: some View {
         detailContent
             .fullScreenCover(item: $previewImage) { NoteImagePreview(url: $0.url) }
@@ -73,6 +82,8 @@ struct MarkerDetailView: View {
                 if !active { confirmationHeight = nil; onConfirmationHeight(nil) }
             }
             .onDisappear { onConfirmationHeight(nil) }
+            .onAppear { noteSelection.initialize(defaultNoteTripID) }
+            .onChange(of: current.id) { _, _ in noteSelection = MarkerNoteSelection(); noteSelection.initialize(defaultNoteTripID) }
             .onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
             .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
             .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose, confirmationHeight: confirmationHeight))
@@ -106,14 +117,9 @@ struct MarkerDetailView: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: deleting || removingFromDay)
             .toolbar(.hidden, for: .navigationBar)
 
-                .sheet(isPresented: Binding(get: { editing && !embedded }, set: { editing = $0 })) {
-                    MarkerEditorView(store: store, initial: MarkerDraft(marker: current))
-                }
-                .navigationDestination(isPresented: Binding(get: { editing && embedded }, set: { editing = $0 })) {
-                    MarkerEditorView(store: store, initial: MarkerDraft(marker: current),
-                        embedded: true, onSaved: { editing = false }, onClosed: { editing = false })
-                        .toolbar(.visible, for: .navigationBar)
-                }
+            .sheet(isPresented: $editing) {
+                MarkerScopeEditorView(store: store, marker: current, defaultTripID: contextTripID)
+            }
 
     }
 
@@ -121,7 +127,7 @@ struct MarkerDetailView: View {
         VStack(alignment: .leading, spacing: 24) {
             Label("移除行程", systemImage: "trash").font(.caption).foregroundStyle(.secondary)
             Text(removingFromDay ? "从今日行程移除" : "删除地点").font(.title2.weight(.semibold))
-            Text(removingFromDay ? "仅从当前日期和当天所有路线中移除，地点收藏及其他日期的安排会保留。" : "删除收藏，并从所有每日行程和路线中移除这个地点。")
+            Text(removingFromDay ? "仅从当前日期和当天所有路线中移除，地点收藏及其他日期的安排会保留。" : "删除收藏、全部旅行笔记（\(store.trips.reduce(0) { $0 + $1.notes.filter { $0.markerId == current.id }.count })份），并从所有每日行程和路线中移除这个地点。")
                 .font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack(spacing: 12) {
@@ -172,12 +178,17 @@ struct MarkerDetailView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
+                        Button { editing = true } label: {
+                            Image(systemName: "square.and.pencil").font(.system(size: 20, weight: .regular))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).foregroundStyle(.primary).accessibilityLabel("编辑地点")
+                            .accessibilityIdentifier("edit-marker-detail")
                         Button { onClose() } label: {
                             Image(systemName: "xmark").font(.system(size: 20, weight: .regular)).frame(width: 44, height: 44).contentShape(Rectangle())
                         }.buttonStyle(.plain).foregroundStyle(.primary)
                             .accessibilityLabel("关闭地点详情").accessibilityIdentifier(embedded ? "search-detail-back" : "close-marker-detail")
                     }
-                    if let image = current.content.headerImage, let url = imageURL(image) {
+                    if let image = PlaceImage.image(marker: current, trips: store.trips, tripID: contextTripID), let url = imageURL(image) {
                         MarkerCoverBanner {
                             AsyncImage(url: url) { phase in
                                 if let image = phase.image { image.resizable().scaledToFill() }
@@ -190,46 +201,44 @@ struct MarkerDetailView: View {
                             .accessibilityLabel("预览地点封面")
                     }
                     actionBar
-                    if !itineraries.isEmpty || hasNote {
+                    if !memberships.isEmpty {
                         Divider().padding(.vertical, 4)
-                    }
-                    if !itineraries.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            JourneyEditorHeading(title: "已包含在如下行程中")
-                                .accessibilityIdentifier("marker-itineraries-heading")
-                            ForEach(itineraries) { itinerary in
+                            JourneyEditorHeading(title: "所属行程").accessibilityIdentifier("marker-itineraries-heading")
+                            ForEach(memberships) { membership in
                                 Button {
-                                    store.select(trip: itinerary.trip, day: itinerary.day, focus: false)
-                                    onNavigateItinerary()
-                                    onClose()
+                                    noteSelection.toggle(membership.id)
                                 } label: {
                                     HStack(spacing: 8) {
                                         VStack(alignment: .leading, spacing: 4) {
-                                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                                Text(itinerary.trip.name).lineLimit(1)
-                                                if targetDay?.id == itinerary.day.id && targetDay?.tripId == itinerary.trip.id {
-                                                    Text("（当前行程）").font(.caption).foregroundStyle(.secondary)
-                                                        .fixedSize()
-                                                        .accessibilityIdentifier("marker-in-current-day")
-                                                }
-                                            }
-                                            Text("第\(itinerary.dayNumber)天 · " + itinerary.day.date.replacingOccurrences(of: "-", with: "/"))
-                                                .font(.caption).foregroundStyle(.secondary)
+                                            Text(membership.trip.name).font(.subheadline.weight(.medium))
+                                            if membership.days.isEmpty { Text(membership.label).font(.caption).foregroundStyle(.secondary) }
                                         }
                                         Spacer(minLength: 0)
-                                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
-                                    }.font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-                                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                                        if contextTripID == membership.id {
+                                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
+                                        }
+                                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                                    }.padding(10).frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                                        .background(contextTripID == membership.id ? Color(uiColor: .tertiarySystemFill) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 10))
                                         .contentShape(Rectangle())
-                                }.buttonStyle(.plain).accessibilityIdentifier("marker-itinerary-\(itinerary.day.id)")
+                                }.buttonStyle(.plain).foregroundStyle(.primary)
+                                    .accessibilityIdentifier("marker-membership-" + membership.id)
+                                    .accessibilityAddTraits(contextTripID == membership.id ? .isSelected : [])
+                                if !membership.days.isEmpty { Text(membership.label).font(.caption).foregroundStyle(.secondary) }
+
                             }
                         }
                     }
-                    if hasNote {
-                        if !itineraries.isEmpty { Divider().padding(.vertical, 4) }
-                        JourneyEditorHeading(title: "笔记")
-                        HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight, onImage: { previewImage = NoteImageSelection(url: $0) })
-                            .frame(height: noteHeight).accessibilityIdentifier("marker-note")
+                    if let tripID = contextTripID, let trip = store.trips.first(where: { $0.id == tripID }) {
+                        TripMarkerNoteSection(trip: trip, marker: current).id(tripID + current.id)
+                    } else {
+                        JourneyEditorHeading(title: "通用笔记（所有旅行共享）")
+                        if hasNote {
+                            HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight, onImage: { previewImage = NoteImageSelection(url: $0) })
+                                .frame(height: noteHeight).accessibilityIdentifier("marker-note")
+                        } else { Text("尚无通用笔记").font(.footnote).foregroundStyle(.secondary) }
                     }
                 }.padding(24)
             }
@@ -306,8 +315,6 @@ struct MarkerDetailView: View {
                     markerActionLayout {
                         Button(action: navigate) { Label("导航", systemImage: "location").font(.subheadline).frame(minHeight: 44) }
                             .accessibilityIdentifier("marker-navigate").disabled(!current.coordinates.isValid)
-                        Button { editing = true } label: { Label("编辑", systemImage: "square.and.pencil").font(.subheadline).frame(minHeight: 44) }
-                            .accessibilityIdentifier("edit-marker-detail")
                         if let day = targetDay, day.markerIds.contains(current.id) {
                             Button {
                                 removalTarget = (day, current.id); removingFromDay = true
@@ -355,6 +362,10 @@ struct MarkerEditorView: View {
     var onSaved: () -> Void = {}
     var embedded = false
     var onClosed: () -> Void = {}
+    var scopeManaged = false
+    var onDraftChange: (MarkerDraft) -> Void = { _ in }
+    var onBusyChange: (Bool) -> Void = { _ in }
+    @State private var editorClient: APIClient
     @Environment(\.dismiss) private var dismiss
     @State private var draft: MarkerDraft
     @StateObject private var rich = RichEditorController()
@@ -366,8 +377,14 @@ struct MarkerEditorView: View {
     @State private var confirmDiscard = false
     @State private var iconPickerVisible = false
     @FocusState private var fieldsFocused: Bool
-    init(store: AppStore, initial: MarkerDraft, embedded: Bool = false, onSaved: @escaping () -> Void = {}, onClosed: @escaping () -> Void = {}) {
-        self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; self.onClosed = onClosed; _draft = State(initialValue: initial)
+    init(store: AppStore, initial: MarkerDraft, embedded: Bool = false, onSaved: @escaping () -> Void = {}, onClosed: @escaping () -> Void = {}, scopeManaged: Bool = false, onDraftChange: @escaping (MarkerDraft) -> Void = { _ in }, onBusyChange: @escaping (Bool) -> Void = { _ in }) {
+        self.store = store; self.initial = initial; self.embedded = embedded; self.onSaved = onSaved; self.onClosed = onClosed
+        self.scopeManaged = scopeManaged; self.onDraftChange = onDraftChange; self.onBusyChange = onBusyChange
+        _editorClient = State(initialValue: store.api)
+        var frozen = initial
+        if initial.marker == nil, frozen.noteTripID == nil { frozen.noteTripID = store.addPlaceDay?.tripId ?? store.addPlaceTripID ?? store.day?.tripId }
+        if frozen.noteScope == nil { frozen.noteScope = MarkerRepository.scope(store.api) }
+        _draft = State(initialValue: frozen)
     }
     private var editorFields: some View {
         Group {
@@ -482,7 +499,7 @@ struct MarkerEditorView: View {
                     coverPicker.clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 VStack(alignment: .leading, spacing: 14) {
-                    JourneyEditorHeading(title: "地点笔记")
+                    JourneyEditorHeading(title: draft.noteTripID == nil ? "通用攻略（所有旅行共享）" : "本次旅行正文")
                     Button { fieldsFocused = false; noteEditorPresented = true } label: {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
@@ -512,7 +529,7 @@ struct MarkerEditorView: View {
         }
         .navigationTitle(initial.marker == nil ? "添加地点" : "编辑地点").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
+            if !scopeManaged { ToolbarItem(placement: .cancellationAction) {
                 Button {
                     if embedded && hasChanges { confirmDiscard = true }
                     else { closeEditor() }
@@ -523,12 +540,16 @@ struct MarkerEditorView: View {
                 }.buttonStyle(.plain)
                     .disabled(store.saving || uploading).accessibilityLabel("取消")
                     .accessibilityIdentifier("cancel-marker-editor")
-            }.journeyBareBackground
+            }.journeyBareBackground }
         }
         .fullScreenCover(isPresented: $noteEditorPresented) {
             NoteComposerPreview(placeName: draft.title, address: draft.address,
                 initialHTML: draft.html, preview: false,
-                uploadPhoto: { data in try await store.api.uploadImage(data) },
+                uploadPhoto: { data in
+                    let client = scopeManaged ? editorClient : store.api
+                    guard !scopeManaged || MarkerRepository.scope(client) == MarkerRepository.scope(store.api) else { throw CancellationError() }
+                    return try await client.uploadImage(data)
+                },
                 onSave: { html in draft.html = html })
         }
         .navigationBarBackButtonHidden(embedded)
@@ -536,8 +557,11 @@ struct MarkerEditorView: View {
             AppAlertAction(title: "继续编辑") { confirmDiscard = false },
             AppAlertAction(title: "放弃修改", destructive: true) { confirmDiscard = false; closeEditor() }
         ])
+        .onChange(of: draft) { _, value in if scopeManaged { onDraftChange(value) } }
+        .onChange(of: uploading) { _, value in if scopeManaged { onBusyChange(value) } }
         .onDisappear {
-            if embedded, store.draft?.id == initial.id {
+            if scopeManaged { onDraftChange(draft) }
+            if !scopeManaged, embedded, store.draft?.id == initial.id {
                 draft.html = rich.exportHTML(original: draft.html)
                 store.draft = draft
             }
@@ -575,18 +599,24 @@ struct MarkerEditorView: View {
                     if store.demo {
                         uploadedPreview = UIImage(data: data)
                     } else {
-                        let url = try await store.api.uploadImage(data)
+                        let client = scopeManaged ? editorClient : store.api
+                        guard !scopeManaged || MarkerRepository.scope(client) == MarkerRepository.scope(store.api) else { throw CancellationError() }
+                        let url = try await client.uploadImage(data)
+                        guard !scopeManaged || MarkerRepository.scope(client) == MarkerRepository.scope(store.api) else { throw CancellationError() }
                         draft.headerImage = url
                         uploadedPreview = UIImage(data: data)
                     }
                 } catch { localError = error.localizedDescription }
             }
-        }.interactiveDismissDisabled(store.saving || uploading)
+        }.interactiveDismissDisabled(scopeManaged || store.saving || uploading)
     }
     private func save() {
         fieldsFocused = false
         draft.html = rich.exportHTML(original: draft.html)
-        if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
+        if scopeManaged {
+            if store.saveMarkerInBackground(draft, using: editorClient) { onSaved() }
+            else { localError = store.errorMessage }
+        } else if embedded, let place = store.searchResults.first(where: { $0.id == store.editingSearchPlaceID }) {
             if store.addSearchPlaceInBackground(place, edited: draft) { onSaved(); closeEditor(restoringMap: false) }
             else { localError = store.addPlaceError ?? store.errorMessage }
         } else if store.saveMarkerInBackground(draft) { onSaved(); if embedded { closeEditor(restoringMap: false) } else { dismiss() } }
@@ -597,7 +627,8 @@ struct MarkerEditorView: View {
             || rich.changed || draft.coordinates != initial.coordinates
     }
     private func closeEditor(restoringMap: Bool = true) {
-        if embedded { store.closeSearchDraft(restoringMap: restoringMap); onClosed() }
+        if scopeManaged { onClosed() }
+        else if embedded { store.closeSearchDraft(restoringMap: restoringMap); onClosed() }
         else { dismiss() }
     }
 }
