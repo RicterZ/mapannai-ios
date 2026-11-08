@@ -156,8 +156,6 @@ struct MarkerScopeEditorView: View {
                         Button("移除旅行封面", role: .destructive) { notes[id]?.headerImage = nil }
                             .accessibilityIdentifier("trip-note-cover-remove")
                     }
-                    Text("只保存所选旅行的标题、正文和封面，通用资料由所有旅行共享。")
-                        .font(.footnote).foregroundStyle(.secondary)
                     Button("复制通用攻略到本次正文") { write(copy: true) }
                         .disabled(draft.changed || draft.mustRefresh || NoteContent.hasContent(draft.content))
                     if let error = draft.error { Text(error).foregroundStyle(.red) }

@@ -16,6 +16,28 @@ final class TripMarkerNoteUITests: XCTestCase {
         let option = app.buttons[id]
         XCTAssertTrue(option.waitForExistence(timeout: 3)); option.tap()
     }
+    @MainActor func testCoverSwitchKeepsMembershipControlsInPlace() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "--cover-order-review", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let first = app.buttons["marker-membership-demo-trip"]
+        let next = app.buttons["marker-membership-next-year"]
+        XCTAssertTrue(next.waitForExistence(timeout: 8))
+        let firstFrame = first.frame, nextFrame = next.frame
+        let cover = app.descendants(matching: .any)["marker-detail-cover"].firstMatch
+        XCTAssertTrue(cover.exists)
+        XCTAssertGreaterThanOrEqual(cover.frame.minY, next.frame.maxY)
+        next.tap()
+        XCTAssertFalse(cover.exists)
+        XCTAssertEqual(first.frame.minY, firstFrame.minY, accuracy: 1)
+        XCTAssertEqual(next.frame.minY, nextFrame.minY, accuracy: 1)
+        next.tap()
+        XCTAssertTrue(cover.exists)
+        XCTAssertEqual(first.frame.minY, firstFrame.minY, accuracy: 1)
+        XCTAssertEqual(next.frame.minY, nextFrame.minY, accuracy: 1)
+        XCTAssertFalse(app.staticTexts["通用笔记（所有旅行共享）"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "封面位于所属行程下方"; shot.lifetime = .keepAlways; add(shot)
+    }
     @MainActor func testRetainedNoteUsesOneTopEditorAndCancelPreservesData() {
         let app = openPlace("demo-4")
         XCTAssertTrue(app.staticTexts["保留旅行笔记"].exists)

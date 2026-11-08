@@ -188,18 +188,6 @@ struct MarkerDetailView: View {
                         }.buttonStyle(.plain).foregroundStyle(.primary)
                             .accessibilityLabel("关闭地点详情").accessibilityIdentifier(embedded ? "search-detail-back" : "close-marker-detail")
                     }
-                    if let image = PlaceImage.image(marker: current, trips: store.trips, tripID: contextTripID), let url = imageURL(image) {
-                        MarkerCoverBanner {
-                            AsyncImage(url: url) { phase in
-                                if let image = phase.image { image.resizable().scaledToFill() }
-                                else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
-                            }
-                        }.clipShape(RoundedRectangle(cornerRadius: 8))
-                            .contentShape(Rectangle())
-                            .onTapGesture { previewImage = NoteImageSelection(url: url) }
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityLabel("预览地点封面")
-                    }
                     actionBar
                     if !memberships.isEmpty {
                         Divider().padding(.vertical, 4)
@@ -231,10 +219,22 @@ struct MarkerDetailView: View {
                             }
                         }
                     }
+                    if let image = PlaceImage.image(marker: current, trips: store.trips, tripID: contextTripID), let url = imageURL(image) {
+                        MarkerCoverBanner {
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image { image.resizable().scaledToFill() }
+                                else { Theme.paper.overlay(Image(systemName: "photo").foregroundStyle(.secondary)) }
+                            }
+                        }.clipShape(RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                            .onTapGesture { previewImage = NoteImageSelection(url: url) }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel("预览地点封面").accessibilityIdentifier("marker-detail-cover")
+                    }
                     if let tripID = contextTripID, let trip = store.trips.first(where: { $0.id == tripID }) {
                         TripMarkerNoteSection(trip: trip, marker: current).id(tripID + current.id)
                     } else {
-                        JourneyEditorHeading(title: "通用笔记（所有旅行共享）")
+                        JourneyEditorHeading(title: "通用笔记")
                         if hasNote {
                             HTMLReader(html: current.content.markdownContent, contentHeight: $noteHeight, onImage: { previewImage = NoteImageSelection(url: $0) })
                                 .frame(height: noteHeight).accessibilityIdentifier("marker-note")
@@ -499,7 +499,7 @@ struct MarkerEditorView: View {
                     coverPicker.clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 VStack(alignment: .leading, spacing: 14) {
-                    JourneyEditorHeading(title: draft.noteTripID == nil ? "通用攻略（所有旅行共享）" : "本次旅行正文")
+                    JourneyEditorHeading(title: draft.noteTripID == nil ? "通用攻略" : "本次旅行正文")
                     Button { fieldsFocused = false; noteEditorPresented = true } label: {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
