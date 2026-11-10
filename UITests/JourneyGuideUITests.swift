@@ -12,6 +12,7 @@ final class JourneyGuideUITests: XCTestCase {
         }
         XCTAssertTrue(guide.isHittable)
         XCTAssertFalse(app.buttons["trip-add-place"].exists)
+        XCTAssertFalse(app.buttons["journey-place-notes"].exists)
         let edit = app.buttons["journey-edit-trip"].firstMatch
         let addDay = app.buttons["journey-add-day"].firstMatch
         XCTAssertTrue(edit.exists); XCTAssertTrue(addDay.exists)
@@ -22,6 +23,21 @@ final class JourneyGuideUITests: XCTestCase {
         XCTAssertEqual(guide.frame.midY, addDay.frame.midY, accuracy: 2)
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.lifetime = .keepAlways; attachment.name = "导览独立按钮行"; add(attachment)
         try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/mapannai-guide-entry-verified.png"))
+    }
+    @MainActor func testGuideMarkerOpensTripDetailsAndReturnsToMap() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--archive-preview", "--journey-guide-review", "--trip-note-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let marker = app.descendants(matching: .any)["guide-marker-demo-1"].firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 15))
+        marker.tap()
+        let close = app.buttons["close-marker-detail"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["今年的活动"].waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(app.buttons["guide-scope-menu"].waitForExistence(timeout: 5))
+        marker.tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
     }
     @MainActor func testGuideUsesInteractiveMapInsteadOfImage() {
         let app = XCUIApplication()
