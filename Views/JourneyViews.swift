@@ -1829,12 +1829,30 @@ enum JourneyArchiveOrdering {
         if !ongoing.isEmpty { return ongoing }
         let top = trips.filter { $0.startDate > today }.min {
             $0.startDate == $1.startDate ? $0.id < $1.id : $0.startDate < $1.startDate
-        } ?? trips.min {
-            let a = abs(Date.fromDay($0.startDate).timeIntervalSince(Date.fromDay(today)))
-            let b = abs(Date.fromDay($1.startDate).timeIntervalSince(Date.fromDay(today)))
-            return a == b ? $0.id < $1.id : a < b
-        }
+        } ?? nearest(trips, today: today)
         return top.map { [$0] } ?? []
+    }
+    private static func nearest(_ trips: [Trip], today: String) -> Trip? {
+        let todayNumber = dayNumber(today) ?? 0
+        var best: (trip: Trip, distance: Int)?
+        for trip in trips {
+            let distance = abs((dayNumber(trip.startDate) ?? todayNumber) - todayNumber)
+            if let current = best, current.distance < distance || (current.distance == distance && current.trip.id < trip.id) { continue }
+            best = (trip, distance)
+        }
+        return best?.trip
+    }
+    /// Parses `yyyy-MM-dd` without DateFormatter; formatter parsing is expensive enough on iOS 27 to stall body updates.
+    static func dayNumber(_ value: String) -> Int? {
+        let parts = value.split(separator: "-")
+        guard parts.count == 3, var year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+              (1...12).contains(month), (1...31).contains(day) else { return nil }
+        if month <= 2 { year -= 1 }
+        let era = (year >= 0 ? year : year - 399) / 400
+        let yearOfEra = year - era * 400
+        let dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1
+        let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+        return era * 146_097 + dayOfEra - 719_468
     }
     static func sorted(_ trips: [Trip], today: String) -> [Trip] {
         let top = topTrips(trips, today: today)

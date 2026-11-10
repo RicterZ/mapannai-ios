@@ -89,4 +89,11 @@ final class JourneyArchiveOrderingTests: XCTestCase {
         ], today: "2026-10-12").map(\.id), ["a", "b", "c"])
         XCTAssertTrue(JourneyArchiveOrdering.sorted([], today: "2026-10-12").isEmpty)
     }
+    func testDayNumbersCrossLeapDaysAndYearBoundaries() {
+        XCTAssertEqual(JourneyArchiveOrdering.dayNumber("2024-03-01")! - JourneyArchiveOrdering.dayNumber("2024-02-28")!, 2)
+        XCTAssertEqual(JourneyArchiveOrdering.dayNumber("2025-01-01")! - JourneyArchiveOrdering.dayNumber("2024-12-31")!, 1)
+        XCTAssertEqual(JourneyArchiveOrdering.dayNumber("1900-03-01")! - JourneyArchiveOrdering.dayNumber("1900-02-28")!, 1)
+        XCTAssertEqual(JourneyArchiveOrdering.topTrips([trip("b", "2024-02-29"), trip("a", "2024-02-29")], today: "2024-03-01").map(\.id), ["a"])
+    }
+
 }
