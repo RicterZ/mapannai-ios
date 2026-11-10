@@ -1946,6 +1946,11 @@ struct DayEditorDraft: Identifiable {
             trips[index].markerNotes?[0].headerImage = ProcessInfo.processInfo.arguments.contains("--cover-order-review") ? nil : "https://images.invalid/next-trip.jpg"
         }
         #endif
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--shared-note-review"), let index = markers.firstIndex(where: { $0.id == "demo-1" }) {
+            markers[index].content.markdownContent = "<p>跨旅行共享的攻略内容</p>"
+        }
+        #endif
         rebuildRoutes(); fly(markers.map(\.coordinates))
     }
 }

@@ -37,9 +37,28 @@ final class TripMarkerNoteTests: XCTestCase {
         XCTAssertTrue(memberships[0].label.contains("第1天"))
         XCTAssertEqual(memberships[1].label, "保留旅行笔记")
         XCTAssertEqual(memberships[2].label, "未分配日期")
-        XCTAssertNil(MarkerPresentation.noteTripID(for: "m", requested: "unrelated", trips: trips))
-        XCTAssertNil(MarkerPresentation.noteTripID(for: "m", requested: nil, trips: trips))
+        XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: "unrelated", trips: trips), "dated")
+        XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: nil, trips: trips), "dated")
         XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: "retained", trips: trips), "retained")
+    }
+    func testDefaultNoteTripMatchesWebOrdering() {
+        var past = trip("past", note: true), future = trip("future", note: true), ongoing = trip("ongoing", note: true)
+        past.startDate = "2025-01-01"; past.endDate = "2025-01-02"
+        future.startDate = "2027-01-01"; future.endDate = "2027-01-02"
+        ongoing.startDate = "2026-11-01"; ongoing.endDate = "2026-11-20"
+        let trips = [future, past, ongoing]
+        XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: nil, trips: trips, today: "2026-11-10"), "ongoing")
+        XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: "past", trips: trips, today: "2026-11-10"), "past")
+        XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: nil, trips: trips, today: "2028-01-01"), "future")
+        XCTAssertNil(MarkerPresentation.noteTripID(for: "unrelated", requested: "past", trips: trips))
+    }
+    func testGeneralNoteExcerptsIgnoreInvisibleEditorContent() {
+        for html in ["<p> </p>", "<head><title>hidden</title></head>", "<script>hidden", "<!-- unfinished", "<template><img src='x'></template>", "<p>&#32;&#10;&#xA0;</p>", "<hr>"] {
+            XCTAssertFalse(NoteContent.hasContent(html), html)
+        }
+        XCTAssertEqual(NoteContent.excerpt("<style>p{color:red}</style><p>A &amp; B</p><p>&#26085;&#x672C; &quot;旅&quot;</p><!--hidden-->"), "A & B 日本 \"旅\"")
+        XCTAssertTrue(NoteContent.hasContent("<p><img src='https://images.invalid/a.jpg'></p>"))
+        XCTAssertTrue(NoteContent.excerpt("&#999999999999999999999999;").contains("&#"))
     }
     func testScopeDraftsKeepOpeningVersionsAndChangesIndependently() {
         var drafts = ["a": TripNoteEditDraft(note: trip("a", note: true).notes[0]),
@@ -126,9 +145,9 @@ final class TripMarkerNoteTests: XCTestCase {
         let legacy = Data(#"{"tripId":"t","markerId":"m","title":"","content":"","updatedAt":"v"}"#.utf8)
         XCTAssertNil(try JSONDecoder().decode(TripMarkerNote.self, from: legacy).headerImage)
         var selection = MarkerNoteSelection(); selection.initialize("cover")
-        selection.toggle("cover"); selection.initialize("cover")
-        XCTAssertNil(selection.tripID, "Explicit cancel must not fall back to current trip")
-        selection.toggle("other"); XCTAssertEqual(selection.tripID, "other")
+        selection.select("cover"); selection.initialize("cover")
+        XCTAssertEqual(selection.tripID, "cover", "Re-selecting a membership keeps its trip note selected")
+        selection.select("other"); XCTAssertEqual(selection.tripID, "other")
     }
     func testCoverPatchSupportsOmissionNullAndValidation() async throws {
         var bodies: [[String: Any]] = []

@@ -32,11 +32,30 @@ final class TripMarkerNoteUITests: XCTestCase {
         XCTAssertEqual(first.frame.minY, firstFrame.minY, accuracy: 1)
         XCTAssertEqual(next.frame.minY, nextFrame.minY, accuracy: 1)
         next.tap()
+        XCTAssertFalse(cover.exists)
+        first.tap()
         XCTAssertTrue(cover.exists)
         XCTAssertEqual(first.frame.minY, firstFrame.minY, accuracy: 1)
         XCTAssertEqual(next.frame.minY, nextFrame.minY, accuracy: 1)
         XCTAssertFalse(app.staticTexts["通用笔记（所有旅行共享）"].exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "封面位于所属行程下方"; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor func testSharedNotesFollowTripAndStartCollapsed() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "--shared-note-review", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let tripTitle = app.staticTexts["今年的活动"]
+        XCTAssertTrue(tripTitle.waitForExistence(timeout: 8))
+        let scroll = app.scrollViews.firstMatch
+        scroll.swipeUp()
+        let disclosure = app.buttons["marker-general-disclosure"]
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["marker-general-note"].firstMatch.exists)
+        disclosure.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["marker-general-note"].firstMatch.waitForExistence(timeout: 5))
+        disclosure.tap()
+        XCTAssertFalse(app.descendants(matching: .any)["marker-general-note"].firstMatch.exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "行程笔记优先、通用笔记折叠"; shot.lifetime = .keepAlways; add(shot)
     }
     @MainActor func testRetainedNoteUsesOneTopEditorAndCancelPreservesData() {
         let app = openPlace("demo-4")
@@ -53,30 +72,30 @@ final class TripMarkerNoteUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertEqual(title.value as? String, "已移出日程的活动")
     }
-    @MainActor func testOutsideTripDefaultsGeneralAndListsAllMemberships() {
+    @MainActor func testOutsideTripSelectsNearestMembershipAndListsAllMemberships() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
         XCTAssertTrue(app.buttons["marker-membership-next-year"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.otherElements["trip-note-reading"].exists)
+        XCTAssertTrue(app.staticTexts["今年的活动"].waitForExistence(timeout: 5))
         app.buttons["edit-marker-detail"].tap()
-        XCTAssertTrue(app.textFields["marker-name-field"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.textFields["trip-note-title"].exists)
+        XCTAssertTrue(app.textFields["trip-note-title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["trip-note-title"].value as? String, "今年的活动")
         select("edit-scope-next-year", in: app)
         XCTAssertTrue(app.textFields["trip-note-title"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields["trip-note-title"].value as? String, "另一场活动")
     }
-    @MainActor func testMembershipSelectionTogglesReadingWithoutNavigation() {
+    @MainActor func testMembershipReselectionKeepsTripAndSharedNotesStayAvailable() {
         let app = openPlace("demo-1")
         let next = app.buttons["marker-membership-next-year"]
         next.tap()
         XCTAssertTrue(app.staticTexts["另一场活动"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["edit-marker-detail"].exists)
         next.tap()
-        XCTAssertFalse(app.staticTexts["另一场活动"].exists)
+        XCTAssertTrue(app.staticTexts["另一场活动"].exists)
         app.buttons["edit-marker-detail"].tap()
-        XCTAssertTrue(app.textFields["marker-name-field"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.textFields["trip-note-title"].exists)
+        XCTAssertTrue(app.textFields["trip-note-title"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.textFields["trip-note-title"].value as? String, "另一场活动")
     }
     @MainActor func testCoverRemovalDraftIsIsolatedAcrossTripSwitches() {
         let app = openPlace("demo-1")

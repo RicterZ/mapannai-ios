@@ -100,6 +100,9 @@ enum PlaceImage {
             return $0.id < $1.id
         }
         if let image = sorted.lazy.compactMap({ note($0.note(for: marker.id)) }).first { return image }
+        return general(marker)
+    }
+    static func general(_ marker: Marker) -> String? {
         if let image = marker.content.headerImage, httpURL(image) != nil { return image }
         return firstImage(marker.content.markdownContent)
     }
@@ -112,5 +115,5 @@ struct MarkerNoteSelection: Equatable {
         guard !initialized else { return }
         initialized = true; tripID = defaultID
     }
-    mutating func toggle(_ id: String) { initialized = true; tripID = tripID == id ? nil : id }
+    mutating func select(_ id: String) { initialized = true; tripID = id }
 }

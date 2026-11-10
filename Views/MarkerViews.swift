@@ -50,6 +50,10 @@ struct MarkerDetailView: View {
     private var contextTripID: String? {
         MarkerPresentation.noteTripID(for: current.id, requested: noteSelection.initialized ? noteSelection.tripID : defaultNoteTripID, trips: store.trips)
     }
+    private var detailCover: String? {
+        if let id = contextTripID { return PlaceImage.note(store.trips.first { $0.id == id }?.note(for: current.id)) }
+        return PlaceImage.general(current)
+    }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
     var body: some View {
         detailContent
@@ -195,7 +199,7 @@ struct MarkerDetailView: View {
                             JourneyEditorHeading(title: "所属行程").accessibilityIdentifier("marker-itineraries-heading")
                             ForEach(memberships) { membership in
                                 Button {
-                                    noteSelection.toggle(membership.id)
+                                    noteSelection.select(membership.id)
                                 } label: {
                                     HStack(spacing: 8) {
                                         VStack(alignment: .leading, spacing: 4) {
@@ -219,7 +223,7 @@ struct MarkerDetailView: View {
                             }
                         }
                     }
-                    if let image = PlaceImage.image(marker: current, trips: store.trips, tripID: contextTripID), let url = imageURL(image) {
+                    if let image = detailCover, let url = imageURL(image) {
                         MarkerCoverBanner {
                             AsyncImage(url: url) { phase in
                                 if let image = phase.image { image.resizable().scaledToFill() }
@@ -233,6 +237,7 @@ struct MarkerDetailView: View {
                     }
                     if let tripID = contextTripID, let trip = store.trips.first(where: { $0.id == tripID }) {
                         TripMarkerNoteSection(trip: trip, marker: current).id(tripID + current.id)
+                        GeneralMarkerNoteSection(marker: current).id(current.id)
                     } else {
                         JourneyEditorHeading(title: "通用笔记")
                         if hasNote {
