@@ -18,12 +18,67 @@ struct TripMarkerNoteSection: View {
     private var note: TripMarkerNote? { trip.note(for: marker.id) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            JourneyEditorHeading(title: "旅行笔记 · " + trip.name)
+            Divider().padding(.vertical, 4)
+            Text("行程笔记").font(.footnote).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                PlaceIconView(emoji: trip.emoji ?? "✈️", size: 18)
+                Text(trip.name).font(.caption).lineLimit(1)
+            }.padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
             if let title = note?.title, !title.isEmpty { Text(title).font(.headline) }
             if let content = note?.content, NoteContent.hasContent(content) {
                 TripNoteHTML(html: content)
-            } else { Text("尚无本次旅行正文").font(.footnote).foregroundStyle(.secondary) }
+            } else if note?.title.isEmpty != false {
+                Text("这次旅行还没有笔记，可点右上角编辑添加").font(.footnote).foregroundStyle(.secondary)
+            }
         }.accessibilityIdentifier("trip-note-reading")
+    }
+}
+
+/// Shared notes stay available below the selected trip without changing the map context.
+struct GeneralMarkerNoteSection: View {
+    let marker: Marker
+    @State private var expanded = false
+    @State private var preview: NoteImageSelection?
+    private var content: String { NoteContent.hasContent(marker.content.markdownContent) ? marker.content.markdownContent : "" }
+    private var cover: String? { PlaceImage.general(marker) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider().padding(.vertical, 4)
+            if content.isEmpty && cover == nil {
+                JourneyEditorHeading(title: "通用笔记")
+                Text("还没有通用笔记").font(.footnote).foregroundStyle(.secondary)
+            } else {
+                DisclosureGroup(isExpanded: $expanded) {
+                    if let cover, let url = imageURL(cover) {
+                        MarkerCoverBanner {
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image { image.resizable().scaledToFill() }
+                                else { Color(uiColor: .secondarySystemBackground) }
+                            }
+                        }.clipShape(RoundedRectangle(cornerRadius: 8))
+                            .onTapGesture { preview = NoteImageSelection(url: url) }
+                            .accessibilityLabel("预览通用封面").accessibilityAddTraits(.isButton)
+                            .accessibilityIdentifier("marker-general-cover")
+                    }
+                    if !content.isEmpty { TripNoteHTML(html: content).accessibilityIdentifier("marker-general-note") }
+                } label: {
+                    HStack(spacing: 12) {
+                        if !expanded, let cover, let url = imageURL(cover) {
+                            AsyncImage(url: url) { image in image.resizable().scaledToFill() }
+                                placeholder: { Color(uiColor: .secondarySystemBackground) }
+                                .frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("通用笔记").font(.subheadline.weight(.medium))
+                            if !expanded, !NoteContent.excerpt(content).isEmpty {
+                                Text(NoteContent.excerpt(content)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                    }.padding(.vertical, 4)
+                }.tint(.secondary).accessibilityIdentifier("marker-general-disclosure")
+            }
+        }.fullScreenCover(item: $preview) { NoteImagePreview(url: $0.url) }
     }
 }
 

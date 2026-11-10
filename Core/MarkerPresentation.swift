@@ -28,8 +28,12 @@ enum MarkerPresentation {
             }.sorted { ($0.date, $0.id) < ($1.date, $1.id) }, unassigned: (trip.markerIds ?? []).contains(markerID))
         }
     }
-    static func noteTripID(for markerID: String, requested: String?, trips: [Trip]) -> String? {
-        memberships(for: markerID, trips: trips).first { $0.id == requested }?.id
+    static func noteTripID(for markerID: String, requested: String?, trips: [Trip], today: String = JourneyArchiveOrdering.localDay(at: .now)) -> String? {
+        let members = memberships(for: markerID, trips: trips).map(\.trip)
+        if let requested, members.contains(where: { $0.id == requested }) { return requested }
+        let upcoming = members.filter { $0.endDate >= today }.sorted { $0.startDate < $1.startDate }
+        let past = members.filter { $0.endDate < today }.sorted { $0.startDate > $1.startDate }
+        return upcoming.first?.id ?? past.first?.id
     }
     static func itineraries(for markerID: String, trips: [Trip]) -> [MarkerItinerary] {
         trips.flatMap { trip in
