@@ -23,6 +23,7 @@ final class TripMarkerNoteUITests: XCTestCase {
         let first = app.buttons["marker-membership-demo-trip"]
         let next = app.buttons["marker-membership-next-year"]
         XCTAssertTrue(next.waitForExistence(timeout: 8))
+        first.tap()
         let firstFrame = first.frame, nextFrame = next.frame
         let cover = app.descendants(matching: .any)["marker-detail-cover"].firstMatch
         XCTAssertTrue(cover.exists)
@@ -44,7 +45,7 @@ final class TripMarkerNoteUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "--shared-note-review", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
-        let tripTitle = app.staticTexts["今年的活动"]
+        let tripTitle = app.staticTexts["另一场活动"]
         XCTAssertTrue(tripTitle.waitForExistence(timeout: 8))
         let scroll = app.scrollViews.firstMatch
         scroll.swipeUp()
@@ -77,10 +78,10 @@ final class TripMarkerNoteUITests: XCTestCase {
         app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
         XCTAssertTrue(app.buttons["marker-membership-next-year"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["今年的活动"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["另一场活动"].waitForExistence(timeout: 5))
         app.buttons["edit-marker-detail"].tap()
         XCTAssertTrue(app.textFields["trip-note-title"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.textFields["trip-note-title"].value as? String, "今年的活动")
+        XCTAssertEqual(app.textFields["trip-note-title"].value as? String, "另一场活动")
         select("edit-scope-next-year", in: app)
         XCTAssertTrue(app.textFields["trip-note-title"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.textFields["trip-note-title"].value as? String, "另一场活动")
