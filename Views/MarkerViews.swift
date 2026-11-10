@@ -9,6 +9,7 @@ private struct MarkerMembershipRow: View {
     let selected: Bool
     var onSelect: () -> Void
     @State private var width: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var cover: URL? { PlaceImage.note(membership.trip.note(for: marker.id)).flatMap(imageURL) }
     var body: some View {
         Button(action: onSelect) {
@@ -30,13 +31,18 @@ private struct MarkerMembershipRow: View {
                             else { Color(uiColor: .secondarySystemFill) }
                         }
                         .frame(width: proxy.size.width * 0.46, height: proxy.size.height)
-                        .clipped().opacity(selected ? 1 : 0.6)
+                        .clipped()
+                        .mask(LinearGradient(stops: [.init(color: .clear, location: 0),
+                            .init(color: .black, location: 0.65), .init(color: .black, location: 1)],
+                            startPoint: .leading, endPoint: .trailing))
+                        .opacity(selected ? 1 : 0.6)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }.allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
             .background(selected ? Color(uiColor: .tertiarySystemFill) : Color(uiColor: .secondarySystemBackground))
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: selected)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
         }.buttonStyle(.plain).foregroundStyle(.primary)

@@ -1,7 +1,7 @@
 import SwiftUI
 import MapKit
 
-/// An isolated map: gestures are enabled, but places never open the live workspace.
+/// An isolated map with local place details; selection leaves the live map camera unchanged.
 struct JourneyGuideView: View {
     let store: AppStore
     let trip: Trip
@@ -10,6 +10,7 @@ struct JourneyGuideView: View {
     @State private var routes: [DisplayRoute]?
     @State private var selectedDayID: String?
     @State private var error: String?
+    @State private var selectedMarker: Marker?
     private var days: [TripDay] { trip.days.sorted { ($0.date, $0.id) < ($1.date, $1.id) } }
     private var scopeTrip: Trip {
         var copy = trip
@@ -26,7 +27,8 @@ struct JourneyGuideView: View {
                 if let routes {
                     JourneyGuideMap(trip: scopeTrip, markers: markers,
                         routes: routes.filter { selectedDayID == nil || $0.dayID == selectedDayID },
-                        dayNumbers: Dictionary(uniqueKeysWithValues: days.enumerated().map { ($0.element.id, $0.offset + 1) }))
+                        dayNumbers: Dictionary(uniqueKeysWithValues: days.enumerated().map { ($0.element.id, $0.offset + 1) }),
+                        onSelect: { selectedMarker = $0 })
                         .id(selectedDayID ?? "whole-trip")
                         .ignoresSafeArea()
                 }
@@ -70,6 +72,10 @@ struct JourneyGuideView: View {
                 .buttonStyle(.plain).foregroundStyle(.black).tint(.black)
                 .padding(.horizontal, 16)
             }
+            .sheet(item: $selectedMarker) { marker in
+                MarkerDetailView(store: store, marker: marker, usesDayContext: false, noteTripID: trip.id,
+                    onClose: { selectedMarker = nil }, onNavigateItinerary: { selectedMarker = nil })
+            }
             .task {
                 do {
                     let result = try await store.guideRoutes(trip: trip, markers: markers)
@@ -85,7 +91,8 @@ private struct JourneyGuideMap: UIViewRepresentable {
     let markers: [Marker]
     let routes: [DisplayRoute]
     let dayNumbers: [String: Int]
-    func makeCoordinator() -> Coordinator { Coordinator(trip: trip, markers: markers, routes: routes, dayNumbers: dayNumbers) }
+    let onSelect: (Marker) -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(trip: trip, markers: markers, routes: routes, dayNumbers: dayNumbers, onSelect: onSelect) }
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
         map.delegate = context.coordinator
@@ -133,6 +140,7 @@ private struct JourneyGuideMap: UIViewRepresentable {
         let markers: [Marker]
         let routes: [DisplayRoute]
         let dayNumbers: [String: Int]
+        let onSelect: (Marker) -> Void
         var cards: [(Card, UIView)] = []
         var leaders = CAShapeLayer()
         var fit = MKMapRect.null
@@ -147,8 +155,9 @@ private struct JourneyGuideMap: UIViewRepresentable {
         var layoutTask: Task<Void, Never>?
         var layoutGeneration = UUID()
         var layoutErrorReported = false
-        init(trip: Trip, markers: [Marker], routes: [DisplayRoute], dayNumbers: [String: Int]) {
+        init(trip: Trip, markers: [Marker], routes: [DisplayRoute], dayNumbers: [String: Int], onSelect: @escaping (Marker) -> Void) {
             self.trip = trip; self.markers = markers; self.routes = routes; self.dayNumbers = dayNumbers
+            self.onSelect = onSelect
         }
         func install(_ map: MKMapView) {
             let days = trip.days.sorted { ($0.date, $0.id) < ($1.date, $1.id) }
@@ -442,11 +451,20 @@ private struct JourneyGuideMap: UIViewRepresentable {
             renderer.lineWidth = 3; renderer.lineCap = .round; renderer.lineJoin = .round
             return renderer
         }
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            guard let pin = view.annotation as? Pin else { return }
+            mapView.deselectAnnotation(pin, animated: false)
+            onSelect(pin.marker)
+        }
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let pin = annotation as? Pin else { return nil }
             let view = MKAnnotationView(annotation: pin, reuseIdentifier: nil)
             view.image = MapMarkerAppearance.image(icon: pin.marker.icon, compact: false, selected: false)
-            view.isEnabled = false; view.canShowCallout = false
+            view.isEnabled = true; view.canShowCallout = false
+            view.isAccessibilityElement = true
+            view.accessibilityLabel = pin.marker.title
+            view.accessibilityIdentifier = "guide-marker-" + pin.marker.id
+            view.accessibilityTraits = .button
             return view
         }
     }
