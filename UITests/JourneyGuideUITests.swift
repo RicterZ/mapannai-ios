@@ -38,6 +38,12 @@ final class JourneyGuideUITests: XCTestCase {
         XCTAssertTrue(app.buttons["guide-scope-menu"].waitForExistence(timeout: 5))
         marker.tap()
         XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(marker.waitForExistence(timeout: 5))
+        let start = marker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 60, dy: 40)))
+        XCTAssertFalse(close.exists, "Dragging from a marker must not open details")
+        XCTAssertTrue(app.buttons["guide-scope-menu"].exists)
     }
     @MainActor func testGuideUsesInteractiveMapInsteadOfImage() {
         let app = XCUIApplication()

@@ -34,7 +34,7 @@ final class TripMarkerNoteTests: XCTestCase {
         let trips = [dated, retained, unassigned, unrelated]
         let memberships = MarkerPresentation.memberships(for: "m", trips: trips)
         XCTAssertEqual(memberships.map(\.id), ["dated", "retained", "unassigned"])
-        XCTAssertTrue(memberships[0].label.contains("第1天"))
+        XCTAssertEqual(memberships[0].label, "第1天")
         XCTAssertEqual(memberships[1].label, "保留旅行笔记")
         XCTAssertEqual(memberships[2].label, "未分配日期")
         XCTAssertEqual(MarkerPresentation.noteTripID(for: "m", requested: "unrelated", trips: trips), "dated")

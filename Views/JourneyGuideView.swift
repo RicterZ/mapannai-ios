@@ -99,6 +99,9 @@ private struct JourneyGuideMap: UIViewRepresentable {
         map.pointOfInterestFilter = .excludingAll
         map.isRotateEnabled = false; map.isPitchEnabled = false
         map.accessibilityIdentifier = "journey-guide-map"
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
+        tap.cancelsTouchesInView = false; tap.delegate = context.coordinator
+        map.addGestureRecognizer(tap)
         context.coordinator.install(map)
         return map
     }
@@ -107,6 +110,13 @@ private struct JourneyGuideMap: UIViewRepresentable {
         coordinator.layoutTask?.cancel(); coordinator.layoutGeneration = UUID(); map.delegate = nil
     }
 
+    final class PinView: MKAnnotationView {
+        var activate: (() -> Void)?
+        override func accessibilityActivate() -> Bool {
+            guard let activate else { return false }
+            activate(); return true
+        }
+    }
     final class Line: MKPolyline { var color = UIColor.systemBlue }
     final class Pin: NSObject, MKAnnotation {
         let coordinate: CLLocationCoordinate2D
@@ -135,7 +145,7 @@ private struct JourneyGuideMap: UIViewRepresentable {
         var routeID: String? = nil
         var icon: String = "mappin"
     }
-    @MainActor final class Coordinator: NSObject, MKMapViewDelegate {
+    @MainActor final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let trip: Trip
         let markers: [Marker]
         let routes: [DisplayRoute]
@@ -451,16 +461,30 @@ private struct JourneyGuideMap: UIViewRepresentable {
             renderer.lineWidth = 3; renderer.lineCap = .round; renderer.lineJoin = .round
             return renderer
         }
-        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            guard let pin = view.annotation as? Pin else { return }
-            mapView.deselectAnnotation(pin, animated: false)
-            onSelect(pin.marker)
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+        @objc func tap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended, let map = gesture.view as? MKMapView else { return }
+            let point = gesture.location(in: map)
+            let hits = map.annotations.compactMap { annotation -> (Pin, CGFloat)? in
+                guard let pin = annotation as? Pin, let view = map.view(for: pin),
+                      !view.isHidden, view.alpha > 0 else { return nil }
+                let local = view.convert(point, from: map)
+                let bounds = view.bounds.insetBy(dx: min(0, (view.bounds.width - 44) / 2),
+                                                dy: min(0, (view.bounds.height - 44) / 2))
+                guard bounds.contains(local) else { return nil }
+                return (pin, hypot(local.x - view.bounds.midX, local.y - view.bounds.midY))
+            }
+            if let hit = hits.min(by: { $0.1 == $1.1 ? $0.0.marker.id < $1.0.marker.id : $0.1 < $1.1 }) {
+                onSelect(hit.0.marker)
+            }
         }
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let pin = annotation as? Pin else { return nil }
-            let view = MKAnnotationView(annotation: pin, reuseIdentifier: nil)
+            let view = PinView(annotation: pin, reuseIdentifier: nil)
             view.image = MapMarkerAppearance.image(icon: pin.marker.icon, compact: false, selected: false)
-            view.isEnabled = true; view.canShowCallout = false
+            // Keep MapKit selection out of drags; the map tap recognizer handles place selection.
+            view.isEnabled = false; view.canShowCallout = false
+            view.activate = { [weak self] in self?.onSelect(pin.marker) }
             view.isAccessibilityElement = true
             view.accessibilityLabel = pin.marker.title
             view.accessibilityIdentifier = "guide-marker-" + pin.marker.id
