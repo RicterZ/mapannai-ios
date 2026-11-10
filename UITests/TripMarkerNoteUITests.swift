@@ -51,11 +51,12 @@ final class TripMarkerNoteUITests: XCTestCase {
         scroll.swipeUp()
         let disclosure = app.buttons["marker-general-disclosure"]
         XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.descendants(matching: .any)["marker-general-note"].firstMatch.exists)
+        let sharedBody = app.webViews.staticTexts["跨旅行共享的攻略内容"]
+        XCTAssertFalse(sharedBody.exists)
         disclosure.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["marker-general-note"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(sharedBody.waitForExistence(timeout: 5), app.debugDescription)
         disclosure.tap()
-        XCTAssertFalse(app.descendants(matching: .any)["marker-general-note"].firstMatch.exists)
+        XCTAssertFalse(sharedBody.exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "行程笔记优先、通用笔记折叠"; shot.lifetime = .keepAlways; add(shot)
     }
     @MainActor func testRetainedNoteUsesOneTopEditorAndCancelPreservesData() {
