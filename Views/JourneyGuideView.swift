@@ -118,6 +118,15 @@ private struct JourneyGuideMap: UIViewRepresentable {
         }
     }
     final class Line: MKPolyline { var color = UIColor.systemBlue }
+    /// Cards and leaders are annotations so MapKit moves them in the same render pass as pins and routes.
+    final class Overlay: NSObject, MKAnnotation {
+        @objc dynamic var coordinate: CLLocationCoordinate2D
+        let id: String
+        let leader: Bool
+        init(id: String, leader: Bool, coordinate: CLLocationCoordinate2D) {
+            self.id = id; self.leader = leader; self.coordinate = coordinate
+        }
+    }
     final class Pin: NSObject, MKAnnotation {
         let coordinate: CLLocationCoordinate2D
         let marker: Marker
@@ -152,7 +161,9 @@ private struct JourneyGuideMap: UIViewRepresentable {
         let dayNumbers: [String: Int]
         let onSelect: (Marker) -> Void
         var cards: [(Card, UIView)] = []
-        var leaders = CAShapeLayer()
+        var cardHosts: [String: MKAnnotationView] = [:]
+        var leaderHosts: [String: MKAnnotationView] = [:]
+        var overlays: [String: (card: Overlay, leader: Overlay)] = [:]
         var fit = MKMapRect.null
         var fitted = false
         let solver = ItineraryCardLayout()
@@ -216,9 +227,14 @@ private struct JourneyGuideMap: UIViewRepresentable {
                 guard let (marker, details, color) = merged[id] else { continue }
                 add(Card(id: "place:" + marker.id, coordinate: CLLocationCoordinate2D(latitude: marker.coordinates.latitude, longitude: marker.coordinates.longitude), title: trip.displayTitle(for: marker), visits: details, emoji: marker.icon.emoji, color: color, icon: marker.icon.symbol), to: map)
             }
-            leaders.strokeColor = UIColor.secondaryLabel.withAlphaComponent(0.7).cgColor
-            leaders.fillColor = UIColor.clear.cgColor; leaders.lineWidth = 1
-            map.layer.addSublayer(leaders)
+        }
+        private func host(size: CGSize, z: Float) -> MKAnnotationView {
+            let view = MKAnnotationView(annotation: nil, reuseIdentifier: nil)
+            view.frame = CGRect(origin: .zero, size: size)
+            view.isEnabled = false; view.canShowCallout = false; view.isUserInteractionEnabled = false
+            view.clipsToBounds = false; view.displayPriority = .required
+            view.zPriority = MKAnnotationViewZPriority(rawValue: z)
+            return view
         }
         func add(_ card: Card, to map: MKMapView) {
             func label(_ text: String, size: CGFloat, color: UIColor = .label, weight: UIFont.Weight = .regular, lines: Int = 1) -> UILabel {
@@ -293,7 +309,11 @@ private struct JourneyGuideMap: UIViewRepresentable {
             box.frame.size = CGSize(width: width, height: size.height)
             box.layoutIfNeeded()
             box.alpha = 0; box.isHidden = true
-            map.addSubview(box); cards.append((card, box))
+            let cardHost = host(size: box.frame.size, z: 700)
+            box.frame.origin = .zero; cardHost.addSubview(box)
+            cardHosts[card.id] = cardHost
+            leaderHosts[card.id] = host(size: CGSize(width: 1, height: 1), z: 600)
+            cards.append((card, box))
         }
         func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
             guard !fitted, mapView.bounds.width > 0, !fit.isNull else { return }
@@ -394,7 +414,7 @@ private struct JourneyGuideMap: UIViewRepresentable {
                 line.lineWidth = width; line.lineCap = .round
             }
             layers[2].fillColor = card.color.cgColor; layers[2].strokeColor = UIColor.white.cgColor; layers[2].lineWidth = 2
-            layers.forEach(leaders.addSublayer)
+            layers.forEach { leaderHosts[card.id]?.layer.addSublayer($0) }
             leaderLayers[card.id] = layers
             return layers
         }
@@ -404,18 +424,19 @@ private struct JourneyGuideMap: UIViewRepresentable {
             let reduce = UIAccessibility.isReduceMotionEnabled
             let old = pinned
             pinned = next
-            var appearing: [UIView] = [], leaving: [UIView] = [], moving: [(UIView, CGPoint)] = []
+            var appearing: [UIView] = [], leaving: [UIView] = [], moving: [(UIView, Overlay, CLLocationCoordinate2D)] = []
             CATransaction.begin(); CATransaction.setDisableActions(true)
             for (card, box) in cards {
                 let layers = layers(for: card)
                 if let center = next[card.id] {
-                    let target = map.convert(center, toPointTo: map)
+                    let overlay = self.overlay(for: card.id, center: center, map)
+                    let current = map.convert(overlay.card.coordinate, toPointTo: map), target = map.convert(center, toPointTo: map)
                     if old[card.id] == nil {
-                        box.isHidden = false; box.alpha = 0; box.center = target; appearing.append(box)
-                        map.bringSubviewToFront(box)
-                    } else if hypot(box.center.x - target.x, box.center.y - target.y) > 0.5 {
-                        moving.append((box, target)); layers.forEach { $0.opacity = 0 }
-                    }
+                        overlay.card.coordinate = center
+                        box.isHidden = false; box.alpha = 0; appearing.append(box)
+                    } else if hypot(current.x - target.x, current.y - target.y) > 0.5 {
+                        moving.append((box, overlay.card, center)); layers.forEach { $0.opacity = 0 }
+                    } else { overlay.card.coordinate = center }
                 } else if old[card.id] != nil {
                     leaving.append(box); layers.forEach { $0.opacity = 0 }
                 }
@@ -425,7 +446,7 @@ private struct JourneyGuideMap: UIViewRepresentable {
             UIView.animate(withDuration: reduce ? 0 : 0.25, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState]) {
                 appearing.forEach { $0.alpha = 1 }
                 leaving.forEach { $0.alpha = 0 }
-                moving.forEach { $0.0.center = $0.1 }
+                moving.forEach { $0.1.coordinate = $0.2 }
             } completion: { [weak self, weak map] _ in
                 guard let self, let map else { return }
                 for (card, box) in self.cards where self.pinned[card.id] == nil && leaving.contains(where: { $0 === box }) { box.isHidden = true }
@@ -433,6 +454,13 @@ private struct JourneyGuideMap: UIViewRepresentable {
                 self.project(map)
             }
             project(map, skip: Set(moving.map { ObjectIdentifier($0.0) }))
+        }
+        private func overlay(for id: String, center: CLLocationCoordinate2D, _ map: MKMapView) -> (card: Overlay, leader: Overlay) {
+            if let existing = overlays[id] { return existing }
+            let pair = (card: Overlay(id: id, leader: false, coordinate: center), leader: Overlay(id: id, leader: true, coordinate: anchors[id] ?? center))
+            overlays[id] = pair
+            map.addAnnotations([pair.leader, pair.card])
+            return pair
         }
         func project(_ map: MKMapView, skip: Set<ObjectIdentifier> = []) {
             guard !pinned.isEmpty else { return }
@@ -445,12 +473,13 @@ private struct JourneyGuideMap: UIViewRepresentable {
                 }
                 let size = box.bounds.size
                 let c = map.convert(center, toPointTo: map), a = map.convert(anchor, toPointTo: map)
-                box.center = c
                 let end = ItineraryCardLayout.leaderEnd(left: c.x - size.width / 2, top: c.y - size.height / 2, width: size.width, height: size.height,
                                                         anchor: ItineraryLayoutPoint(x: a.x, y: a.y))
-                let path = UIBezierPath(); path.move(to: a); path.addLine(to: CGPoint(x: end.x, y: end.y))
+                // Paths are relative to the leader host centred on the anchor, so panning never rewrites them.
+                let origin = CGPoint(x: 0.5, y: 0.5)
+                let path = UIBezierPath(); path.move(to: origin); path.addLine(to: CGPoint(x: end.x - a.x + origin.x, y: end.y - a.y + origin.y))
                 layers[0].path = path.cgPath; layers[1].path = path.cgPath
-                layers[2].path = UIBezierPath(ovalIn: CGRect(x: a.x - 4.5, y: a.y - 4.5, width: 9, height: 9)).cgPath
+                layers[2].path = UIBezierPath(ovalIn: CGRect(x: origin.x - 4.5, y: origin.y - 4.5, width: 9, height: 9)).cgPath
                 layers.forEach { $0.opacity = 1 }
             }
             CATransaction.commit()
@@ -479,6 +508,11 @@ private struct JourneyGuideMap: UIViewRepresentable {
             }
         }
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let overlay = annotation as? Overlay {
+                let view = overlay.leader ? leaderHosts[overlay.id] : cardHosts[overlay.id]
+                view?.annotation = overlay
+                return view
+            }
             guard let pin = annotation as? Pin else { return nil }
             let view = PinView(annotation: pin, reuseIdentifier: nil)
             view.image = MapMarkerAppearance.image(icon: pin.marker.icon, compact: false, selected: false)
