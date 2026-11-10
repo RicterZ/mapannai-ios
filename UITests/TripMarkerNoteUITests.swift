@@ -3,12 +3,10 @@ import XCTest
 final class TripMarkerNoteUITests: XCTestCase {
     @MainActor private func openPlace(_ markerID: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--demo", "--journey-guide-entry-review", "--trip-note-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "-AppleLanguages", "(zh-Hans)"]
+        app.launchEnvironment["REVIEW_MARKER_ID"] = markerID
         app.launch()
-        let notes = app.buttons["journey-place-notes"].firstMatch
-        XCTAssertTrue(notes.waitForExistence(timeout: 10)); notes.tap()
-        let place = app.buttons["trip-note-place-" + markerID].firstMatch
-        XCTAssertTrue(place.waitForExistence(timeout: 5)); place.tap()
+        XCTAssertTrue(app.buttons["edit-marker-detail"].waitForExistence(timeout: 10))
         return app
     }
     @MainActor private func select(_ id: String, in app: XCUIApplication) {

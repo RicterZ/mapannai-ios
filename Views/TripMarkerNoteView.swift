@@ -278,29 +278,3 @@ struct MarkerScopeEditorView: View {
         }
     }
 }
-
-struct TripPlaceNotesView: View {
-    @ObservedObject var store: AppStore
-    let tripID: String
-    @Environment(\.dismiss) private var dismiss
-    private var trip: Trip? { store.trips.first { $0.id == tripID } }
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("所有地点，包括已移出日程的笔记") {
-                    if let trip {
-                        ForEach(store.tripPlaces(trip)) { marker in
-                            NavigationLink {
-                                MarkerDetailView(store: store, marker: marker, embedded: true, usesDayContext: false,
-                                    noteTripID: tripID, onClose: { dismiss() }, onNavigateItinerary: { dismiss() })
-                            } label: { Text(trip.displayTitle(for: marker)) }
-                                .accessibilityIdentifier("trip-note-place-" + marker.id)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("地点笔记").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
-        }
-    }
-}

@@ -28,7 +28,6 @@ struct JourneyDaysContents: View {
     @State private var targetedDayID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingGuide = false
-    @State private var showingPlaceNotes = false
     @State private var editing = false
     @State private var deletion: TripDay?
     @State private var pendingInitialDayID: String?
@@ -67,8 +66,6 @@ struct JourneyDaysContents: View {
             Group {
             Section {
                 JourneyActionGroup(compact: true) {
-                    Button { showingPlaceNotes = true } label: { Label("地点笔记", systemImage: "note.text") }
-                        .accessibilityIdentifier("journey-place-notes")
                     Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
                         .accessibilityIdentifier("journey-guide")
                     Button { editing = true } label: { Label("编辑旅途", systemImage: "pencil") }
@@ -188,7 +185,6 @@ struct JourneyDaysContents: View {
             })
         }
         }
-            .sheet(isPresented: $showingPlaceNotes) { TripPlaceNotesView(store: store, tripID: trip.id) }
             .fullScreenCover(isPresented: $showingGuide) { JourneyGuideView(store: store, trip: trip, markers: store.markers) }
             .fullScreenCover(isPresented: $editing) { TripEditorView(store: store, trip: trip).presentationDragIndicator(.visible) }
             .sheet(item: Binding(get: { archiveColorIndex != nil && store.dayEditorDraft?.tripID == trip.id ? store.dayEditorDraft : nil },
@@ -281,8 +277,6 @@ struct JourneyDaysContents: View {
     }
 
     @ViewBuilder private var landscapeActionButtons: some View {
-        Button { showingPlaceNotes = true } label: { Label("地点笔记", systemImage: "note.text") }
-            .accessibilityIdentifier("journey-place-notes")
         Button { showingGuide = true } label: { Label("全程导览", systemImage: "map") }
             .accessibilityIdentifier("journey-guide")
         Button { editing = true } label: { Label("编辑旅途", systemImage: "pencil") }

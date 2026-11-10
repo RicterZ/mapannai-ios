@@ -18,9 +18,10 @@ import SwiftUI
         WindowGroup {
             ZStack {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--marker-scope-review"), let marker = store.markers.first(where: { $0.id == "demo-1" }) {
+                if ProcessInfo.processInfo.arguments.contains("--marker-scope-review"), let marker = store.markers.first(where: { $0.id == (ProcessInfo.processInfo.environment["REVIEW_MARKER_ID"] ?? "demo-1") }) {
                     MarkerDetailView(store: store, marker: marker, edgeAttached: true,
                         usesDayContext: ProcessInfo.processInfo.arguments.contains("--note-context-review"),
+                        noteTripID: ProcessInfo.processInfo.environment["REVIEW_MARKER_ID"] == nil ? nil : store.trips.first?.id,
                         onClose: {}, onNavigateItinerary: {})
                         .overlay(alignment: .bottom) {
                             if ProcessInfo.processInfo.arguments.contains("--note-context-review") {
