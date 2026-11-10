@@ -15,7 +15,7 @@ struct MarkerTripMembership: Identifiable {
     var label: String {
         if !days.isEmpty {
             let sorted = trip.days.sorted { ($0.date, $0.id) < ($1.date, $1.id) }
-            return days.map { day in "第\((sorted.firstIndex { $0.id == day.id } ?? 0) + 1)天 · " + day.date }.joined(separator: "、")
+            return days.map { day in "第\((sorted.firstIndex { $0.id == day.id } ?? 0) + 1)天" }.joined(separator: "、")
         }
         return unassigned ? "未分配日期" : "保留旅行笔记"
     }
