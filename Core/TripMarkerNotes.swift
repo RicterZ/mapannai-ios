@@ -113,7 +113,8 @@ struct MarkerNoteSelection: Equatable {
     private(set) var tripID: String?
     mutating func initialize(_ defaultID: String?) {
         guard !initialized else { return }
-        initialized = true; tripID = defaultID
+        reset(defaultID)
     }
+    mutating func reset(_ defaultID: String?) { initialized = true; tripID = defaultID }
     mutating func select(_ id: String) { initialized = true; tripID = id }
 }

@@ -16,30 +16,44 @@ final class TripMarkerNoteUITests: XCTestCase {
         let option = app.buttons[id]
         XCTAssertTrue(option.waitForExistence(timeout: 3)); option.tap()
     }
-    @MainActor func testCoverSwitchKeepsMembershipControlsInPlace() {
+    @MainActor func testMembershipCoversStayInTheirOwnRowsWithoutBanner() {
         let app = XCUIApplication()
         app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "--cover-order-review", "-AppleLanguages", "(zh-Hans)"]
         app.launch()
         let first = app.buttons["marker-membership-demo-trip"]
         let next = app.buttons["marker-membership-next-year"]
         XCTAssertTrue(next.waitForExistence(timeout: 8))
-        first.tap()
         let firstFrame = first.frame, nextFrame = next.frame
-        let cover = app.descendants(matching: .any)["marker-detail-cover"].firstMatch
-        XCTAssertTrue(cover.exists)
-        XCTAssertGreaterThanOrEqual(cover.frame.minY, next.frame.maxY)
-        next.tap()
-        XCTAssertFalse(cover.exists)
-        XCTAssertEqual(first.frame.minY, firstFrame.minY, accuracy: 1)
-        XCTAssertEqual(next.frame.minY, nextFrame.minY, accuracy: 1)
-        next.tap()
-        XCTAssertFalse(cover.exists)
+        let banner = app.descendants(matching: .any)["marker-detail-cover"].firstMatch
+        XCTAssertFalse(banner.exists)
+        XCTAssertEqual(first.value as? String, "有旅行封面")
+        XCTAssertEqual(next.value as? String, "无旅行封面")
         first.tap()
-        XCTAssertTrue(cover.exists)
+        XCTAssertTrue(first.isSelected)
+        next.tap()
+        XCTAssertTrue(next.isSelected)
+        XCTAssertFalse(banner.exists)
+        XCTAssertEqual(first.value as? String, "有旅行封面")
+        XCTAssertEqual(next.value as? String, "无旅行封面")
         XCTAssertEqual(first.frame.minY, firstFrame.minY, accuracy: 1)
         XCTAssertEqual(next.frame.minY, nextFrame.minY, accuracy: 1)
-        XCTAssertFalse(app.staticTexts["通用笔记（所有旅行共享）"].exists)
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "封面位于所属行程下方"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "所属行程行内封面、无独立大图"; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor func testChangingActiveTripResetsNoteScopeWithoutClosingDetail() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--marker-scope-review", "--trip-note-preview", "--note-context-review", "-AppleLanguages", "(zh-Hans)"]
+        app.launch()
+        let next = app.buttons["marker-membership-next-year"]
+        let first = app.buttons["marker-membership-demo-trip"]
+        XCTAssertTrue(next.waitForExistence(timeout: 8))
+        next.tap()
+        XCTAssertTrue(app.staticTexts["另一场活动"].exists)
+        first.tap()
+        XCTAssertTrue(app.staticTexts["今年的活动"].exists)
+        app.buttons["review-switch-trip"].tap()
+        XCTAssertTrue(app.staticTexts["另一场活动"].waitForExistence(timeout: 5))
+        XCTAssertTrue(next.isSelected)
+        XCTAssertTrue(app.buttons["close-marker-detail"].exists)
     }
     @MainActor func testSharedNotesFollowTripAndStartCollapsed() {
         let app = XCUIApplication()

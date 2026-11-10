@@ -2,6 +2,50 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 
+/// The cover belongs to this membership, so changing the note scope never inserts a banner.
+private struct MarkerMembershipRow: View {
+    let membership: MarkerTripMembership
+    let marker: Marker
+    let selected: Bool
+    var onSelect: () -> Void
+    @State private var width: CGFloat = 0
+    private var cover: URL? { PlaceImage.note(membership.trip.note(for: marker.id)).flatMap(imageURL) }
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(alignment: .top, spacing: 10) {
+                PlaceIconView(emoji: membership.trip.emoji ?? "✈️", size: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(membership.trip.name).font(.subheadline.weight(.medium))
+                    Text(membership.label).font(.caption).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.trailing, cover == nil ? 0 : width * 0.30)
+            .padding(10)
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            .background(alignment: .trailing) {
+                if let cover {
+                    GeometryReader { proxy in
+                        AsyncImage(url: cover) { phase in
+                            if let image = phase.image { image.resizable().scaledToFill() }
+                            else { Color(uiColor: .secondarySystemFill) }
+                        }
+                        .frame(width: proxy.size.width * 0.46, height: proxy.size.height)
+                        .clipped().opacity(selected ? 1 : 0.6)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }.allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
+            .background(selected ? Color(uiColor: .tertiarySystemFill) : Color(uiColor: .secondarySystemBackground))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(.primary)
+            .accessibilityIdentifier("marker-membership-" + membership.id)
+            .accessibilityValue(cover == nil ? "无旅行封面" : "有旅行封面")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 struct MarkerDetailView: View {
     @ObservedObject var store: AppStore
     let marker: Marker
@@ -43,16 +87,14 @@ struct MarkerDetailView: View {
         return store.trips.first(where: { $0.id == target.tripId })?.days.first(where: { $0.id == target.id })
     }
     private var memberships: [MarkerTripMembership] { MarkerPresentation.memberships(for: current.id, trips: store.trips) }
+    private var requestedNoteTripID: String? {
+        noteTripID ?? (usesDayContext ? (embedded ? (store.addPlaceDay?.tripId ?? store.addPlaceTripID) : (targetDay?.tripId ?? store.tripID)) : nil)
+    }
     private var defaultNoteTripID: String? {
-        let requested = noteTripID ?? (usesDayContext ? (embedded ? (store.addPlaceDay?.tripId ?? store.addPlaceTripID) : (targetDay?.tripId ?? store.tripID)) : nil)
-        return MarkerPresentation.noteTripID(for: current.id, requested: requested, trips: store.trips)
+        MarkerPresentation.noteTripID(for: current.id, requested: requestedNoteTripID, trips: store.trips)
     }
     private var contextTripID: String? {
         MarkerPresentation.noteTripID(for: current.id, requested: noteSelection.initialized ? noteSelection.tripID : defaultNoteTripID, trips: store.trips)
-    }
-    private var detailCover: String? {
-        if let id = contextTripID { return PlaceImage.note(store.trips.first { $0.id == id }?.note(for: current.id)) }
-        return PlaceImage.general(current)
     }
     private var hasNote: Bool { NoteContent.hasContent(current.content.markdownContent) }
     var body: some View {
@@ -87,7 +129,8 @@ struct MarkerDetailView: View {
             }
             .onDisappear { onConfirmationHeight(nil) }
             .onAppear { noteSelection.initialize(defaultNoteTripID) }
-            .onChange(of: current.id) { _, _ in noteSelection = MarkerNoteSelection(); noteSelection.initialize(defaultNoteTripID) }
+            .onChange(of: current.id) { _, _ in noteSelection.reset(defaultNoteTripID) }
+            .onChange(of: requestedNoteTripID) { _, _ in noteSelection.reset(defaultNoteTripID) }
             .onChange(of: current.content.markdownContent) { _, _ in noteHeight = 1 }
             .task(id: current.id) { await store.refreshSelectedMarker(current.id) }
             .modifier(MarkerDetailPresentation(edgeAttached: edgeAttached, embedded: embedded, onClose: onClose, confirmationHeight: confirmationHeight))
@@ -198,32 +241,12 @@ struct MarkerDetailView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             JourneyEditorHeading(title: "所属行程").accessibilityIdentifier("marker-itineraries-heading")
                             ForEach(memberships) { membership in
-                                Button {
-                                    noteSelection.select(membership.id)
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(membership.trip.name).font(.subheadline.weight(.medium))
-                                            if membership.days.isEmpty { Text(membership.label).font(.caption).foregroundStyle(.secondary) }
-                                        }
-                                        Spacer(minLength: 0)
-                                        if contextTripID == membership.id {
-                                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
-                                        }
-                                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
-                                    }.padding(10).frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-                                        .background(contextTripID == membership.id ? Color(uiColor: .tertiarySystemFill) : .clear,
-                                            in: RoundedRectangle(cornerRadius: 10))
-                                        .contentShape(Rectangle())
-                                }.buttonStyle(.plain).foregroundStyle(.primary)
-                                    .accessibilityIdentifier("marker-membership-" + membership.id)
-                                    .accessibilityAddTraits(contextTripID == membership.id ? .isSelected : [])
-                                if !membership.days.isEmpty { Text(membership.label).font(.caption).foregroundStyle(.secondary) }
-
+                                MarkerMembershipRow(membership: membership, marker: current,
+                                    selected: contextTripID == membership.id) { noteSelection.select(membership.id) }
                             }
                         }
                     }
-                    if let image = detailCover, let url = imageURL(image) {
+                    if memberships.isEmpty, let image = PlaceImage.general(current), let url = imageURL(image) {
                         MarkerCoverBanner {
                             AsyncImage(url: url) { phase in
                                 if let image = phase.image { image.resizable().scaledToFill() }

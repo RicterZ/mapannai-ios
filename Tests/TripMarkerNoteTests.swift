@@ -149,6 +149,18 @@ final class TripMarkerNoteTests: XCTestCase {
         XCTAssertEqual(selection.tripID, "cover", "Re-selecting a membership keeps its trip note selected")
         selection.select("other"); XCTAssertEqual(selection.tripID, "other")
     }
+    func testContextChangeResetsManualNoteSelection() {
+        var selection = MarkerNoteSelection()
+        selection.initialize("current")
+        selection.select("manual")
+        selection.initialize("current")
+        XCTAssertEqual(selection.tripID, "manual", "Ordinary view updates preserve local selection")
+        selection.reset("new-current")
+        XCTAssertEqual(selection.tripID, "new-current")
+        selection.select("manual")
+        selection.reset(nil)
+        XCTAssertNil(selection.tripID, "A context with no memberships clears the old selection")
+    }
     func testCoverPatchSupportsOmissionNullAndValidation() async throws {
         var bodies: [[String: Any]] = []
         NoteProtocol.handler = { request in

@@ -19,8 +19,15 @@ import SwiftUI
             ZStack {
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--marker-scope-review"), let marker = store.markers.first(where: { $0.id == "demo-1" }) {
-                    MarkerDetailView(store: store, marker: marker, edgeAttached: true, usesDayContext: false,
-                        onClose: {}, onNavigateItinerary: {}).zIndex(100)
+                    MarkerDetailView(store: store, marker: marker, edgeAttached: true,
+                        usesDayContext: ProcessInfo.processInfo.arguments.contains("--note-context-review"),
+                        onClose: {}, onNavigateItinerary: {})
+                        .overlay(alignment: .bottom) {
+                            if ProcessInfo.processInfo.arguments.contains("--note-context-review") {
+                                Button("切换当前旅行") { store.dayID = nil; store.tripID = "next-year" }
+                                    .accessibilityIdentifier("review-switch-trip")
+                            }
+                        }.zIndex(100)
                 }
                 if ProcessInfo.processInfo.arguments.contains("--journey-guide-entry-review"), let trip = store.trips.first {
                     NavigationStack { JourneyDaysContents(store: store, trip: trip) }.zIndex(100)
